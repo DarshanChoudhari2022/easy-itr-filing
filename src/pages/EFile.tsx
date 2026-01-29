@@ -1,0 +1,395 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, FileText, CheckCircle2, Download, ExternalLink, AlertCircle, RefreshCw, Building2, Landmark, FileCheck } from "lucide-react";
+import { toast } from "sonner";
+
+interface TaxSummary {
+  total_income: number;
+  total_deductions: number;
+  tax_old_regime: number;
+  tax_new_regime: number;
+  suggested_regime: "old" | "new" | null;
+  suggested_itr_form: string | null;
+  tds_total: number;
+  tax_payable: number;
+  tax_refund: number;
+}
+
+interface Profile {
+  pan_number: string | null;
+  full_name: string | null;
+  filing_status: string;
+}
+
+export default function EFile() {
+  const { user } = useAuth();
+  const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [fetchingAIS, setFetchingAIS] = useState(false);
+  
+  const [checklist, setChecklist] = useState({
+    incomeAdded: false,
+    deductionsVerified: false,
+    bankVerified: false,
+    regimeSelected: false,
+    documentsReady: false,
+  });
+
+  useEffect(() => {
+    if (user) {
+      fetchData();
+    }
+  }, [user]);
+
+  const fetchData = async () => {
+    try {
+      const [taxRes, profileRes, incomeRes, deductionsRes] = await Promise.all([
+        supabase.from("tax_summaries").select("*").eq("user_id", user!.id).eq("assessment_year", "2026-27").maybeSingle(),
+        supabase.from("profiles").select("*").eq("user_id", user!.id).maybeSingle(),
+        supabase.from("income_sources").select("id").eq("user_id", user!.id),
+        supabase.from("deductions").select("id").eq("user_id", user!.id),
+      ]);
+
+      setTaxSummary(taxRes.data);
+      setProfile(profileRes.data);
+      
+      // Auto-check based on data
+      setChecklist(prev => ({
+        ...prev,
+        incomeAdded: (incomeRes.data?.length || 0) > 0,
+        deductionsVerified: (deductionsRes.data?.length || 0) > 0 || taxRes.data?.total_deductions === 0,
+        regimeSelected: !!taxRes.data?.suggested_regime,
+      }));
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const simulateFetchAIS = async () => {
+    setFetchingAIS(true);
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    toast.success("AIS/26AS data fetched successfully (Demo)");
+    setFetchingAIS(false);
+  };
+
+  const generateJSON = async () => {
+    if (!profile?.pan_number) {
+      toast.error("Please add your PAN number in Settings first");
+      return;
+    }
+    
+    setGenerating(true);
+    
+    // Simulate JSON generation
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    
+    const itrData = {
+      formType: taxSummary?.suggested_itr_form || "ITR-1",
+      assessmentYear: "2026-27",
+      filingStatus: "Original",
+      personalInfo: {
+        pan: profile.pan_number,
+        name: profile.full_name,
+      },
+      income: {
+        total: taxSummary?.total_income || 0,
+      },
+      deductions: {
+        total: taxSummary?.total_deductions || 0,
+      },
+      taxComputation: {
+        regime: taxSummary?.suggested_regime || "new",
+        taxPayable: taxSummary?.tax_payable || 0,
+        tdsCredit: taxSummary?.tds_total || 0,
+      },
+    };
+    
+    // Download JSON
+    const blob = new Blob([JSON.stringify(itrData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ITR_${profile.pan_number}_AY2026-27.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("ITR JSON downloaded! Upload this to the Income Tax Portal");
+    setGenerating(false);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const allChecked = Object.values(checklist).every(Boolean);
+  const taxDue = taxSummary 
+    ? Math.max(
+        (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime) - taxSummary.tds_total,
+        0
+      )
+    : 0;
+  const refund = taxSummary 
+    ? Math.max(
+        taxSummary.tds_total - (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime),
+        0
+      )
+    : 0;
+
+  return (
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <FileText className="h-8 w-8" />
+            E-File ITR
+          </h1>
+          <p className="text-muted-foreground">
+            Review, verify, and generate your ITR for filing
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            {/* External Integrations */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Landmark className="h-5 w-5" />
+                  ITD Sync
+                </CardTitle>
+                <CardDescription>
+                  Fetch your AIS (Annual Information Statement) and 26AS from Income Tax Department
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-4">
+                <Button
+                  variant="outline"
+                  onClick={simulateFetchAIS}
+                  disabled={fetchingAIS}
+                >
+                  {fetchingAIS ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Fetch AIS/26AS
+                </Button>
+                <Button variant="outline" disabled>
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Connect Groww
+                </Button>
+                <Button variant="outline" disabled>
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Connect Zerodha
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Tax Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Tax Summary</CardTitle>
+                <CardDescription>Your calculated tax for AY 2026-27</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {taxSummary ? (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground">Total Income</p>
+                      <p className="text-xl font-bold">{formatCurrency(taxSummary.total_income)}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground">Deductions</p>
+                      <p className="text-xl font-bold">{formatCurrency(taxSummary.total_deductions)}</p>
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground">TDS Paid</p>
+                      <p className="text-xl font-bold text-accent">{formatCurrency(taxSummary.tds_total)}</p>
+                    </div>
+                    <div className={`p-4 rounded-lg ${refund > 0 ? "bg-accent/10" : taxDue > 0 ? "bg-warning/10" : "bg-muted/50"}`}>
+                      <p className="text-sm text-muted-foreground">
+                        {refund > 0 ? "Refund Due" : "Tax Payable"}
+                      </p>
+                      <p className={`text-xl font-bold ${refund > 0 ? "text-accent" : ""}`}>
+                        {formatCurrency(refund > 0 ? refund : taxDue)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">
+                      No tax calculation found. Visit the Optimizer to calculate your tax.
+                    </p>
+                  </div>
+                )}
+                
+                {taxSummary?.suggested_regime && (
+                  <div className="mt-4 flex items-center gap-4">
+                    <Badge variant="outline" className="text-sm">
+                      Suggested ITR: {taxSummary.suggested_itr_form || "ITR-1"}
+                    </Badge>
+                    <Badge variant="outline" className="text-sm">
+                      {taxSummary.suggested_regime === "old" ? "Old" : "New"} Regime Selected
+                    </Badge>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Pre-Filing Checklist */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileCheck className="h-5 w-5" />
+                  Pre-Filing Checklist
+                </CardTitle>
+                <CardDescription>
+                  Verify all items before generating your ITR
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="income"
+                    checked={checklist.incomeAdded}
+                    onCheckedChange={(checked) =>
+                      setChecklist({ ...checklist, incomeAdded: checked as boolean })
+                    }
+                  />
+                  <label htmlFor="income" className="text-sm cursor-pointer">
+                    All income sources have been added (Salary, Property, Capital Gains, etc.)
+                  </label>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="deductions"
+                    checked={checklist.deductionsVerified}
+                    onCheckedChange={(checked) =>
+                      setChecklist({ ...checklist, deductionsVerified: checked as boolean })
+                    }
+                  />
+                  <label htmlFor="deductions" className="text-sm cursor-pointer">
+                    All deductions and exemptions have been claimed
+                  </label>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="bank"
+                    checked={checklist.bankVerified}
+                    onCheckedChange={(checked) =>
+                      setChecklist({ ...checklist, bankVerified: checked as boolean })
+                    }
+                  />
+                  <label htmlFor="bank" className="text-sm cursor-pointer">
+                    Bank account details for refund are correct
+                  </label>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="regime"
+                    checked={checklist.regimeSelected}
+                    onCheckedChange={(checked) =>
+                      setChecklist({ ...checklist, regimeSelected: checked as boolean })
+                    }
+                  />
+                  <label htmlFor="regime" className="text-sm cursor-pointer">
+                    Tax regime has been selected (Old/New)
+                  </label>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="documents"
+                    checked={checklist.documentsReady}
+                    onCheckedChange={(checked) =>
+                      setChecklist({ ...checklist, documentsReady: checked as boolean })
+                    }
+                  />
+                  <label htmlFor="documents" className="text-sm cursor-pointer">
+                    All supporting documents are ready for verification
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Generate ITR */}
+            <Card className={allChecked ? "border-accent" : ""}>
+              <CardContent className="py-8">
+                <div className="flex flex-col items-center text-center">
+                  <div className={`h-16 w-16 rounded-full flex items-center justify-center mb-4 ${
+                    allChecked ? "bg-accent/20" : "bg-muted"
+                  }`}>
+                    {allChecked ? (
+                      <CheckCircle2 className="h-8 w-8 text-accent" />
+                    ) : (
+                      <FileText className="h-8 w-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  
+                  <h3 className="text-xl font-semibold mb-2">
+                    {allChecked ? "Ready to Generate ITR" : "Complete the Checklist"}
+                  </h3>
+                  <p className="text-muted-foreground mb-6 max-w-md">
+                    {allChecked
+                      ? "All checks passed! Generate your ITR JSON file and upload it to the Income Tax Portal."
+                      : "Please verify all items in the checklist above before generating your ITR."}
+                  </p>
+                  
+                  <div className="flex gap-4">
+                    <Button
+                      size="lg"
+                      onClick={generateJSON}
+                      disabled={!allChecked || generating}
+                    >
+                      {generating ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="mr-2 h-4 w-4" />
+                      )}
+                      Generate ITR JSON
+                    </Button>
+                    <Button variant="outline" size="lg" asChild>
+                      <a
+                        href="https://www.incometax.gov.in"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open IT Portal <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    </AppLayout>
+  );
+}
