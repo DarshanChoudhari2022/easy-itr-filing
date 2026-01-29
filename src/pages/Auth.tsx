@@ -13,11 +13,11 @@ export default function Auth() {
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
   const [loading, setLoading] = useState(false);
-  
+
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  
+
   // Signup form state
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -29,11 +29,11 @@ export default function Auth() {
       toast.error("Please fill in all fields");
       return;
     }
-    
+
     setLoading(true);
     const { error } = await signIn(loginEmail, loginPassword);
     setLoading(false);
-    
+
     if (error) {
       toast.error(error.message);
     } else {
@@ -48,16 +48,16 @@ export default function Auth() {
       toast.error("Please fill in all fields");
       return;
     }
-    
+
     if (signupPassword.length < 6) {
       toast.error("Password must be at least 6 characters");
       return;
     }
-    
+
     setLoading(true);
     const { error } = await signUp(signupEmail, signupPassword, signupName);
     setLoading(false);
-    
+
     if (error) {
       toast.error(error.message);
     } else {
@@ -73,20 +73,20 @@ export default function Auth() {
         <div>
           <div className="flex items-center gap-3 mb-12">
             <div className="h-12 w-12 rounded-lg bg-accent flex items-center justify-center font-bold text-xl text-accent-foreground">
-              BT
+              T
             </div>
-            <span className="text-2xl font-bold">BharatTax</span>
+            <span className="text-2xl font-bold">TaxBay</span>
           </div>
-          
+
           <h1 className="text-4xl font-bold mb-4">
             Simplify Your Tax Filing Journey
           </h1>
           <p className="text-lg text-primary-foreground/80 mb-12">
-            AI-powered tax filing for individuals and professionals. 
+            AI-powered tax filing for individuals and professionals.
             File ITR 1-4 with confidence.
           </p>
         </div>
-        
+
         <div className="space-y-6">
           <div className="flex items-start gap-4">
             <div className="h-10 w-10 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
@@ -99,7 +99,7 @@ export default function Auth() {
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-4">
             <div className="h-10 w-10 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
               <TrendingUp className="h-5 w-5 text-accent" />
@@ -111,7 +111,7 @@ export default function Auth() {
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-4">
             <div className="h-10 w-10 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
               <FileText className="h-5 w-5 text-accent" />
@@ -124,29 +124,29 @@ export default function Auth() {
             </div>
           </div>
         </div>
-        
+
         <p className="text-sm text-primary-foreground/50">
-          © 2026 BharatTax. All rights reserved.
+          © 2026 TaxBay. All rights reserved.
         </p>
       </div>
-      
+
       {/* Right side - Auth forms */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
             <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center font-bold text-lg text-primary-foreground">
-              BT
+              T
             </div>
-            <span className="text-xl font-bold">BharatTax</span>
+            <span className="text-xl font-bold">TaxBay</span>
           </div>
-          
+
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-8">
               <TabsTrigger value="login">Login</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="login">
               <Card>
                 <CardHeader>
@@ -195,7 +195,7 @@ export default function Auth() {
                 </form>
               </Card>
             </TabsContent>
-            
+
             <TabsContent value="signup">
               <Card>
                 <CardHeader>
@@ -259,7 +259,7 @@ export default function Auth() {
               </Card>
             </TabsContent>
           </Tabs>
-          
+
           <p className="text-center text-sm text-muted-foreground mt-6">
             By continuing, you agree to our Terms of Service and Privacy Policy
           </p>

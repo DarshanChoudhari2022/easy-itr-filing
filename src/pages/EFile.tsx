@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, FileText, CheckCircle2, Download, ExternalLink, AlertCircle, RefreshCw, Building2, Landmark, FileCheck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { FolderLock, ShieldCheck, Zap, DownloadCloud } from "lucide-react";
 
 interface TaxSummary {
   total_income: number;
@@ -29,12 +31,13 @@ interface Profile {
 
 export default function EFile() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [fetchingAIS, setFetchingAIS] = useState(false);
-  
+
   const [checklist, setChecklist] = useState({
     incomeAdded: false,
     deductionsVerified: false,
@@ -42,6 +45,8 @@ export default function EFile() {
     regimeSelected: false,
     documentsReady: false,
   });
+
+  const [auditPackGenerating, setAuditPackGenerating] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -60,7 +65,7 @@ export default function EFile() {
 
       setTaxSummary(taxRes.data);
       setProfile(profileRes.data);
-      
+
       // Auto-check based on data
       setChecklist(prev => ({
         ...prev,
@@ -88,12 +93,12 @@ export default function EFile() {
       toast.error("Please add your PAN number in Settings first");
       return;
     }
-    
+
     setGenerating(true);
-    
+
     // Simulate JSON generation
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    
+
     const itrData = {
       formType: taxSummary?.suggested_itr_form || "ITR-1",
       assessmentYear: "2026-27",
@@ -114,7 +119,7 @@ export default function EFile() {
         tdsCredit: taxSummary?.tds_total || 0,
       },
     };
-    
+
     // Download JSON
     const blob = new Blob([JSON.stringify(itrData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -125,9 +130,39 @@ export default function EFile() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
-    toast.success("ITR JSON downloaded! Upload this to the Income Tax Portal");
+
+    toast.success("ITR JSON downloaded! Redirecting to confirmation...");
     setGenerating(false);
+
+    // Redirect to success after a short delay
+    setTimeout(() => {
+      navigate("/success");
+    }, 1500);
+  };
+
+  const generateAuditPack = async () => {
+    setAuditPackGenerating(true);
+    await new Promise(r => setTimeout(r, 2500));
+
+    // Mock Audit Pack (Zip simulation)
+    const files = [
+      "TaxBay_Computation_AY2026.pdf",
+      "AIS_Reconciliation_Report.pdf",
+      "Crypto_FIFO_Audit_Trail.pdf",
+      "Section_80_Proofs_Snapshot.pdf"
+    ];
+
+    const blob = new Blob([`Audit Pack for ${profile?.pan_number}\nFiles: ${files.join(", ")}`], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `AUDIT_DEFENSE_PACK_${profile?.pan_number}.txt`; // Simplified as txt for demo
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    toast.success("Audit Defense Pack Generated! Keep this for 8 years.");
+    setAuditPackGenerating(false);
   };
 
   const formatCurrency = (amount: number) => {
@@ -139,17 +174,17 @@ export default function EFile() {
   };
 
   const allChecked = Object.values(checklist).every(Boolean);
-  const taxDue = taxSummary 
+  const taxDue = taxSummary
     ? Math.max(
-        (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime) - taxSummary.tds_total,
-        0
-      )
+      (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime) - taxSummary.tds_total,
+      0
+    )
     : 0;
-  const refund = taxSummary 
+  const refund = taxSummary
     ? Math.max(
-        taxSummary.tds_total - (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime),
-        0
-      )
+      taxSummary.tds_total - (taxSummary.suggested_regime === "old" ? taxSummary.tax_old_regime : taxSummary.tax_new_regime),
+      0
+    )
     : 0;
 
   return (
@@ -172,6 +207,40 @@ export default function EFile() {
           </div>
         ) : (
           <>
+            {/* Level 2 Automation: AI Data Intake */}
+            <Card className="border-indigo-100 bg-indigo-50/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-indigo-900">
+                  <Zap className="h-5 w-5 fill-indigo-500" />
+                  AI Auto-Fill (Beta)
+                </CardTitle>
+                <CardDescription className="text-indigo-800">
+                  Zero manual entry. Let AI scan your documents and populate your ITR.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                  <div className="flex items-center justify-between mb-3">
+                    <FileText className="h-8 w-8 text-indigo-600" />
+                    <Badge className="bg-indigo-100 text-indigo-700">98% ACCURACY</Badge>
+                  </div>
+                  <h4 className="font-bold text-slate-900">Form 16 Intelligent Scanner</h4>
+                  <p className="text-[10px] text-slate-500 mt-1 uppercase font-black">Requires PDF Part A & B</p>
+                  <Button variant="ghost" size="sm" className="w-full mt-4 border-dashed border-2 border-indigo-100 group-hover:bg-indigo-50">Upload PDF</Button>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                  <div className="flex items-center justify-between mb-3">
+                    <Landmark className="h-8 w-8 text-indigo-600" />
+                    <Badge className="bg-indigo-100 text-indigo-700">EXPERIMENTAL</Badge>
+                  </div>
+                  <h4 className="font-bold text-slate-900">Bank CSV Macro-Parser</h4>
+                  <p className="text-[10px] text-slate-500 mt-1 uppercase font-black">HDFC, ICICI, SBI Only</p>
+                  <Button variant="ghost" size="sm" className="w-full mt-4 border-dashed border-2 border-indigo-100 group-hover:bg-indigo-50">Upload CSV</Button>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* External Integrations */}
             <Card>
               <CardHeader>
@@ -245,7 +314,7 @@ export default function EFile() {
                     </p>
                   </div>
                 )}
-                
+
                 {taxSummary?.suggested_regime && (
                   <div className="mt-4 flex items-center gap-4">
                     <Badge variant="outline" className="text-sm">
@@ -283,7 +352,7 @@ export default function EFile() {
                     All income sources have been added (Salary, Property, Capital Gains, etc.)
                   </label>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <Checkbox
                     id="deductions"
@@ -296,7 +365,7 @@ export default function EFile() {
                     All deductions and exemptions have been claimed
                   </label>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <Checkbox
                     id="bank"
@@ -309,7 +378,7 @@ export default function EFile() {
                     Bank account details for refund are correct
                   </label>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <Checkbox
                     id="regime"
@@ -322,7 +391,7 @@ export default function EFile() {
                     Tax regime has been selected (Old/New)
                   </label>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <Checkbox
                     id="documents"
@@ -342,16 +411,15 @@ export default function EFile() {
             <Card className={allChecked ? "border-accent" : ""}>
               <CardContent className="py-8">
                 <div className="flex flex-col items-center text-center">
-                  <div className={`h-16 w-16 rounded-full flex items-center justify-center mb-4 ${
-                    allChecked ? "bg-accent/20" : "bg-muted"
-                  }`}>
+                  <div className={`h-16 w-16 rounded-full flex items-center justify-center mb-4 ${allChecked ? "bg-accent/20" : "bg-muted"
+                    }`}>
                     {allChecked ? (
                       <CheckCircle2 className="h-8 w-8 text-accent" />
                     ) : (
                       <FileText className="h-8 w-8 text-muted-foreground" />
                     )}
                   </div>
-                  
+
                   <h3 className="text-xl font-semibold mb-2">
                     {allChecked ? "Ready to Generate ITR" : "Complete the Checklist"}
                   </h3>
@@ -360,27 +428,44 @@ export default function EFile() {
                       ? "All checks passed! Generate your ITR JSON file and upload it to the Income Tax Portal."
                       : "Please verify all items in the checklist above before generating your ITR."}
                   </p>
-                  
-                  <div className="flex gap-4">
+
+                  <div className="flex flex-wrap justify-center gap-4">
                     <Button
                       size="lg"
+                      className="bg-indigo-600 hover:bg-indigo-700 h-14 px-8 rounded-2xl font-black shadow-xl"
                       onClick={generateJSON}
                       disabled={!allChecked || generating}
                     >
                       {generating ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       ) : (
-                        <Download className="mr-2 h-4 w-4" />
+                        <DownloadCloud className="mr-2 h-5 w-5" />
                       )}
-                      Generate ITR JSON
+                      GENERATE ITR JSON
                     </Button>
-                    <Button variant="outline" size="lg" asChild>
+
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="h-14 px-8 rounded-2xl font-black border-2 border-slate-200"
+                      onClick={generateAuditPack}
+                      disabled={auditPackGenerating}
+                    >
+                      {auditPackGenerating ? (
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="mr-2 h-5 w-5 text-emerald-500" />
+                      )}
+                      AUDIT DEFENSE PACK
+                    </Button>
+
+                    <Button variant="ghost" size="lg" className="h-14 px-6 rounded-2xl" asChild>
                       <a
                         href="https://www.incometax.gov.in"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open IT Portal <ExternalLink className="ml-2 h-4 w-4" />
+                        OPEN PORTAL <ExternalLink className="ml-2 h-4 w-4" />
                       </a>
                     </Button>
                   </div>
