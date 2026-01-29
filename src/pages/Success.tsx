@@ -69,7 +69,7 @@ export default function Success() {
                                 <ShieldCheck className="h-5 w-5" />
                             </div>
                             <div className="text-left">
-                                <p className="font-bold text-slate-900">TaxBay Audit Archive</p>
+                                <p className="font-bold text-slate-900">TaxMitra Audit Archive</p>
                                 <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">Secured for 8 Years (Section 149)</p>
                             </div>
                         </div>

@@ -177,7 +177,7 @@ export default function GuidedFiling() {
                                     <CardHeader className="bg-muted/30">
                                         <div className="flex items-center gap-2 text-primary mb-2">
                                             <Sparkles className="h-4 w-4" />
-                                            <span className="text-[10px] font-bold uppercase tracking-widest">TaxBay Intelligent Guide</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-widest">TaxMitra Intelligent Guide</span>
                                         </div>
                                         <CardTitle className="text-2xl">{currentStep.title}</CardTitle>
                                         <CardDescription>{currentStep.description}</CardDescription>
@@ -256,13 +256,20 @@ const ProfileStep = ({ data, update }: any) => {
 
 const IncomeStep = ({ data, update }: any) => {
     const sources = [
-        { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" /> },
-        { id: 'house_1', label: 'Single House Property', icon: <Building className="h-4 w-4" /> },
-        { id: 'house_multi', label: 'Multiple House Properties', icon: <Building className="h-4 w-4" /> },
-        { id: 'business', label: 'Freelancing / Consultancy / Business', icon: <Building className="h-4 w-4" /> },
-        { id: 'crypto', label: 'Crypto / VDAs (Section 115BBH)', icon: <Bitcoin className="h-4 w-4" /> },
-        { id: 'capital_gains', label: 'Stock Market / Mutual Fund Gains', icon: <TrendingUp className="h-4 w-4" /> },
-        { id: 'foreign', label: 'Foreign Income / US Shares', icon: <Globe className="h-4 w-4" /> },
+        { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income from employer or government pension' },
+        { id: 'house_1', label: 'Single House Property', icon: <Building className="h-4 w-4" />, desc: 'Rent from one property you own' },
+        { id: 'house_multi', label: 'Multiple House Properties', icon: <Building className="h-4 w-4" />, desc: 'Rent from 2+ properties' },
+        { id: 'business', label: 'Freelancing / Consultancy', icon: <Building className="h-4 w-4" />, desc: 'Self-employed income, invoiced clients' },
+        { id: 'self_employed', label: 'Self-Employed / Professional', icon: <Wallet className="h-4 w-4" />, desc: 'Doctor, Lawyer, CA, Architect, etc.' },
+        { id: 'crypto', label: 'Crypto / VDAs (Section 115BBH)', icon: <Bitcoin className="h-4 w-4" />, desc: 'Bitcoin, Ethereum, NFTs, etc.' },
+        { id: 'capital_gains', label: 'Stock Market / Mutual Funds', icon: <TrendingUp className="h-4 w-4" />, desc: 'LTCG, STCG from equity/debt funds' },
+        { id: 'foreign', label: 'Foreign Income / US Shares', icon: <Globe className="h-4 w-4" />, desc: 'RSUs, ESOPs, Dividends from US stocks' },
+        { id: 'interest', label: 'Interest Income (FD/Savings)', icon: <Wallet className="h-4 w-4" />, desc: 'Bank FDs, RDs, Savings account interest' },
+        { id: 'dividend', label: 'Dividend Income', icon: <TrendingUp className="h-4 w-4" />, desc: 'Dividends from Indian/Foreign stocks' },
+        { id: 'agriculture', label: 'Agricultural Income', icon: <Building className="h-4 w-4" />, desc: 'Income from farming (exempt but reportable)' },
+        { id: 'lottery', label: 'Lottery / Game Show Winnings', icon: <Wallet className="h-4 w-4" />, desc: 'Taxed at 30% flat under Section 115BB' },
+        { id: 'zero_income', label: 'No Taxable Income / Zero Filing', icon: <Wallet className="h-4 w-4" />, desc: 'Filing for refund or compliance only' },
+        { id: 'other', label: 'Other Income', icon: <Wallet className="h-4 w-4" />, desc: 'Commission, gifts, family pension, etc.' },
     ];
 
     const toggleSource = (id: string) => {
@@ -275,8 +282,9 @@ const IncomeStep = ({ data, update }: any) => {
 
     const determineITR = () => {
         const s = data.sources || [];
-        if (s.includes('business')) return "ITR-3 (or ITR-4 for Presumptive)";
-        if (s.includes('crypto') || s.includes('capital_gains') || s.includes('house_multi') || s.includes('foreign')) return "ITR-2";
+        if (s.length === 0 || (s.length === 1 && s.includes('zero_income'))) return "ITR-1 (Sahaj) - Zero Filing";
+        if (s.includes('business') || s.includes('self_employed')) return "ITR-3 (or ITR-4 for Presumptive)";
+        if (s.includes('crypto') || s.includes('capital_gains') || s.includes('house_multi') || s.includes('foreign') || s.includes('lottery')) return "ITR-2";
         if (s.length > 0) return "ITR-1 (Sahaj)";
         return "Not determined";
     };
@@ -286,7 +294,8 @@ const IncomeStep = ({ data, update }: any) => {
     return (
         <div className="space-y-6">
             <h3 className="text-lg font-bold text-slate-900">Where did you earn money? (Select all that apply)</h3>
-            <div className="grid gap-3">
+            <p className="text-sm text-slate-500 -mt-4">Select all income sources you had during FY 2025-26 (April 2025 - March 2026)</p>
+            <div className="grid gap-3 max-h-[450px] overflow-y-auto pr-2">
                 {sources.map(s => (
                     <div
                         key={s.id}
@@ -296,12 +305,15 @@ const IncomeStep = ({ data, update }: any) => {
                             : 'border-slate-100 hover:border-slate-200 bg-white'
                             }`}
                     >
-                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
                             }`}>
                             {s.icon}
                         </div>
-                        <span className="font-bold text-slate-700 flex-1">{s.label}</span>
-                        <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'
+                        <div className="flex-1">
+                            <span className="font-bold text-slate-700 block">{s.label}</span>
+                            <span className="text-xs text-slate-400">{s.desc}</span>
+                        </div>
+                        <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center shrink-0 ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'
                             }`}>
                             {(data.sources || []).includes(s.id) && <CheckCircle2 className="h-4 w-4 text-white" />}
                         </div>

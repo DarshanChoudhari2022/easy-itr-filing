@@ -159,7 +159,7 @@ export default function Crypto() {
           <AlertTriangle className="h-5 w-5 text-warning shrink-0" />
           <div className="text-xs text-muted-foreground leading-relaxed">
             <strong>Note on Loss Disallowance:</strong> As per the Finance Act 2022, loss from transfer of one VDA cannot be set-off against gain from transfer of another VDA.
-            TaxBay enforces this rule token-by-token at the transaction level to ensure audit-proof filing.
+            TaxMitra enforces this rule token-by-token at the transaction level to ensure audit-proof filing.
           </div>
         </div>
       </div>

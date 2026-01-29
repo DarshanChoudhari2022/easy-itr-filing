@@ -6,13 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, Shield, TrendingUp, FileText } from "lucide-react";
+import { Loader2, Shield, TrendingUp, FileText, Mail, CheckCircle2, Sparkles } from "lucide-react";
 
 export default function Auth() {
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState("");
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
@@ -61,10 +64,68 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Account created successfully!");
-      navigate("/dashboard");
+      // Show email confirmation popup
+      setRegisteredEmail(signupEmail);
+      setShowEmailConfirmation(true);
     }
   };
+
+  // Email Confirmation Modal
+  const EmailConfirmationModal = () => (
+    <Dialog open={showEmailConfirmation} onOpenChange={setShowEmailConfirmation}>
+      <DialogContent className="sm:max-w-md text-center">
+        <DialogHeader className="text-center items-center">
+          <div className="mx-auto h-20 w-20 rounded-full bg-gradient-to-br from-indigo-100 to-teal-100 flex items-center justify-center mb-4">
+            <Mail className="h-10 w-10 text-indigo-600" />
+          </div>
+          <DialogTitle className="text-2xl font-bold">Check Your Email!</DialogTitle>
+          <DialogDescription className="text-base mt-2">
+            We've sent a confirmation link to
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          <p className="text-lg font-semibold text-indigo-600 bg-indigo-50 rounded-lg py-3 px-4">
+            {registeredEmail}
+          </p>
+        </div>
+
+        <div className="space-y-4 text-left bg-slate-50 rounded-xl p-4">
+          <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-indigo-500" />
+            Next Steps:
+          </h4>
+          <ol className="space-y-3 text-sm text-slate-600">
+            <li className="flex items-start gap-3">
+              <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">1</span>
+              <span>Open your email inbox (check spam folder too)</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">2</span>
+              <span>Click the <strong>"Confirm your email"</strong> link in the email from TaxMitra</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">3</span>
+              <span>Come back here and log in to start filing!</span>
+            </li>
+          </ol>
+        </div>
+
+        <div className="flex flex-col gap-3 mt-4">
+          <Button
+            onClick={() => setShowEmailConfirmation(false)}
+            className="w-full bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-700 hover:to-teal-600"
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Got it, I'll check my email
+          </Button>
+          <p className="text-xs text-slate-400">
+            Didn't receive the email? Check your spam folder or <button className="text-indigo-600 hover:underline">resend verification</button>
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <div className="min-h-screen flex">
@@ -72,10 +133,8 @@ export default function Auth() {
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-primary text-primary-foreground p-12 flex-col justify-between">
         <div>
           <div className="flex items-center gap-3 mb-12">
-            <div className="h-12 w-12 rounded-lg bg-accent flex items-center justify-center font-bold text-xl text-accent-foreground">
-              T
-            </div>
-            <span className="text-2xl font-bold">TaxBay</span>
+            <img src="/logo.png" alt="TaxMitra" className="h-12 w-12 rounded-xl" />
+            <span className="text-2xl font-bold">TaxMitra</span>
           </div>
 
           <h1 className="text-4xl font-bold mb-4">
@@ -126,7 +185,7 @@ export default function Auth() {
         </div>
 
         <p className="text-sm text-primary-foreground/50">
-          © 2026 TaxBay. All rights reserved.
+          © 2026 TaxMitra Technologies. All rights reserved.
         </p>
       </div>
 
@@ -135,10 +194,8 @@ export default function Auth() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center font-bold text-lg text-primary-foreground">
-              T
-            </div>
-            <span className="text-xl font-bold">TaxBay</span>
+            <img src="/logo.png" alt="TaxMitra" className="h-10 w-10 rounded-xl" />
+            <span className="text-xl font-bold">TaxMitra</span>
           </div>
 
           <Tabs defaultValue="login" className="w-full">
@@ -265,6 +322,9 @@ export default function Auth() {
           </p>
         </div>
       </div>
+
+      {/* Email Confirmation Modal */}
+      <EmailConfirmationModal />
     </div>
   );
 }

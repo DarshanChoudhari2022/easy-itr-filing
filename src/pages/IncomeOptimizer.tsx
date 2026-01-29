@@ -143,7 +143,7 @@ export default function IncomeOptimizer() {
                         <ShieldCheck className="h-10 w-10 text-emerald-400" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold">TaxBay Maximum Refund Guarantee</h3>
+                        <h3 className="text-xl font-bold">TaxMitra Maximum Refund Guarantee</h3>
                         <p className="text-slate-400 text-sm mt-1 leading-relaxed">
                             Our algorithm processes 40,000+ permutations of your data to ensure you pay the absolute minimum tax required by law.
                             If you find a lower liability elsewhere, we'll refund our service fee.

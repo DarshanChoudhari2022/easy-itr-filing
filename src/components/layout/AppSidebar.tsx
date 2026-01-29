@@ -74,12 +74,10 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-2 py-2">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground font-bold text-lg">
-            T
-          </div>
+          <img src="/logo.png" alt="TaxMitra" className="h-10 w-10 rounded-xl" />
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-semibold text-sidebar-foreground">TaxBay</span>
+              <span className="font-bold text-sidebar-foreground bg-gradient-to-r from-indigo-400 to-teal-400 bg-clip-text text-transparent">TaxMitra</span>
               <span className="text-xs text-sidebar-foreground/60">AY 2026-27</span>
             </div>
           )}

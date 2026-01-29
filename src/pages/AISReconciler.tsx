@@ -183,7 +183,7 @@ export default function AISReconciler() {
                             </CardHeader>
                             <CardContent className="text-xs space-y-2 opacity-90 leading-relaxed">
                                 <p>90% of IT notices in AY 2025-26 were due to mismatch between AIS and ITR declarations.</p>
-                                <p>TaxBay auto-verifies your AIS every 15 days to ensure you never miss an reporting entry.</p>
+                                <p>TaxMitra auto-verifies your AIS every 15 days to ensure you never miss an reporting entry.</p>
                             </CardContent>
                         </Card>
                     </div>

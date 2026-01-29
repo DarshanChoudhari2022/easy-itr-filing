@@ -78,7 +78,7 @@ export default function ForeignCompliance() {
                             <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">
                                 As an Indian resident, failing to disclose foreign assets (including RSUs, bank accounts, or ESOPs from US employers)
                                 can lead to a <strong>₹10,00,000 penalty</strong> per year and prosecution, even if the income was not taxable.
-                                TaxBay helps you automate <strong>Schedule FA</strong> filing to stay 100% safe.
+                                TaxMitra helps you automate <strong>Schedule FA</strong> filing to stay 100% safe.
                             </p>
                         </div>
                     </div>

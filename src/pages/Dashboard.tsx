@@ -88,7 +88,7 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight flex items-center gap-4">
-              TaxBay Cockpit <Badge className="bg-indigo-600 text-[10px] animate-pulse">LIVE AY 2026-27</Badge>
+              TaxMitra Dashboard <Badge className="bg-gradient-to-r from-indigo-600 to-teal-500 text-[10px] animate-pulse">LIVE AY 2026-27</Badge>
             </h1>
             <p className="text-muted-foreground font-medium mt-1">
               Welcome back, {profile?.full_name || user?.email?.split("@")[0]} • Your data is secured with AES-256.

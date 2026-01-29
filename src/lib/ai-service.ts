@@ -26,7 +26,7 @@ export async function askTaxGuru(question: string): Promise<AIResponse> {
                 },
                 method: "POST",
                 body: JSON.stringify({
-                    inputs: `[INST] You are TaxBay Guru, an AI assistant specializing in Indian Income Tax, GST, and Crypto regulations. Answer the following question accurately and concisely according to the latest Finance Act 2024-25. Question: ${question} [/INST]`,
+                    inputs: `[INST] You are TaxMitra Guru, an AI assistant specializing in Indian Income Tax, GST, and Crypto regulations. Answer the following question accurately and concisely according to the latest Finance Act 2024-25. Question: ${question} [/INST]`,
                     parameters: {
                         max_new_tokens: 500,
                         temperature: 0.7,
