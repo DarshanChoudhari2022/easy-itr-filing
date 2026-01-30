@@ -12,7 +12,6 @@ import {
     Building,
     User,
     Bitcoin,
-    Globe,
     Wallet,
     TrendingUp,
     FileJson,
@@ -41,11 +40,11 @@ type Step = {
 }
 
 const STEPS: Step[] = [
-    { id: "profile", title: "Personal Profile", description: "Basic details & residency" },
-    { id: "income", title: "Income Sources", description: "Salary, Interest, Capital Gains" },
-    { id: "deductions", title: "Tax Savings", description: "Chapter VI-A Investments" },
-    { id: "credits", title: "Tax Credits", description: "TDS, TCS & Advance Tax" },
-    { id: "review", title: "Review & Compute", description: "Final Tax Computation" },
+    { id: "profile", title: "Personal Details", description: "Name, PAN and where you stay" },
+    { id: "income", title: "Income", description: "Your salary, bank interest and earnings" },
+    { id: "deductions", title: "Tax Savings", description: "Investments you made to save tax" },
+    { id: "credits", title: "Tax Paid Already", description: "TDS and other taxes already cut" },
+    { id: "review", title: "Final Result", description: "See your tax summary and download" },
 ];
 
 interface FilingFormData {
@@ -223,13 +222,13 @@ export default function GuidedFiling() {
                 {/* Progress Header */}
                 <div className="space-y-4">
                     <div className="flex justify-between items-end">
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight">Systematic Filing Wizard</h1>
-                            <p className="text-muted-foreground">Relax, we'll guide you through every regulation.</p>
+                        <div className="animate-in slide-in-from-top duration-500">
+                            <h1 className="text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-emerald-600">Smart Tax Wizard</h1>
+                            <p className="text-muted-foreground font-medium">Don't worry about the jargon. Just answer these simple questions.</p>
                         </div>
-                        <span className="text-sm font-medium text-primary">Step {currentStepIndex + 1} of {STEPS.length}</span>
+                        <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 uppercase tracking-widest">Step {currentStepIndex + 1} of {STEPS.length}</span>
                     </div>
-                    <Progress value={progress} className="h-2" />
+                    <Progress value={progress} className="h-2 bg-slate-100" />
                 </div>
 
                 <div className="grid lg:grid-cols-4 gap-8">
@@ -333,31 +332,40 @@ const ProfileStep = ({ data, update }: StepProps) => {
         <div className="space-y-6">
             <div className="grid gap-4">
                 <div className="space-y-2">
-                    <Label htmlFor="pan">Permanent Account Number (PAN)</Label>
+                    <div className="flex items-center gap-2">
+                        <Label htmlFor="pan" className="font-bold">Enter your PAN Card Number</Label>
+                        <HelpCircle content="PAN is your 10-digit unique tax ID. You can find it on your PAN card or your Form 16." />
+                    </div>
                     <Input
                         id="pan"
-                        placeholder="ABCDE1234F"
+                        placeholder="e.g. ABCDE1234F"
                         value={data.pan || ""}
                         onChange={(e) => update({ ...data, pan: e.target.value.toUpperCase() })}
-                        className="font-mono text-lg tracking-wider"
+                        className="font-mono text-lg tracking-wider border-2 border-slate-100 focus:border-indigo-600 h-12"
                     />
+                    <p className="text-[10px] text-slate-500">This helps us pre-fill your data to save you time.</p>
                 </div>
 
-                <h3 className="text-lg font-bold text-slate-900 mt-4">Residency Status</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {profiles.map(p => (
-                        <div
-                            key={p.id}
-                            onClick={() => update({ ...data, residency: p.id })}
-                            className={`p-6 rounded-2xl border-2 transition-all cursor-pointer ${data.residency === p.id
-                                ? 'border-indigo-600 bg-indigo-50/50 ring-4 ring-indigo-50'
-                                : 'border-slate-100 bg-white hover:border-slate-200'
-                                }`}
-                        >
-                            <h4 className="font-bold mb-1">{p.title}</h4>
-                            <p className="text-xs text-slate-500 font-medium">{p.desc}</p>
-                        </div>
-                    ))}
+                <div className="pt-4">
+                    <div className="flex items-center gap-2 mb-4">
+                        <h3 className="text-lg font-bold text-slate-900">Where do you live?</h3>
+                        <HelpCircle content="Tax rules change based on whether you live in India or abroad." />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {profiles.map(p => (
+                            <div
+                                key={p.id}
+                                onClick={() => update({ ...data, residency: p.id })}
+                                className={`p-6 rounded-2xl border-2 transition-all cursor-pointer ${data.residency === p.id
+                                    ? 'border-indigo-600 bg-indigo-50/50 ring-4 ring-indigo-50'
+                                    : 'border-slate-100 bg-white hover:border-slate-200'
+                                    }`}
+                            >
+                                <h4 className="font-bold mb-1">{p.title}</h4>
+                                <p className="text-xs text-slate-500 font-medium">{p.desc}</p>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
@@ -366,12 +374,12 @@ const ProfileStep = ({ data, update }: StepProps) => {
 
 const IncomeStep = ({ data, update }: StepProps) => {
     const sources = [
-        { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income fixed by employer' },
-        { id: 'business', label: 'Freelancer / Consultant', icon: <User className="h-4 w-4" />, desc: 'Professional or Business income' },
-        { id: 'interest', label: 'Interest & Dividends', icon: <IndianRupee className="h-4 w-4" />, desc: 'Savings, FD & Stock dividends' },
-        { id: 'crypto', label: 'Crypto / VDAs', icon: <Bitcoin className="h-4 w-4" />, desc: 'Bitcoin, NFTs, Trading gains' },
-        { id: 'house_property', label: 'House Property', icon: <Building className="h-4 w-4" />, desc: 'Rental income from owned property' },
-        { id: 'other', label: 'Other Sources', icon: <Sparkles className="h-4 w-4" />, desc: 'Commission, lottery, etc.' },
+        { id: 'salary', label: 'Salary / Job', icon: <Wallet className="h-4 w-4" />, desc: 'For those working in a company' },
+        { id: 'business', label: 'Freelancer / Own Work', icon: <User className="h-4 w-4" />, desc: 'For consultants and self-employed' },
+        { id: 'interest', label: 'Bank Interest', icon: <IndianRupee className="h-4 w-4" />, desc: 'Savings and FD interest' },
+        { id: 'crypto', label: 'Crypto / Bitcoin', icon: <Bitcoin className="h-4 w-4" />, desc: 'Earnings from crypto trading' },
+        { id: 'house_property', label: 'Rent Received', icon: <Building className="h-4 w-4" />, desc: 'Money you get from tenants' },
+        { id: 'other', label: 'Other Earnings', icon: <Sparkles className="h-4 w-4" />, desc: 'Lottery, Gifts, etc.' },
     ];
 
     const toggleSource = (id: string) => {
@@ -412,12 +420,15 @@ const IncomeStep = ({ data, update }: StepProps) => {
             <div className="space-y-6">
                 {currentSources.includes('salary') && (
                     <div className="space-y-2 animate-in slide-in-from-left duration-300">
-                        <Label className="text-sm font-bold">Annual Gross Salary (Before Deductions)</Label>
+                        <div className="flex items-center gap-2">
+                            <Label className="text-sm font-bold">What was your total salary for the year?</Label>
+                            <HelpCircle content="Look for 'Gross Salary' on your Form 16 or your last salary slip." />
+                        </div>
                         <div className="relative">
                             <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">₹</span>
                             <Input
                                 type="number"
-                                className="pl-8 h-12 text-lg font-black"
+                                className="pl-8 h-12 text-lg font-black border-2 border-slate-100"
                                 value={data.salary || ""}
                                 onChange={(e) => update({ ...data, salary: Number(e.target.value) })}
                                 placeholder="12,00,000"
@@ -428,9 +439,10 @@ const IncomeStep = ({ data, update }: StepProps) => {
 
                 {currentSources.includes('business') && (
                     <div className="space-y-2 animate-in slide-in-from-left duration-300">
-                        <Label className="text-sm font-bold flex items-center gap-2">
-                            <User className="h-4 w-4 text-indigo-500" /> Professional / Freelance Income (Net Taxable)
-                        </Label>
+                        <div className="flex items-center gap-2">
+                            <Label className="text-sm font-bold">Earnings from Freelancing / Consulting</Label>
+                            <HelpCircle content="If you are a professional (doctor, engineer, etc), you only pay tax on 50% of what you earned." />
+                        </div>
                         <div className="relative">
                             <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">₹</span>
                             <Input
@@ -438,10 +450,10 @@ const IncomeStep = ({ data, update }: StepProps) => {
                                 className="pl-8 h-12 text-lg font-black border-indigo-200"
                                 value={data.businessIncome || ""}
                                 onChange={(e) => update({ ...data, businessIncome: Number(e.target.value) })}
-                                placeholder="Example: 50% of gross receipts (Sec 44ADA)"
+                                placeholder="Enter net profit"
                             />
                         </div>
-                        <p className="text-[10px] text-muted-foreground italic">Enter your net profit after expenses. Professionals can claim 50% of receipts as profit.</p>
+                        <p className="text-[10px] text-muted-foreground italic">Tip: Take your total receipts and subtract your business expenses.</p>
                     </div>
                 )}
 
@@ -551,39 +563,45 @@ const DeductionStep = ({ data, update }: StepProps) => {
                 <div className="p-8 border-2 border-dashed border-indigo-200 rounded-3xl bg-indigo-50/20 text-center space-y-4">
                     <Zap className="h-10 w-10 text-indigo-500 mx-auto animate-pulse" />
                     <div>
-                        <h4 className="font-bold text-indigo-900">New Regime Optimization Active</h4>
+                        <h4 className="font-bold text-indigo-900">New Regime is simpler and usually better</h4>
                         <p className="text-xs text-indigo-800/70 max-w-sm mx-auto leading-relaxed mt-2">
-                            Chapter VI-A deductions (80C, 80D, etc.) are **not available** in the New Regime. However, you get a higher standard deduction of **₹75,000** and lower tax slabs.
+                            You get lower tax rates automatically. You don't need to show any investment receipts like LIC or school fees here.
+                            The government gives you a free **₹75,000** deduction.
                         </p>
                     </div>
-                    <Badge className="bg-indigo-600">Standard Deduction: ₹75,000 applied</Badge>
+                    <Badge className="bg-indigo-600">Standard Discount: ₹75,000 applied</Badge>
                 </div>
             ) : (
                 <div className="space-y-6 animate-in fade-in duration-500">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
-                            <Label className="text-sm font-bold">Section 80C Investments</Label>
+                            <div className="flex items-center gap-2">
+                                <Label className="text-sm font-bold">Investments like PPF, LIC, EPF</Label>
+                                <HelpCircle content="This is what CA's call Section 80C. You can claim up to ₹1.5 Lakhs of savings here." />
+                            </div>
                             <Input
                                 type="number"
                                 className="h-10 font-bold"
                                 value={data.section80C || ""}
                                 onChange={(e) => update({ ...data, section80C: Number(e.target.value) })}
-                                placeholder="ELSS, LIC, PPF, etc."
+                                placeholder="Total savings amount"
                             />
-                            <p className="text-[10px] text-muted-foreground italic">Capped at ₹1.5 Lakhs</p>
                         </div>
                         <div className="space-y-2">
-                            <Label className="text-sm font-bold">Section 80D (Health Insurance)</Label>
+                            <div className="flex items-center gap-2">
+                                <Label className="text-sm font-bold">Health Insurance Premium</Label>
+                                <HelpCircle content="This is Section 80D. If you pay for yourself or your parents' insurance, put the total here." />
+                            </div>
                             <Input
                                 type="number"
                                 className="h-10 font-bold"
                                 value={data.section80D || ""}
                                 onChange={(e) => update({ ...data, section80D: Number(e.target.value) })}
-                                placeholder="Premium for self/family"
+                                placeholder="Insurance paid"
                             />
                         </div>
                     </div>
-                    <Badge className="bg-emerald-500">Standard Deduction: ₹50,000 applied</Badge>
+                    <Badge className="bg-emerald-500">Standard Discount: ₹50,000 applied</Badge>
                 </div>
             )}
         </div>
@@ -593,38 +611,44 @@ const DeductionStep = ({ data, update }: StepProps) => {
 const CreditsStep = ({ data, update }: StepProps) => {
     return (
         <div className="space-y-6">
-            <h3 className="text-lg font-bold">Taxes Already Paid</h3>
-            <p className="text-xs text-muted-foreground -mt-4">Ensure these match your AIS/Form 26AS to avoid notices.</p>
+            <h3 className="text-lg font-bold">Tax that was already cut?</h3>
+            <p className="text-xs text-muted-foreground -mt-4">Sometimes your office or bank cuts tax before paying you. This is called TDS.</p>
 
             <div className="grid gap-6">
-                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6">
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6 group hover:border-indigo-200 transition-all">
                     <div className="h-12 w-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
                         <FileText className="h-6 w-6" />
                     </div>
                     <div className="flex-1 space-y-1">
-                        <Label className="font-bold">Total TDS (Tax Deducted at Source)</Label>
+                        <div className="flex items-center gap-2">
+                            <Label className="font-bold">Total Tax cut by Office/Bank (TDS)</Label>
+                            <HelpCircle content="Check 'Total tax deducted' in your Form 16 or Part A of your tax statement." />
+                        </div>
                         <Input
                             type="number"
-                            className="bg-white font-black"
+                            className="bg-white font-black h-12 text-lg"
                             value={data.tdsPaid || ""}
                             onChange={(e) => update({ ...data, tdsPaid: Number(e.target.value) })}
-                            placeholder="Check Form 16 / 26AS"
+                            placeholder="Enter TDS amount"
                         />
                     </div>
                 </div>
 
-                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6">
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6 group hover:border-emerald-200 transition-all">
                     <div className="h-12 w-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
                         <Zap className="h-6 w-6" />
                     </div>
                     <div className="flex-1 space-y-1">
-                        <Label className="font-bold">Advance Tax / Self-Assessment Tax</Label>
+                        <div className="flex items-center gap-2">
+                            <Label className="font-bold">Any Advance Tax you paid yourself?</Label>
+                            <HelpCircle content="If you went to a bank or the tax website to pay tax yourself during the year, enter it here." />
+                        </div>
                         <Input
                             type="number"
-                            className="bg-white font-black"
+                            className="bg-white font-black h-12 text-lg"
                             value={data.advanceTax || ""}
                             onChange={(e) => update({ ...data, advanceTax: Number(e.target.value) })}
-                            placeholder="Tax paid via challan"
+                            placeholder="Advance tax paid"
                         />
                     </div>
                 </div>
@@ -736,45 +760,19 @@ const BreakdownRow = ({ label, value, bold, faded, highlight, color }: { label: 
     </div>
 );
 
+const HelpCircle = ({ content }: { content: string }) => (
+    <div className="inline-flex items-center text-slate-400 hover:text-indigo-600 cursor-help group relative">
+        <Info className="h-3.5 w-3.5" />
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+            {content}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
+        </div>
+    </div>
+);
+
 // --- Helpers ---
 
-interface OptionCardProps {
-    icon: React.ReactNode;
-    title: string;
-    desc: string;
-}
-
-const OptionCard = ({ icon, title, desc }: OptionCardProps) => (
-    <div className="p-6 rounded-xl border-2 hover:border-primary/50 cursor-pointer bg-background transition-all hover:shadow-lg group">
-        <div className="h-12 w-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-            {icon}
-        </div>
-        <h4 className="font-bold mb-1">{title}</h4>
-        <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
-    </div>
-);
-
-interface SelectionItemProps {
-    icon: React.ReactNode;
-    label: string;
-}
-
-const SelectionItem = ({ icon, label }: SelectionItemProps) => (
-    <div className="flex items-center justify-between p-4 border rounded-xl hover:bg-muted/30 cursor-pointer transition-colors">
-        <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">{icon}</div>
-            <span className="font-medium">{label}</span>
-        </div>
-        <input type="checkbox" className="h-5 w-5 rounded border-primary" />
-    </div>
-);
-
-interface BadgeProps {
-    children: React.ReactNode;
-    className: string;
-}
-
-const Badge = ({ children, className }: BadgeProps) => (
+const Badge = ({ children, className }: { children: React.ReactNode, className: string }) => (
     <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${className}`}>
         {children}
     </span>

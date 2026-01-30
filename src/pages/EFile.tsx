@@ -242,12 +242,12 @@ export default function EFile() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <FileText className="h-8 w-8" />
-              E-File ITR
+            <h1 className="text-3xl font-black tracking-tight flex items-center gap-2 bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">
+              <FileCheck className="h-8 w-8 text-indigo-600" />
+              Finish Filing
             </h1>
-            <p className="text-muted-foreground">
-              Review, verify, and generate your ITR for filing
+            <p className="text-muted-foreground font-medium">
+              Double-check your data and download your final tax file.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -309,7 +309,7 @@ export default function EFile() {
                       setScanning(true);
                       setTimeout(() => {
                         setScanning(false);
-                        toast.success("AI Found: Salary ₹9,50,000 | TDS ₹1,25,000");
+                        toast.success("AI Found: Salary ₹9,50,000 | Tax Already Paid (TDS) ₹1,25,000");
                         // In real app, we would update state/DB here
                       }, 4000);
                     }}
@@ -334,11 +334,11 @@ export default function EFile() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Landmark className="h-5 w-5" />
-                  ITD Sync
+                  <Landmark className="h-5 w-5 text-indigo-600" />
+                  Direct Portal Sync
                 </CardTitle>
                 <CardDescription>
-                  Fetch your AIS (Annual Information Statement) and 26AS from Income Tax Department
+                  Download your Bank & Tax Statement (AIS/26AS) automatically from the government.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-4">
@@ -368,8 +368,8 @@ export default function EFile() {
             {/* Tax Summary */}
             <Card>
               <CardHeader>
-                <CardTitle>Tax Summary</CardTitle>
-                <CardDescription>Your calculated tax for AY 2026-27</CardDescription>
+                <CardTitle>Your Tax Result</CardTitle>
+                <CardDescription>Final computation based on your inputs</CardDescription>
               </CardHeader>
               <CardContent>
                 {taxSummary ? (
@@ -421,11 +421,11 @@ export default function EFile() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileCheck className="h-5 w-5" />
-                  Pre-Filing Checklist
+                  <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                  Final Inspection
                 </CardTitle>
                 <CardDescription>
-                  Verify all items before generating your ITR
+                  Check these boxes to make sure nothing is missing.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -437,8 +437,8 @@ export default function EFile() {
                       setChecklist({ ...checklist, incomeAdded: checked as boolean })
                     }
                   />
-                  <label htmlFor="income" className="text-sm cursor-pointer">
-                    All income sources have been added (Salary, Property, Capital Gains, etc.)
+                  <label htmlFor="income" className="text-sm cursor-pointer font-medium">
+                    I have added all my earnings (Salary, Interest, Rent, etc.)
                   </label>
                 </div>
 
@@ -450,8 +450,8 @@ export default function EFile() {
                       setChecklist({ ...checklist, deductionsVerified: checked as boolean })
                     }
                   />
-                  <label htmlFor="deductions" className="text-sm cursor-pointer">
-                    All deductions and exemptions have been claimed
+                  <label htmlFor="deductions" className="text-sm cursor-pointer font-medium">
+                    I have claimed all my tax savings (80C, 80D, etc.)
                   </label>
                 </div>
 
@@ -463,8 +463,8 @@ export default function EFile() {
                       setChecklist({ ...checklist, bankVerified: checked as boolean })
                     }
                   />
-                  <label htmlFor="bank" className="text-sm cursor-pointer">
-                    Bank account details for refund are correct
+                  <label htmlFor="bank" className="text-sm cursor-pointer font-medium">
+                    My Bank Account for receiving refund is correct
                   </label>
                 </div>
 
@@ -476,8 +476,8 @@ export default function EFile() {
                       setChecklist({ ...checklist, regimeSelected: checked as boolean })
                     }
                   />
-                  <label htmlFor="regime" className="text-sm cursor-pointer">
-                    Tax regime has been selected (Old/New)
+                  <label htmlFor="regime" className="text-sm cursor-pointer font-medium">
+                    I have chosen between the Old and New Tax Regime
                   </label>
                 </div>
 
@@ -489,8 +489,8 @@ export default function EFile() {
                       setChecklist({ ...checklist, documentsReady: checked as boolean })
                     }
                   />
-                  <label htmlFor="documents" className="text-sm cursor-pointer">
-                    All supporting documents are ready for verification
+                  <label htmlFor="documents" className="text-sm cursor-pointer font-medium">
+                    I have all legal documents saved for safety
                   </label>
                 </div>
               </CardContent>
@@ -530,7 +530,7 @@ export default function EFile() {
                       ) : (
                         <DownloadCloud className="mr-2 h-5 w-5" />
                       )}
-                      GENERATE ITR JSON
+                      DOWNLOAD FILING FILE (JSON)
                     </Button>
 
                     <Button
@@ -545,7 +545,7 @@ export default function EFile() {
                       ) : (
                         <ShieldCheck className="mr-2 h-5 w-5 text-emerald-500" />
                       )}
-                      AUDIT DEFENSE PACK
+                      TAX SAFETY FOLDER
                     </Button>
 
                     <Button variant="ghost" size="lg" className="h-14 px-6 rounded-2xl" asChild>

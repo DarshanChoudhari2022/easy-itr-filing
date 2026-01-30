@@ -42,19 +42,19 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { title: "Dashboard", url: "/dashboard", icon: Home },
-  { title: "No-CA Filing", url: "/guided", icon: Sparkles },
-  { title: "Regime Optimizer", url: "/optimizer", icon: Calculator },
-  { title: "AIS Reconciler", url: "/ais", icon: BarChart3 },
-  { title: "Family Group", url: "/family", icon: Users },
-  { title: "Tax Vault", url: "/vault", icon: FolderLock },
+  { title: "Home Dashboard", url: "/dashboard", icon: Home },
+  { title: "Easy Filing Wizard", url: "/guided", icon: Sparkles },
+  { title: "Best Tax Regime", url: "/optimizer", icon: Calculator },
+  { title: "Tax Statement (AIS)", url: "/ais", icon: BarChart3 },
+  { title: "Family & Groups", url: "/family", icon: Users },
+  { title: "My Documents", url: "/vault", icon: FolderLock },
 ];
 
 const taxNavItems = [
-  { title: "GST Intelligence", url: "/gst", icon: Building2 },
-  { title: "Income Tax", url: "/income", icon: Wallet },
-  { title: "Asset Tax (Crypto)", url: "/crypto", icon: Bitcoin },
-  { title: "Global Assets", url: "/foreign", icon: Globe },
+  { title: "Business & GST", url: "/gst", icon: Building2 },
+  { title: "Income Tax Info", url: "/income", icon: Wallet },
+  { title: "Crypto & Coins", url: "/crypto", icon: Bitcoin },
+  { title: "Foreign Assets", url: "/foreign", icon: Globe },
 ];
 
 const professionalNavItems = [
