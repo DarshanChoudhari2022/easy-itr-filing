@@ -169,11 +169,11 @@ export default function Dashboard() {
             <CardHeader className="relative z-10">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-xl flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-indigo-300" /> Start Your "No-CA" Filing
+                  <TrendingUp className="h-5 w-5 text-indigo-300" /> Expert-Backed Filing Console
                 </CardTitle>
                 <button onClick={() => setShowTasks(false)} className="text-indigo-300 hover:text-white"><CheckCircle2 className="h-5 w-5" /></button>
               </div>
-              <CardDescription className="text-indigo-200">Just tell us your income sources. We'll handle the ITR forms and Crypto tax Section 115BBH for you.</CardDescription>
+              <CardDescription className="text-indigo-200">Leverage our intelligent matching engine and professional review systems to optimize your ITR and Crypto compliance.</CardDescription>
             </CardHeader>
             <CardContent className="relative z-10 flex flex-col md:flex-row gap-6 items-center">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
