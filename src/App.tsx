@@ -86,7 +86,7 @@ const App = () => (
             <Route path="/income" element={<ProtectedRoute><Income /></ProtectedRoute>} />
             <Route path="/crypto" element={<ProtectedRoute><Crypto /></ProtectedRoute>} />
             <Route path="/deductions" element={<ProtectedRoute><Deductions /></ProtectedRoute>} />
-            <Route path="/optimizer" element={<ProtectedRoute><IncomeOptimizer /></ProtectedRoute>} />
+            <Route path="/optimizer" element={<ProtectedRoute><Optimizer /></ProtectedRoute>} />
             <Route path="/firm" element={<ProtectedRoute><ProfessionalFirm /></ProtectedRoute>} />
             <Route path="/efile" element={<ProtectedRoute><EFile /></ProtectedRoute>} />
             <Route path="/success" element={<ProtectedRoute><Success /></ProtectedRoute>} />

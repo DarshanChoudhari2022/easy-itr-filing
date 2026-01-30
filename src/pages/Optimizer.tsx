@@ -5,8 +5,11 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, BarChart3, TrendingUp, Check, ArrowRight, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, BarChart3, TrendingUp, Check, ArrowRight, RefreshCw, Sparkles, Calculator } from "lucide-react";
 import { toast } from "sonner";
+import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { calculateTax as calculateTaxEngine } from "@/lib/tax-calculation";
 
 interface TaxSummary {
   id: string;
@@ -46,6 +49,7 @@ export default function Optimizer() {
   const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
+  const [assessmentYear, setAssessmentYear] = useState<AssessmentYear>(DEFAULT_AY);
 
   useEffect(() => {
     if (user) {
@@ -59,7 +63,7 @@ export default function Optimizer() {
         .from("tax_summaries")
         .select("*")
         .eq("user_id", user!.id)
-        .eq("assessment_year", "2026-27")
+        .eq("assessment_year", assessmentYear)
         .maybeSingle();
 
       if (error) throw error;
@@ -71,20 +75,7 @@ export default function Optimizer() {
     }
   };
 
-  const calculateTax = (income: number, slabs: typeof OLD_REGIME_SLABS) => {
-    let tax = 0;
-    let remaining = income;
-
-    for (const slab of slabs) {
-      if (remaining <= 0) break;
-      const taxableInSlab = Math.min(remaining, slab.max - slab.min);
-      tax += taxableInSlab * (slab.rate / 100);
-      remaining -= taxableInSlab;
-    }
-
-    // Add 4% cess
-    return tax * 1.04;
-  };
+  // We will use the calculateTaxEngine from lib/tax-calculation instead of a local one
 
   const recalculateTax = async () => {
     setCalculating(true);
@@ -113,35 +104,35 @@ export default function Optimizer() {
       const totalTds = (incomeSources || []).reduce((sum, s) => sum + Number(s.tds_deducted || 0), 0) +
         (cryptoTrades || []).reduce((sum, t) => sum + Number(t.tds_paid || 0), 0);
 
-      // Crypto gains (taxed at flat 30%, not included in slab calculation)
-      const cryptoGains = (cryptoTrades || [])
-        .filter(t => t.trade_type === "sell" && t.gain_loss && t.gain_loss > 0)
-        .reduce((sum, t) => sum + Number(t.gain_loss), 0);
-      const cryptoTax = cryptoGains * 0.30 * 1.04; // 30% + 4% cess
+      // Use the engine for both regimes
+      const resultOld = calculateTaxEngine({
+        salary: totalIncome,
+        deductions: { section80C: totalDeductions }, // Simplified mapping
+        regime: "old",
+        assessmentYear: assessmentYear
+      });
 
-      // Old Regime: Income - Deductions
-      const taxableIncomeOld = Math.max(totalIncome - totalDeductions, 0);
-      const taxOldRegime = calculateTax(taxableIncomeOld, OLD_REGIME_SLABS) + cryptoTax;
-
-      // New Regime: Income - Standard Deduction only
-      const taxableIncomeNew = Math.max(totalIncome - STANDARD_DEDUCTION_NEW, 0);
-      const taxNewRegime = calculateTax(taxableIncomeNew, NEW_REGIME_SLABS) + cryptoTax;
+      const resultNew = calculateTaxEngine({
+        salary: totalIncome,
+        regime: "new",
+        assessmentYear: assessmentYear
+      });
 
       // Determine suggested regime
-      const suggestedRegime = taxOldRegime <= taxNewRegime ? "old" : "new";
+      const suggestedRegime = resultOld.finalTax <= resultNew.finalTax ? "old" : "new";
 
       // Upsert tax summary
       const { data, error } = await supabase
         .from("tax_summaries")
         .upsert([{
           user_id: user!.id,
-          assessment_year: "2026-27",
+          assessment_year: assessmentYear,
           total_income: totalIncome,
           total_deductions: totalDeductions,
-          taxable_income_old: taxableIncomeOld,
-          taxable_income_new: taxableIncomeNew,
-          tax_old_regime: Math.round(taxOldRegime),
-          tax_new_regime: Math.round(taxNewRegime),
+          taxable_income_old: resultOld.taxableIncome,
+          taxable_income_new: resultNew.taxableIncome,
+          tax_old_regime: Math.round(resultOld.finalTax),
+          tax_new_regime: Math.round(resultNew.finalTax),
           tds_total: totalTds,
           suggested_regime: suggestedRegime as "old" | "new",
           calculated_at: new Date().toISOString(),
@@ -180,21 +171,33 @@ export default function Optimizer() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <BarChart3 className="h-8 w-8" />
-              Tax Optimizer
+              <Calculator className="h-8 w-8 text-indigo-600" />
+              Tax Regime Battleground
             </h1>
             <p className="text-muted-foreground">
-              Compare Old vs New regime to maximize your savings
+              Compare Old vs New regime for AY {assessmentYear}
             </p>
           </div>
-          <Button onClick={recalculateTax} disabled={calculating}>
-            {calculating ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Recalculate
-          </Button>
+          <div className="flex items-center gap-3">
+            <Select value={assessmentYear} onValueChange={(v: AssessmentYear) => setAssessmentYear(v)}>
+              <SelectTrigger className="w-[140px] border-indigo-100 font-bold text-indigo-700">
+                <SelectValue placeholder="Select AY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2024-25">AY 2024-25</SelectItem>
+                <SelectItem value="2025-26">AY 2025-26</SelectItem>
+                <SelectItem value="2026-27">AY 2026-27</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={recalculateTax} disabled={calculating}>
+              {calculating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Recalculate
+            </Button>
+          </div>
         </div>
 
         {loading ? (
