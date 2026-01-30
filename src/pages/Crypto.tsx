@@ -19,9 +19,18 @@ import { useAuth } from "@/hooks/useAuth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 
+interface Trade {
+  id: string;
+  token_symbol: string;
+  trade_type: string;
+  quantity: number;
+  buy_price: number | null;
+  trade_date: string;
+}
+
 export default function Crypto() {
   const { user } = useAuth();
-  const [trades, setTrades] = useState<any[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,12 +40,12 @@ export default function Crypto() {
   const fetchTrades = async () => {
     setLoading(true);
     const { data } = await supabase.from("crypto_trades").select("*");
-    setTrades(data || []);
+    setTrades((data as Trade[]) || []);
     setLoading(false);
   };
 
   // Group by token for the engine
-  const grouped = trades.reduce((acc: any, t) => {
+  const grouped = trades.reduce((acc: Record<string, Transaction[]>, t) => {
     if (!acc[t.token_symbol]) acc[t.token_symbol] = [];
     acc[t.token_symbol].push({
       id: t.id,

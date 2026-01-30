@@ -33,8 +33,14 @@ import {
 } from "lucide-react";
 import TaxChatbot from "@/components/TaxChatbot";
 
+interface AnimatedSectionProps {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}
+
 // Scroll-triggered animation component
-function AnimatedSection({ children, className = "", delay = 0 }: any) {
+function AnimatedSection({ children, className = "", delay = 0 }: AnimatedSectionProps) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -51,8 +57,13 @@ function AnimatedSection({ children, className = "", delay = 0 }: any) {
   );
 }
 
+interface Card3DProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
 // 3D Card with hover effect
-function Card3D({ children, className = "" }: any) {
+function Card3D({ children, className = "" }: Card3DProps) {
   return (
     <motion.div
       whileHover={{
@@ -70,8 +81,14 @@ function Card3D({ children, className = "" }: any) {
   );
 }
 
+interface Float3DProps {
+  children: React.ReactNode;
+  delay?: number;
+  duration?: number;
+}
+
 // Floating 3D element
-function Float3D({ children, delay = 0, duration = 3 }: any) {
+function Float3D({ children, delay = 0, duration = 3 }: Float3DProps) {
   return (
     <motion.div
       animate={{

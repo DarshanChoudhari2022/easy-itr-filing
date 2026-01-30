@@ -39,11 +39,17 @@ const STEPS: Step[] = [
     { id: "review", title: "Review & Compute", description: "See your final tax liability" },
 ];
 
+interface FilingFormData {
+    residency?: string;
+    sources?: string[];
+    [key: string]: unknown; // Allow for dynamic fields for now but typed if possible
+}
+
 export default function GuidedFiling() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
-    const [formData, setFormData] = useState<any>({});
+    const [formData, setFormData] = useState<FilingFormData>({});
     const [loading, setLoading] = useState(true);
     const [dynamicTip, setDynamicTip] = useState("");
     const [loadingTip, setLoadingTip] = useState(false);
@@ -77,7 +83,7 @@ export default function GuidedFiling() {
         if (data) {
             const stepIndex = STEPS.findIndex(s => s.id === data.current_step);
             if (stepIndex !== -1) setCurrentStepIndex(stepIndex);
-            setFormData(data.answers || {});
+            setFormData((data.answers as FilingFormData) || {});
         }
         setLoading(false);
     };
@@ -96,7 +102,8 @@ export default function GuidedFiling() {
                 .upsert({
                     user_id: user!.id,
                     current_step: nextStepId,
-                    answers: formData,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    answers: formData as any,
                     updated_at: new Date().toISOString()
                 });
 
@@ -226,7 +233,12 @@ export default function GuidedFiling() {
 
 // --- Sub-components for Steps ---
 
-const ProfileStep = ({ data, update }: any) => {
+interface StepProps {
+    data: FilingFormData;
+    update: (data: FilingFormData) => void;
+}
+
+const ProfileStep = ({ data, update }: StepProps) => {
     const profiles = [
         { id: 'resident', title: 'Resident Individual', desc: 'Living in India for >182 days' },
         { id: 'nri', title: 'Non-Resident (NRI)', desc: 'Living outside India' },
@@ -254,7 +266,7 @@ const ProfileStep = ({ data, update }: any) => {
     );
 };
 
-const IncomeStep = ({ data, update }: any) => {
+const IncomeStep = ({ data, update }: StepProps) => {
     const sources = [
         { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income from employer or government pension' },
         { id: 'house_1', label: 'Single House Property', icon: <Building className="h-4 w-4" />, desc: 'Rent from one property you own' },
@@ -336,7 +348,7 @@ const IncomeStep = ({ data, update }: any) => {
     );
 };
 
-const DeductionStep = ({ data, update }: any) => (
+const DeductionStep = ({ data, update }: StepProps) => (
     <div className="space-y-6">
         <h3 className="text-lg font-semibold">Max out your savings</h3>
         <p className="text-sm text-muted-foreground">We'll check old vs new regime automatically for you.</p>
@@ -352,7 +364,7 @@ const DeductionStep = ({ data, update }: any) => (
     </div>
 );
 
-const ForeignStep = ({ data, update }: any) => (
+const ForeignStep = ({ data, update }: StepProps) => (
     <div className="space-y-6">
         <h3 className="text-lg font-semibold">International Compliance (Schedule FA)</h3>
         <div className="p-4 rounded-lg border-2 border-warning/20 bg-warning/5">
@@ -371,7 +383,7 @@ const ForeignStep = ({ data, update }: any) => (
     </div>
 );
 
-const ReviewStep = ({ data }: any) => (
+const ReviewStep = ({ data }: { data: Record<string, unknown> }) => (
     <div className="text-center space-y-6 py-10">
         <div className="h-20 w-20 bg-accent/20 rounded-full flex items-center justify-center mx-auto text-accent mb-4">
             <CheckCircle2 className="h-10 w-10" />
@@ -387,7 +399,13 @@ const ReviewStep = ({ data }: any) => (
 
 // --- Helpers ---
 
-const OptionCard = ({ icon, title, desc }: any) => (
+interface OptionCardProps {
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+}
+
+const OptionCard = ({ icon, title, desc }: OptionCardProps) => (
     <div className="p-6 rounded-xl border-2 hover:border-primary/50 cursor-pointer bg-background transition-all hover:shadow-lg group">
         <div className="h-12 w-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             {icon}
@@ -397,7 +415,12 @@ const OptionCard = ({ icon, title, desc }: any) => (
     </div>
 );
 
-const SelectionItem = ({ icon, label }: any) => (
+interface SelectionItemProps {
+    icon: React.ReactNode;
+    label: string;
+}
+
+const SelectionItem = ({ icon, label }: SelectionItemProps) => (
     <div className="flex items-center justify-between p-4 border rounded-xl hover:bg-muted/30 cursor-pointer transition-colors">
         <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">{icon}</div>
@@ -407,7 +430,12 @@ const SelectionItem = ({ icon, label }: any) => (
     </div>
 );
 
-const Badge = ({ children, className }: any) => (
+interface BadgeProps {
+    children: React.ReactNode;
+    className: string;
+}
+
+const Badge = ({ children, className }: BadgeProps) => (
     <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${className}`}>
         {children}
     </span>

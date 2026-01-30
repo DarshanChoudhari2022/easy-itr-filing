@@ -176,6 +176,60 @@ export type Database = {
         }
         Relationships: []
       }
+      gst_invoices: {
+        Row: {
+          id: string
+          user_id: string
+          invoice_number: string
+          invoice_date: string
+          vendor_name: string
+          vendor_gstin: string | null
+          taxable_value: number
+          igst: number | null
+          cgst: number | null
+          sgst: number | null
+          total_value: number
+          is_purchase: boolean | null
+          match_status: string | null
+          confidence_score: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          invoice_number: string
+          invoice_date: string
+          vendor_name: string
+          vendor_gstin?: string | null
+          taxable_value?: number
+          igst?: number | null
+          cgst?: number | null
+          sgst?: number | null
+          total_value?: number
+          is_purchase?: boolean | null
+          match_status?: string | null
+          confidence_score?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          invoice_number?: string
+          invoice_date?: string
+          vendor_name?: string
+          vendor_gstin?: string | null
+          taxable_value?: number
+          igst?: number | null
+          cgst?: number | null
+          sgst?: number | null
+          total_value?: number
+          is_purchase?: boolean | null
+          match_status?: string | null
+          confidence_score?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       foreign_income: {
         Row: {
           id: string

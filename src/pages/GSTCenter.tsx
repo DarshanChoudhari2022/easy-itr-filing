@@ -18,6 +18,7 @@ import {
     History
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -40,7 +41,7 @@ import {
 
 export default function GSTCenter() {
     const { user } = useAuth();
-    const [invoices, setInvoices] = useState<any[]>([]);
+    const [invoices, setInvoices] = useState<Database["public"]["Tables"]["gst_invoices"]["Row"][]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
 
@@ -296,7 +297,15 @@ export default function GSTCenter() {
     );
 }
 
-const StatCard = ({ title, value, trend, status, color }: any) => (
+interface StatCardProps {
+    title: string;
+    value: string;
+    trend: string;
+    status: string;
+    color?: string;
+}
+
+const StatCard = ({ title, value, trend, status, color }: StatCardProps) => (
     <Card className="card-hover">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
@@ -312,7 +321,13 @@ const StatCard = ({ title, value, trend, status, color }: any) => (
     </Card>
 );
 
-const HistoryItem = ({ month, type, status }: any) => (
+interface HistoryItemProps {
+    month: string;
+    type: string;
+    status: string;
+}
+
+const HistoryItem = ({ month, type, status }: HistoryItemProps) => (
     <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
         <div className="flex flex-col">
             <span className="text-sm font-bold">{type}</span>

@@ -19,14 +19,15 @@ import {
     TrendingUp
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function ForeignCompliance() {
     const { user } = useAuth();
-    const [assets, setAssets] = useState<any[]>([]);
-    const [income, setIncome] = useState<any[]>([]);
+    const [assets, setAssets] = useState<Database["public"]["Tables"]["foreign_assets"]["Row"][]>([]);
+    const [income, setIncome] = useState<Database["public"]["Tables"]["foreign_income"]["Row"][]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {

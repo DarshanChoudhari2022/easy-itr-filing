@@ -144,7 +144,15 @@ export default function ClientManagement() {
     );
 }
 
-const StatCard = ({ title, value, icon, trend, color }: any) => (
+interface StatCardProps {
+    title: string;
+    value: string;
+    icon: React.ReactNode;
+    trend: string;
+    color?: string;
+}
+
+const StatCard = ({ title, value, icon, trend, color }: StatCardProps) => (
     <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>

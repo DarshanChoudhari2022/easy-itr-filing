@@ -1,0 +1,64 @@
+﻿
+> vite_react_shadcn_ts@0.0.0 lint
+> eslint .
+
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\badge.tsx
+  29:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\button.tsx
+  47:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\command.tsx
+  24:11  error  An interface declaring no members is equivalent to its supertype  @typescript-eslint/no-empty-object-type
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\form.tsx
+  129:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\navigation-menu.tsx
+  111:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\sidebar.tsx
+  636:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\sonner.tsx
+  27:19  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\textarea.tsx
+  5:18  error  An interface declaring no members is equivalent to its supertype  @typescript-eslint/no-empty-object-type
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\components\ui\toggle.tsx
+  37:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\hooks\useAuth.tsx
+  86:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\lib\ai-service.ts
+  50:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\AISReconciler.tsx
+  23:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\Dashboard.tsx
+  36:42  error    Unexpected any. Specify a different type                                                                      @typescript-eslint/no-explicit-any
+  49:6   warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\Deductions.tsx
+  116:6  warning  React Hook useEffect has a missing dependency: 'fetchDeductions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\EFile.tsx
+  55:6  warning  React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\GuidedFiling.tsx
+  46:46  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  55:8   warning  React Hook useEffect has a missing dependency: 'fetchSavedState'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  59:8   warning  React Hook useEffect has a missing dependency: 'fetchDynamicTip'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\Income.tsx
+  56:6  warning  React Hook useEffect has a missing dependency: 'fetchIncomeSources'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\choud\Desktop\EasyFile_ITR\easy-itr-filing\src\pages\Optimizer.tsx
+  54:6  warning  React Hook useEffect has a missing dependency: 'fetchTaxSummary'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+Γ£û 21 problems (6 errors, 15 warnings)
+

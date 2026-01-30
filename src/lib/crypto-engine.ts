@@ -27,7 +27,7 @@ export interface GainResult {
 export function calculateTokenGains(transactions: Transaction[]): GainResult {
     const sorted = [...transactions].sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    let inventory: { qty: number; cost: number }[] = [];
+    const inventory: { qty: number; cost: number }[] = [];
     let totalGain = 0;
     let totalLoss = 0;
 
@@ -36,7 +36,7 @@ export function calculateTokenGains(transactions: Transaction[]): GainResult {
             inventory.push({ qty: tx.quantity, cost: tx.pricePerUnit });
         } else {
             let remainingToSell = tx.quantity;
-            let saleProceeds = tx.quantity * tx.pricePerUnit;
+            const saleProceeds = tx.quantity * tx.pricePerUnit;
             let costBasis = 0;
 
             while (remainingToSell > 0 && inventory.length > 0) {

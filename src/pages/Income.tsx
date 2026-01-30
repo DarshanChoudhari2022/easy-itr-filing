@@ -24,7 +24,7 @@ interface IncomeSource {
   tds_deducted: number;
 }
 
-const incomeTypes: { value: IncomeSourceType; label: string; icon: any }[] = [
+const incomeTypes: { value: IncomeSourceType; label: string; icon: React.ElementType }[] = [
   { value: "salary", label: "Salary", icon: Wallet },
   { value: "house_property", label: "House Property", icon: Building2 },
   { value: "capital_gains_equity", label: "Capital Gains (Equity)", icon: TrendingUp },
@@ -40,7 +40,7 @@ export default function Income() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  
+
   const [newSource, setNewSource] = useState({
     source_type: "salary" as IncomeSourceType,
     description: "",
@@ -91,7 +91,7 @@ export default function Income() {
       });
 
       if (error) throw error;
-      
+
       toast.success("Income source added");
       setDialogOpen(false);
       setNewSource({
@@ -102,9 +102,9 @@ export default function Income() {
         tds_deducted: "",
       });
       fetchIncomeSources();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding income source:", error);
-      toast.error(error.message || "Failed to add income source");
+      toast.error(error instanceof Error ? error.message : "Failed to add income source");
     } finally {
       setSaving(false);
     }
@@ -118,12 +118,12 @@ export default function Income() {
         .eq("id", id);
 
       if (error) throw error;
-      
+
       toast.success("Income source deleted");
       fetchIncomeSources();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error deleting income source:", error);
-      toast.error(error.message || "Failed to delete income source");
+      toast.error(error instanceof Error ? error.message : "Failed to delete income source");
     }
   };
 
@@ -194,7 +194,7 @@ export default function Income() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 {newSource.source_type === "salary" && (
                   <div className="space-y-2">
                     <Label>Employer Name</Label>
@@ -207,7 +207,7 @@ export default function Income() {
                     />
                   </div>
                 )}
-                
+
                 <div className="space-y-2">
                   <Label>Description (Optional)</Label>
                   <Input
@@ -218,7 +218,7 @@ export default function Income() {
                     }
                   />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Amount (₹)</Label>

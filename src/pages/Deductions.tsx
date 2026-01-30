@@ -102,7 +102,7 @@ export default function Deductions() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  
+
   const [newDeduction, setNewDeduction] = useState({
     section: "section_80c" as DeductionSection,
     description: "",
@@ -149,14 +149,14 @@ export default function Deductions() {
       });
 
       if (error) throw error;
-      
+
       toast.success("Deduction added");
       setDialogOpen(false);
       setNewDeduction({ section: "section_80c", description: "", amount: "" });
       fetchDeductions();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding deduction:", error);
-      toast.error(error.message || "Failed to add deduction");
+      toast.error(error instanceof Error ? error.message : "Failed to add deduction");
     } finally {
       setSaving(false);
     }
@@ -168,9 +168,9 @@ export default function Deductions() {
       if (error) throw error;
       toast.success("Deduction deleted");
       fetchDeductions();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error deleting deduction:", error);
-      toast.error(error.message || "Failed to delete deduction");
+      toast.error(error instanceof Error ? error.message : "Failed to delete deduction");
     }
   };
 
@@ -254,7 +254,7 @@ export default function Deductions() {
                     </p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Description</Label>
                   <Input
@@ -265,7 +265,7 @@ export default function Deductions() {
                     }
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Amount (₹)</Label>
                   <Input
@@ -352,7 +352,7 @@ export default function Deductions() {
                         </span>
                       )}
                     </div>
-                    
+
                     {section.limit && (
                       <div className="space-y-1">
                         <Progress
@@ -373,7 +373,7 @@ export default function Deductions() {
                         )}
                       </div>
                     )}
-                    
+
                     <p className="text-xs text-muted-foreground">{section.examples}</p>
                   </div>
                 </CardContent>

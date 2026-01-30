@@ -151,7 +151,14 @@ export default function ProfessionalFirm() {
     );
 }
 
-function FirmStat({ label, value, sub, icon }: any) {
+interface FirmStatProps {
+    label: string;
+    value: string;
+    sub: string;
+    icon: React.ReactNode;
+}
+
+function FirmStat({ label, value, sub, icon }: FirmStatProps) {
     return (
         <Card className="border-slate-100 shadow-sm">
             <CardContent className="p-6">

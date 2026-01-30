@@ -47,11 +47,12 @@ export async function askTaxGuru(question: string): Promise<AIResponse> {
         const answer = Array.isArray(result) ? result[0].generated_text : result.generated_text;
 
         return { answer: answer || "I'm sorry, I couldn't process that. Please try again." };
-    } catch (error: any) {
-        console.error("AI Service Error:", error);
+    } catch (error) {
+        const err = error as Error;
+        console.error("AI Service Error:", err);
         return {
             answer: "My brain is a bit foggy right now. Please try again in a moment.",
-            error: error.message
+            error: err.message
         };
     }
 }

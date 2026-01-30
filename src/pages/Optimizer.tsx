@@ -74,14 +74,14 @@ export default function Optimizer() {
   const calculateTax = (income: number, slabs: typeof OLD_REGIME_SLABS) => {
     let tax = 0;
     let remaining = income;
-    
+
     for (const slab of slabs) {
       if (remaining <= 0) break;
       const taxableInSlab = Math.min(remaining, slab.max - slab.min);
       tax += taxableInSlab * (slab.rate / 100);
       remaining -= taxableInSlab;
     }
-    
+
     // Add 4% cess
     return tax * 1.04;
   };
@@ -111,8 +111,8 @@ export default function Optimizer() {
       const totalIncome = (incomeSources || []).reduce((sum, s) => sum + Number(s.amount), 0);
       const totalDeductions = (deductions || []).reduce((sum, d) => sum + Number(d.amount), 0);
       const totalTds = (incomeSources || []).reduce((sum, s) => sum + Number(s.tds_deducted || 0), 0) +
-                       (cryptoTrades || []).reduce((sum, t) => sum + Number(t.tds_paid || 0), 0);
-      
+        (cryptoTrades || []).reduce((sum, t) => sum + Number(t.tds_paid || 0), 0);
+
       // Crypto gains (taxed at flat 30%, not included in slab calculation)
       const cryptoGains = (cryptoTrades || [])
         .filter(t => t.trade_type === "sell" && t.gain_loss && t.gain_loss > 0)
@@ -150,12 +150,12 @@ export default function Optimizer() {
         .single();
 
       if (error) throw error;
-      
+
       setTaxSummary(data as TaxSummary);
       toast.success("Tax calculation updated!");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error calculating tax:", error);
-      toast.error(error.message || "Failed to calculate tax");
+      toast.error(error instanceof Error ? error.message : "Failed to calculate tax");
     } finally {
       setCalculating(false);
     }
@@ -295,7 +295,7 @@ export default function Optimizer() {
                       <span>{formatCurrency(taxSummary.taxable_income_old)}</span>
                     </div>
                   </div>
-                  
+
                   <div className="text-center p-4 rounded-lg bg-primary/5">
                     <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
                     <p className="text-4xl font-bold">{formatCurrency(taxSummary.tax_old_regime)}</p>
@@ -350,7 +350,7 @@ export default function Optimizer() {
                       <span>{formatCurrency(taxSummary.taxable_income_new)}</span>
                     </div>
                   </div>
-                  
+
                   <div className="text-center p-4 rounded-lg bg-primary/5">
                     <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
                     <p className="text-4xl font-bold">{formatCurrency(taxSummary.tax_new_regime)}</p>

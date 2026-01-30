@@ -18,9 +18,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+interface AISRecord {
+    category: string;
+    source_name: string;
+    reported_value: number;
+    status: string;
+}
+
 export default function AISReconciler() {
     const { user } = useAuth();
-    const [aisData, setAisData] = useState<any[]>([]);
+    const [aisData, setAisData] = useState<AISRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
 

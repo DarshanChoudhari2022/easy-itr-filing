@@ -31,9 +31,14 @@ import {
 import { askTaxGuru } from "@/lib/ai-service";
 import { toast } from "sonner";
 
+interface Profile {
+  full_name?: string;
+  user_id: string;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTasks, setShowTasks] = useState(true);
 
@@ -216,10 +221,10 @@ export default function Dashboard() {
                   <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-none">Next Due: March 15</Badge>
                 </div>
                 <div className="grid grid-cols-4 gap-3">
-                  <Installment status="paid" date="Jun 15" installment="1" />
-                  <Installment status="paid" date="Sep 15" installment="2" />
-                  <Installment status="paid" date="Dec 15" installment="3" />
-                  <Installment status="pending" date="Mar 15" installment="4" />
+                  <Installment status="paid" date="Jun 15" installment={1} />
+                  <Installment status="paid" date="Sep 15" installment={2} />
+                  <Installment status="paid" date="Dec 15" installment={3} />
+                  <Installment status="pending" date="Mar 15" installment={4} />
                 </div>
               </div>
             </CardContent>
@@ -294,7 +299,18 @@ export default function Dashboard() {
   );
 }
 
-function ModuleCard({ title, desc, value, sub, badge, color, link, icon }: any) {
+interface ModuleCardProps {
+  title: string;
+  desc: string;
+  value: string;
+  sub: string;
+  badge: string;
+  color: string;
+  link: string;
+  icon: React.ReactNode;
+}
+
+function ModuleCard({ title, desc, value, sub, badge, color, link, icon }: ModuleCardProps) {
   return (
     <Card className={`relative overflow-hidden border-t-4 border-t-${color} card-hover shadow-sm`}>
       <CardHeader className="pb-4">
@@ -322,7 +338,13 @@ function ModuleCard({ title, desc, value, sub, badge, color, link, icon }: any) 
   );
 }
 
-const Installment = ({ status, date, installment }: any) => (
+interface InstallmentProps {
+  status: 'paid' | 'pending';
+  date: string;
+  installment: number;
+}
+
+const Installment = ({ status, date, installment }: InstallmentProps) => (
   <div className={`p-4 rounded-2xl text-center border transition-all ${status === 'paid'
     ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100'
     : 'bg-white border-slate-200 text-slate-400'
@@ -333,7 +355,13 @@ const Installment = ({ status, date, installment }: any) => (
   </div>
 );
 
-const FamilyMember = ({ name, role, active }: any) => (
+interface FamilyMemberProps {
+  name: string;
+  role: string;
+  active?: boolean;
+}
+
+const FamilyMember = ({ name, role, active }: FamilyMemberProps) => (
   <div className={`flex items-center justify-between p-3 rounded-xl border transition-all ${active
     ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100'
     : 'hover:bg-rose-50 border-transparent text-slate-700'
@@ -352,7 +380,13 @@ const FamilyMember = ({ name, role, active }: any) => (
   </div>
 );
 
-const FooterStat = ({ label, value, icon }: any) => (
+interface FooterStatProps {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}
+
+const FooterStat = ({ label, value, icon }: FooterStatProps) => (
   <div className="flex items-center gap-4">
     <div className="h-10 w-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center">
       {icon}

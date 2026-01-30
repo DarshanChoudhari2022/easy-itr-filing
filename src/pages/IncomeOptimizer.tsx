@@ -155,7 +155,14 @@ export default function IncomeOptimizer() {
     );
 }
 
-function StatRow({ label, value, color, bold }: any) {
+interface StatRowProps {
+    label: string;
+    value: number;
+    color?: string;
+    bold?: boolean;
+}
+
+function StatRow({ label, value, color, bold }: StatRowProps) {
     return (
         <div className="flex justify-between items-center">
             <span className="text-sm font-medium text-slate-500">{label}</span>
@@ -166,7 +173,13 @@ function StatRow({ label, value, color, bold }: any) {
     );
 }
 
-function InsightCard({ icon, title, desc }: any) {
+interface InsightCardProps {
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+}
+
+function InsightCard({ icon, title, desc }: InsightCardProps) {
     return (
         <div className="p-6 rounded-2xl border bg-white shadow-sm hover:shadow-md transition-shadow">
             <div className="h-10 w-10 rounded-lg bg-slate-50 flex items-center justify-center mb-4">{icon}</div>
