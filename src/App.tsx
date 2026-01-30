@@ -20,6 +20,7 @@ import AuditLogs from "./pages/AuditLogs";
 import AISReconciler from "./pages/AISReconciler";
 import FamilyDashboard from "./pages/FamilyDashboard";
 import TaxVault from "./pages/TaxVault";
+import Settings from "./pages/Settings";
 import Success from "./pages/Success";
 import IncomeOptimizer from "./pages/IncomeOptimizer";
 import ProfessionalFirm from "./pages/ProfessionalFirm";
@@ -89,6 +90,7 @@ const App = () => (
             <Route path="/optimizer" element={<ProtectedRoute><Optimizer /></ProtectedRoute>} />
             <Route path="/firm" element={<ProtectedRoute><ProfessionalFirm /></ProtectedRoute>} />
             <Route path="/efile" element={<ProtectedRoute><EFile /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/success" element={<ProtectedRoute><Success /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -27,6 +27,7 @@ import {
   AlertCircle,
   Sparkles,
   Loader2,
+  Briefcase,
 } from "lucide-react";
 import { askTaxGuru } from "@/lib/ai-service";
 import { toast } from "sonner";
@@ -293,6 +294,27 @@ export default function Dashboard() {
                 <FamilyMember name="Om Prakash" role="Parent" />
                 <Button variant="ghost" className="w-full text-xs h-10 text-rose-600 hover:bg-rose-100/50 mt-1 font-bold">
                   Manage Family Group
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-amber-50/20 border-amber-100 shadow-sm overflow-hidden">
+              <CardHeader className="pb-3 border-b border-amber-100/50 bg-amber-50/30">
+                <CardTitle className="text-sm font-black text-amber-900 flex items-center gap-2 uppercase tracking-widest">
+                  <Briefcase className="h-4 w-4" /> Advisor Hub
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Pending Reviews</span>
+                  <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none">4 Clients</Badge>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">DSC Expiry (30d)</span>
+                  <Badge variant="outline" className="text-rose-600 border-rose-100 italic">2 Alerts</Badge>
+                </div>
+                <Button variant="ghost" className="w-full text-xs h-10 text-amber-700 hover:bg-amber-100/50 mt-1 font-bold">
+                  Advisor Tools Dashboard
                 </Button>
               </CardContent>
             </Card>
