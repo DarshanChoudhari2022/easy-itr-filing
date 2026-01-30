@@ -11,6 +11,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { FolderLock, ShieldCheck, Zap, DownloadCloud, FileJson, PieChart } from "lucide-react";
 import { calculateTax, TaxResult } from "@/lib/tax-calculation";
+import { AssessmentYear, DEFAULT_AY } from "@/lib/tax-config";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TaxSummary {
   total_income: number;
@@ -48,6 +50,8 @@ export default function EFile() {
   });
 
   const [auditPackGenerating, setAuditPackGenerating] = useState(false);
+  const [assessmentYear, setAssessmentYear] = useState<AssessmentYear>(DEFAULT_AY);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -139,8 +143,8 @@ export default function EFile() {
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     const itrData = {
-      assessmentYear: "2026-27",
-      financialYear: "2025-26",
+      assessmentYear: assessmentYear,
+      financialYear: assessmentYear === "2024-25" ? "2023-24" : assessmentYear === "2025-26" ? "2024-25" : "2025-26",
       formType: taxSummary?.suggested_itr_form || "ITR-1",
       personalInfo: {
         pan: panToUse,
@@ -169,7 +173,7 @@ export default function EFile() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `TaxMitra_ITR_${panToUse}_AY2627.json`;
+    a.download = `TaxMitra_ITR_${panToUse}_AY${assessmentYear.replace("-", "")}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -236,14 +240,31 @@ export default function EFile() {
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <FileText className="h-8 w-8" />
-            E-File ITR
-          </h1>
-          <p className="text-muted-foreground">
-            Review, verify, and generate your ITR for filing
-          </p>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <FileText className="h-8 w-8" />
+              E-File ITR
+            </h1>
+            <p className="text-muted-foreground">
+              Review, verify, and generate your ITR for filing
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Select value={assessmentYear} onValueChange={(v: AssessmentYear) => setAssessmentYear(v)}>
+              <SelectTrigger className="w-[140px] border-indigo-100 font-bold text-indigo-700">
+                <SelectValue placeholder="Select AY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2024-25">AY 2024-25</SelectItem>
+                <SelectItem value="2025-26">AY 2025-26</SelectItem>
+                <SelectItem value="2026-27">AY 2026-27</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="gap-2" onClick={() => fetchData()}>
+              <RefreshCw className="h-4 w-4" /> Refresh Data
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -264,14 +285,37 @@ export default function EFile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
+                  {scanning && (
+                    <div className="absolute inset-0 bg-white/80 z-10 flex flex-col items-center justify-center animate-in fade-in">
+                      <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mb-2" />
+                      <p className="text-xs font-bold text-indigo-900">Scanning Section 17(1)...</p>
+                      <div className="w-1/2 h-1 bg-indigo-100 rounded-full mt-2 overflow-hidden">
+                        <div className="h-full bg-indigo-600 animate-progress"></div>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-3">
                     <FileText className="h-8 w-8 text-indigo-600" />
                     <Badge className="bg-indigo-100 text-indigo-700">98% ACCURACY</Badge>
                   </div>
                   <h4 className="font-bold text-slate-900">Form 16 Intelligent Scanner</h4>
                   <p className="text-[10px] text-slate-500 mt-1 uppercase font-black">Requires PDF Part A & B</p>
-                  <Button variant="ghost" size="sm" className="w-full mt-4 border-dashed border-2 border-indigo-100 group-hover:bg-indigo-50">Upload PDF</Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-4 border-dashed border-2 border-indigo-100 group-hover:bg-indigo-50"
+                    onClick={() => {
+                      setScanning(true);
+                      setTimeout(() => {
+                        setScanning(false);
+                        toast.success("AI Found: Salary ₹9,50,000 | TDS ₹1,25,000");
+                        // In real app, we would update state/DB here
+                      }, 4000);
+                    }}
+                  >
+                    Upload PDF
+                  </Button>
                 </div>
 
                 <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">

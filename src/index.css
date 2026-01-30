@@ -67,7 +67,7 @@
     --warning-foreground: 0 0% 100%;
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
-    
+
     /* Chart Colors */
     --chart-1: 160 84% 39%;
     --chart-2: 199 89% 48%;
@@ -131,7 +131,7 @@
     --warning-foreground: 0 0% 100%;
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
-    
+
     /* Chart Colors */
     --chart-1: 160 84% 39%;
     --chart-2: 199 89% 48%;
@@ -163,6 +163,7 @@
       opacity: 0;
       transform: translateY(30px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -189,6 +190,7 @@
 }
 
 @layer utilities {
+
   /* Glass effect for cards */
   .glass {
     @apply backdrop-blur-md bg-background/80 border border-border/50;
@@ -216,5 +218,19 @@
   /* Section spacing */
   .section-padding {
     @apply py-12 md:py-16 lg:py-20;
+  }
+
+  .animate-progress {
+    animation: progress 4s ease-in-out forwards;
+  }
+
+  @keyframes progress {
+    0% {
+      width: 0%;
+    }
+
+    100% {
+      width: 100%;
+    }
   }
 }

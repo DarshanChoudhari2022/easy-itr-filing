@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { askTaxGuru } from "@/lib/ai-service";
 import { toast } from "sonner";
+import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Profile {
   full_name?: string;
@@ -42,6 +44,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showTasks, setShowTasks] = useState(true);
   const [filingState, setFilingState] = useState<any>(null);
+  const [assessmentYear, setAssessmentYear] = useState<AssessmentYear>(DEFAULT_AY);
 
   // AI State
   const [question, setQuestion] = useState("");
@@ -131,13 +134,23 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight flex items-center gap-4">
-              TaxMitra Dashboard <Badge className="bg-gradient-to-r from-indigo-600 to-teal-500 text-[10px] animate-pulse">LIVE AY 2026-27</Badge>
+              TaxMitra Dashboard <Badge className="bg-gradient-to-r from-indigo-600 to-teal-500 text-[10px] animate-pulse">LIVE AY {assessmentYear}</Badge>
             </h1>
             <p className="text-muted-foreground font-medium mt-1">
-              Welcome back, {profile?.full_name || user?.email?.split("@")[0]} • Your data is secured with AES-256.
+              Welcome back, {profile?.full_name || user?.email?.split("@")[0]} • FY {YEAR_CONFIGS[assessmentYear].fy} • Secure Storage
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Select value={assessmentYear} onValueChange={(v: AssessmentYear) => setAssessmentYear(v)}>
+              <SelectTrigger className="w-[140px] border-indigo-100 font-bold text-indigo-700">
+                <SelectValue placeholder="Select AY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2024-25">AY 2024-25</SelectItem>
+                <SelectItem value="2025-26">AY 2025-26</SelectItem>
+                <SelectItem value="2026-27">AY 2026-27</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline" className="gap-2 border-indigo-100 hover:bg-indigo-50 text-indigo-700">
               <Zap className="h-4 w-4 fill-indigo-500 text-indigo-500" /> AI Optimization
             </Button>
