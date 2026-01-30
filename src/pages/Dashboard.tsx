@@ -41,6 +41,7 @@ export default function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTasks, setShowTasks] = useState(true);
+  const [filingState, setFilingState] = useState<any>(null);
 
   // AI State
   const [question, setQuestion] = useState("");
@@ -55,13 +56,13 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", user!.id)
-        .maybeSingle();
+      const [profileRes, stateRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("user_id", user!.id).maybeSingle(),
+        supabase.from("filing_steps_state").select("*").eq("user_id", user!.id).maybeSingle()
+      ]);
 
-      setProfile(profileData);
+      setProfile(profileRes.data);
+      setFilingState(stateRes.data);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -79,9 +80,10 @@ export default function Dashboard() {
     if (result.error) toast.error("AI service transient error. Retrying...");
   };
 
+  const answers = filingState?.answers || {};
   const dashboardTasks = [
-    { id: 1, title: "Self-Filing Wizard", status: "not_started", link: "/guided", icon: <Sparkles /> },
-    { id: 2, title: "Import Crypto Trades", status: "pending", link: "/crypto", icon: <Bitcoin /> },
+    { id: 1, title: "Self-Filing Wizard", status: filingState ? 'completed' : 'not_started', link: "/guided", icon: <Sparkles /> },
+    { id: 2, title: "Import Crypto Trades", status: answers.vdaGains ? 'completed' : 'pending', link: "/crypto", icon: <Bitcoin /> },
     { id: 3, title: "Verify Schedule FA", status: "completed", link: "/foreign", icon: <FileText /> },
     { id: 4, title: "Reconcile AIS/TIS", status: "not_started", link: "/ais", icon: <BarChart3 /> },
   ];
@@ -165,9 +167,9 @@ export default function Dashboard() {
           <ModuleCard
             title="Income Tax"
             desc="Tax planning & systematic filing"
-            value="₹18.4L"
+            value={answers.salary ? `₹${(answers.salary / 100000).toFixed(1)}L` : "₹0.0"}
             sub="Income"
-            badge="Step 2/5"
+            badge={filingState ? "Session Active" : "Not Started"}
             color="indigo-600"
             link="/income"
             icon={<Wallet className="h-5 w-5" />}
@@ -175,9 +177,9 @@ export default function Dashboard() {
           <ModuleCard
             title="Asset Tax (VDA)"
             desc="Section 115BBH Crypto Engine"
-            value="₹2.85L"
+            value={answers.vdaGains ? `₹${(answers.vdaGains / 1000).toFixed(1)}k` : "₹0.0"}
             sub="Gains"
-            badge="FIFO Applied"
+            badge={answers.vdaGains ? "Gains Detected" : "FIFO Applied"}
             color="warning"
             link="/crypto"
             icon={<Bitcoin className="h-5 w-5" />}

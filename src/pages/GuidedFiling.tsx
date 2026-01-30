@@ -14,7 +14,12 @@ import {
     Bitcoin,
     Globe,
     Wallet,
-    TrendingUp
+    TrendingUp,
+    FileJson,
+    PieChart,
+    IndianRupee,
+    Zap,
+    FileText
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
@@ -24,6 +29,10 @@ import { toast } from "sonner";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { askTaxGuru } from "@/lib/ai-service";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { calculateTax, TaxResult } from "@/lib/tax-calculation";
+import { Separator } from "@/components/ui/separator";
 
 type Step = {
     id: string;
@@ -32,17 +41,29 @@ type Step = {
 }
 
 const STEPS: Step[] = [
-    { id: "profile", title: "Personal Profile", description: "Who are you filing for?" },
-    { id: "income", title: "Income Sources", description: "Where did you earn money?" },
-    { id: "deductions", title: "Tax Savings", description: "Claim your investments (80C, 80D)" },
-    { id: "foreign", title: "Global Assets", description: "Do you have US stocks or foreign accounts?" },
-    { id: "review", title: "Review & Compute", description: "See your final tax liability" },
+    { id: "profile", title: "Personal Profile", description: "Basic details & residency" },
+    { id: "income", title: "Income Sources", description: "Salary, Interest, Capital Gains" },
+    { id: "deductions", title: "Tax Savings", description: "Chapter VI-A Investments" },
+    { id: "credits", title: "Tax Credits", description: "TDS, TCS & Advance Tax" },
+    { id: "review", title: "Review & Compute", description: "Final Tax Computation" },
 ];
 
 interface FilingFormData {
     residency?: string;
+    pan?: string;
     sources?: string[];
-    [key: string]: unknown; // Allow for dynamic fields for now but typed if possible
+    salary?: number;
+    savingsInterest?: number;
+    fdInterest?: number;
+    dividends?: number;
+    vdaGains?: number;
+    houseProperty?: number;
+    section80C?: number;
+    section80D?: number;
+    tdsPaid?: number;
+    advanceTax?: number;
+    regime?: "old" | "new";
+    [key: string]: unknown;
 }
 
 export default function GuidedFiling() {
@@ -194,7 +215,7 @@ export default function GuidedFiling() {
                                         {currentStep.id === "profile" && <ProfileStep data={formData} update={setFormData} />}
                                         {currentStep.id === "income" && <IncomeStep data={formData} update={setFormData} />}
                                         {currentStep.id === "deductions" && <DeductionStep data={formData} update={setFormData} />}
-                                        {currentStep.id === "foreign" && <ForeignStep data={formData} update={setFormData} />}
+                                        {currentStep.id === "credits" && <CreditsStep data={formData} update={setFormData} />}
                                         {currentStep.id === "review" && <ReviewStep data={formData} />}
                                     </CardContent>
                                     <CardFooter className="flex justify-between border-t bg-muted/10 p-6">
@@ -246,21 +267,34 @@ const ProfileStep = ({ data, update }: StepProps) => {
 
     return (
         <div className="space-y-6">
-            <h3 className="text-lg font-bold text-slate-900">What is your residency status?</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {profiles.map(p => (
-                    <div
-                        key={p.id}
-                        onClick={() => update({ ...data, residency: p.id })}
-                        className={`p-6 rounded-2xl border-2 transition-all cursor-pointer ${data.residency === p.id
-                            ? 'border-indigo-600 bg-indigo-50/50 ring-4 ring-indigo-50'
-                            : 'border-slate-100 bg-white hover:border-slate-200'
-                            }`}
-                    >
-                        <h4 className="font-bold mb-1">{p.title}</h4>
-                        <p className="text-xs text-slate-500 font-medium">{p.desc}</p>
-                    </div>
-                ))}
+            <div className="grid gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="pan">Permanent Account Number (PAN)</Label>
+                    <Input
+                        id="pan"
+                        placeholder="ABCDE1234F"
+                        value={data.pan || ""}
+                        onChange={(e) => update({ ...data, pan: e.target.value.toUpperCase() })}
+                        className="font-mono text-lg tracking-wider"
+                    />
+                </div>
+
+                <h3 className="text-lg font-bold text-slate-900 mt-4">Residency Status</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {profiles.map(p => (
+                        <div
+                            key={p.id}
+                            onClick={() => update({ ...data, residency: p.id })}
+                            className={`p-6 rounded-2xl border-2 transition-all cursor-pointer ${data.residency === p.id
+                                ? 'border-indigo-600 bg-indigo-50/50 ring-4 ring-indigo-50'
+                                : 'border-slate-100 bg-white hover:border-slate-200'
+                                }`}
+                        >
+                            <h4 className="font-bold mb-1">{p.title}</h4>
+                            <p className="text-xs text-slate-500 font-medium">{p.desc}</p>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -268,20 +302,10 @@ const ProfileStep = ({ data, update }: StepProps) => {
 
 const IncomeStep = ({ data, update }: StepProps) => {
     const sources = [
-        { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income from employer or government pension' },
-        { id: 'house_1', label: 'Single House Property', icon: <Building className="h-4 w-4" />, desc: 'Rent from one property you own' },
-        { id: 'house_multi', label: 'Multiple House Properties', icon: <Building className="h-4 w-4" />, desc: 'Rent from 2+ properties' },
-        { id: 'business', label: 'Freelancing / Consultancy', icon: <Building className="h-4 w-4" />, desc: 'Self-employed income, invoiced clients' },
-        { id: 'self_employed', label: 'Self-Employed / Professional', icon: <Wallet className="h-4 w-4" />, desc: 'Doctor, Lawyer, CA, Architect, etc.' },
-        { id: 'crypto', label: 'Crypto / VDAs (Section 115BBH)', icon: <Bitcoin className="h-4 w-4" />, desc: 'Bitcoin, Ethereum, NFTs, etc.' },
-        { id: 'capital_gains', label: 'Stock Market / Mutual Funds', icon: <TrendingUp className="h-4 w-4" />, desc: 'LTCG, STCG from equity/debt funds' },
-        { id: 'foreign', label: 'Foreign Income / US Shares', icon: <Globe className="h-4 w-4" />, desc: 'RSUs, ESOPs, Dividends from US stocks' },
-        { id: 'interest', label: 'Interest Income (FD/Savings)', icon: <Wallet className="h-4 w-4" />, desc: 'Bank FDs, RDs, Savings account interest' },
-        { id: 'dividend', label: 'Dividend Income', icon: <TrendingUp className="h-4 w-4" />, desc: 'Dividends from Indian/Foreign stocks' },
-        { id: 'agriculture', label: 'Agricultural Income', icon: <Building className="h-4 w-4" />, desc: 'Income from farming (exempt but reportable)' },
-        { id: 'lottery', label: 'Lottery / Game Show Winnings', icon: <Wallet className="h-4 w-4" />, desc: 'Taxed at 30% flat under Section 115BB' },
-        { id: 'zero_income', label: 'No Taxable Income / Zero Filing', icon: <Wallet className="h-4 w-4" />, desc: 'Filing for refund or compliance only' },
-        { id: 'other', label: 'Other Income', icon: <Wallet className="h-4 w-4" />, desc: 'Commission, gifts, family pension, etc.' },
+        { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income fixed by employer' },
+        { id: 'interest', label: 'Interest & Dividends', icon: <Wallet className="h-4 w-4" />, desc: 'Savings, FD & Stock dividends' },
+        { id: 'crypto', label: 'Crypto / VDAs', icon: <Bitcoin className="h-4 w-4" />, desc: 'Bitcoin, NFTs, Trading gains' },
+        { id: 'house_property', label: 'House Property', icon: <Building className="h-4 w-4" />, desc: 'Rental income from owned property' },
     ];
 
     const toggleSource = (id: string) => {
@@ -292,108 +316,293 @@ const IncomeStep = ({ data, update }: StepProps) => {
         update({ ...data, sources: next });
     };
 
-    const determineITR = () => {
-        const s = data.sources || [];
-        if (s.length === 0 || (s.length === 1 && s.includes('zero_income'))) return "ITR-1 (Sahaj) - Zero Filing";
-        if (s.includes('business') || s.includes('self_employed')) return "ITR-3 (or ITR-4 for Presumptive)";
-        if (s.includes('crypto') || s.includes('capital_gains') || s.includes('house_multi') || s.includes('foreign') || s.includes('lottery')) return "ITR-2";
-        if (s.length > 0) return "ITR-1 (Sahaj)";
-        return "Not determined";
-    };
-
-    const suggestedITR = determineITR();
+    const currentSources = data.sources || [];
 
     return (
-        <div className="space-y-6">
-            <h3 className="text-lg font-bold text-slate-900">Where did you earn money? (Select all that apply)</h3>
-            <p className="text-sm text-slate-500 -mt-4">Select all income sources you had during FY 2025-26 (April 2025 - March 2026)</p>
-            <div className="grid gap-3 max-h-[450px] overflow-y-auto pr-2">
-                {sources.map(s => (
-                    <div
-                        key={s.id}
-                        onClick={() => toggleSource(s.id)}
-                        className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${(data.sources || []).includes(s.id)
-                            ? 'border-indigo-600 bg-indigo-50 shadow-sm'
-                            : 'border-slate-100 hover:border-slate-200 bg-white'
-                            }`}
-                    >
-                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
-                            }`}>
-                            {s.icon}
+        <div className="space-y-8">
+            <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-900">Select Income Sources</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {sources.map(s => (
+                        <div
+                            key={s.id}
+                            onClick={() => toggleSource(s.id)}
+                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all text-center ${currentSources.includes(s.id)
+                                ? 'border-indigo-600 bg-indigo-50 shadow-sm'
+                                : 'border-slate-100 hover:border-slate-200 bg-white'
+                                }`}
+                        >
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center mx-auto mb-2 ${currentSources.includes(s.id) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                {s.icon}
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-tighter">{s.label}</span>
                         </div>
-                        <div className="flex-1">
-                            <span className="font-bold text-slate-700 block">{s.label}</span>
-                            <span className="text-xs text-slate-400">{s.desc}</span>
-                        </div>
-                        <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center shrink-0 ${(data.sources || []).includes(s.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200'
-                            }`}>
-                            {(data.sources || []).includes(s.id) && <CheckCircle2 className="h-4 w-4 text-white" />}
-                        </div>
-                    </div>
-                ))}
+                    ))}
+                </div>
             </div>
 
-            {(data.sources || []).length > 0 && (
-                <div className="p-5 rounded-2xl bg-slate-900 text-white flex items-center justify-between shadow-xl animate-in zoom-in duration-300">
+            <Separator />
+
+            <div className="space-y-6">
+                {currentSources.includes('salary') && (
+                    <div className="space-y-2 animate-in slide-in-from-left duration-300">
+                        <Label className="text-sm font-bold">Annual Gross Salary (Before Deductions)</Label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">₹</span>
+                            <Input
+                                type="number"
+                                className="pl-8 h-12 text-lg font-black"
+                                value={data.salary || ""}
+                                onChange={(e) => update({ ...data, salary: Number(e.target.value) })}
+                                placeholder="12,00,000"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {currentSources.includes('interest') && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-right duration-300">
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold">Savings Account Interest</Label>
+                            <Input
+                                type="number"
+                                className="h-10 font-bold"
+                                value={data.savingsInterest || ""}
+                                onChange={(e) => update({ ...data, savingsInterest: Number(e.target.value) })}
+                                placeholder="5,000"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-xs font-bold">Fixed Deposit Interest</Label>
+                            <Input
+                                type="number"
+                                className="h-10 font-bold"
+                                value={data.fdInterest || ""}
+                                onChange={(e) => update({ ...data, fdInterest: Number(e.target.value) })}
+                                placeholder="25,000"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {currentSources.includes('crypto') && (
+                    <div className="space-y-2 border-l-4 border-indigo-500 pl-4 py-2 animate-in slide-in-from-bottom duration-300">
+                        <Label className="text-sm font-bold flex items-center gap-2">
+                            <Bitcoin className="h-4 w-4 text-indigo-500" /> VDA Gains (Section 115BBH)
+                        </Label>
+                        <Input
+                            type="number"
+                            className="h-12 text-lg font-black bg-indigo-50/30 border-indigo-200"
+                            value={data.vdaGains || ""}
+                            onChange={(e) => update({ ...data, vdaGains: Number(e.target.value) })}
+                            placeholder="Gains from Crypto Trading"
+                        />
+                        <p className="text-[10px] text-muted-foreground italic">Taxed at a flat 30% plus 4% cess. Losses cannot be set off.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const DeductionStep = ({ data, update }: StepProps) => {
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center bg-slate-100 p-4 rounded-2xl">
+                <div>
+                    <h4 className="font-black text-slate-900 uppercase tracking-tighter italic">Tax Regime Selection</h4>
+                    <p className="text-[10px] text-muted-foreground">New Regime is now default as per Finance Act 2024.</p>
+                </div>
+                <div className="flex bg-white p-1 rounded-xl shadow-inner">
+                    <button
+                        onClick={() => update({ ...data, regime: 'new' })}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${data.regime !== 'old' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        NEW
+                    </button>
+                    <button
+                        onClick={() => update({ ...data, regime: 'old' })}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${data.regime === 'old' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        OLD
+                    </button>
+                </div>
+            </div>
+
+            {data.regime !== 'old' ? (
+                <div className="p-8 border-2 border-dashed border-indigo-200 rounded-3xl bg-indigo-50/20 text-center space-y-4">
+                    <Zap className="h-10 w-10 text-indigo-500 mx-auto animate-pulse" />
                     <div>
-                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Intelligent AI Suggestion</p>
-                        <h4 className="text-xl font-black mt-1">File <span className="text-indigo-400">{suggestedITR}</span></h4>
+                        <h4 className="font-bold text-indigo-900">New Regime Optimization Active</h4>
+                        <p className="text-xs text-indigo-800/70 max-w-sm mx-auto leading-relaxed mt-2">
+                            Chapter VI-A deductions (80C, 80D, etc.) are **not available** in the New Regime. However, you get a higher standard deduction of **₹75,000** and lower tax slabs.
+                        </p>
                     </div>
-                    <div className="h-12 w-12 rounded-full bg-indigo-600 flex items-center justify-center">
-                        <Sparkles className="h-6 w-6 text-white" />
+                    <Badge className="bg-indigo-600">Standard Deduction: ₹75,000 applied</Badge>
+                </div>
+            ) : (
+                <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <Label className="text-sm font-bold">Section 80C Investments</Label>
+                            <Input
+                                type="number"
+                                className="h-10 font-bold"
+                                value={data.section80C || ""}
+                                onChange={(e) => update({ ...data, section80C: Number(e.target.value) })}
+                                placeholder="ELSS, LIC, PPF, etc."
+                            />
+                            <p className="text-[10px] text-muted-foreground italic">Capped at ₹1.5 Lakhs</p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-sm font-bold">Section 80D (Health Insurance)</Label>
+                            <Input
+                                type="number"
+                                className="h-10 font-bold"
+                                value={data.section80D || ""}
+                                onChange={(e) => update({ ...data, section80D: Number(e.target.value) })}
+                                placeholder="Premium for self/family"
+                            />
+                        </div>
                     </div>
+                    <Badge className="bg-emerald-500">Standard Deduction: ₹50,000 applied</Badge>
                 </div>
             )}
         </div>
     );
 };
 
-const DeductionStep = ({ data, update }: StepProps) => (
-    <div className="space-y-6">
-        <h3 className="text-lg font-semibold">Max out your savings</h3>
-        <p className="text-sm text-muted-foreground">We'll check old vs new regime automatically for you.</p>
-        <div className="grid gap-4">
-            <div className="flex items-center justify-between p-4 border rounded-lg bg-background">
-                <div>
-                    <p className="font-bold">Standard Deduction</p>
-                    <p className="text-xs text-muted-foreground">₹75,000 (New Regime) Applied Automatically</p>
-                </div>
-                <Badge className="bg-accent">Applied</Badge>
-            </div>
-        </div>
-    </div>
-);
+const CreditsStep = ({ data, update }: StepProps) => {
+    return (
+        <div className="space-y-6">
+            <h3 className="text-lg font-bold">Taxes Already Paid</h3>
+            <p className="text-xs text-muted-foreground -mt-4">Ensure these match your AIS/Form 26AS to avoid notices.</p>
 
-const ForeignStep = ({ data, update }: StepProps) => (
-    <div className="space-y-6">
-        <h3 className="text-lg font-semibold">International Compliance (Schedule FA)</h3>
-        <div className="p-4 rounded-lg border-2 border-warning/20 bg-warning/5">
-            <div className="flex gap-3">
-                <Globe className="h-6 w-6 text-warning" />
-                <div>
-                    <p className="font-bold">Do you hold US stocks or foreign accounts?</p>
-                    <p className="text-sm text-muted-foreground mt-1">If you have RSUs from a US parent company (like Google, Amazon), you <strong>MUST</strong> declare them in Schedule FA.</p>
+            <div className="grid gap-6">
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6">
+                    <div className="h-12 w-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                        <FileText className="h-6 w-6" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                        <Label className="font-bold">Total TDS (Tax Deducted at Source)</Label>
+                        <Input
+                            type="number"
+                            className="bg-white font-black"
+                            value={data.tdsPaid || ""}
+                            onChange={(e) => update({ ...data, tdsPaid: Number(e.target.value) })}
+                            placeholder="Check Form 16 / 26AS"
+                        />
+                    </div>
+                </div>
+
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-6">
+                    <div className="h-12 w-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                        <Zap className="h-6 w-6" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                        <Label className="font-bold">Advance Tax / Self-Assessment Tax</Label>
+                        <Input
+                            type="number"
+                            className="bg-white font-black"
+                            value={data.advanceTax || ""}
+                            onChange={(e) => update({ ...data, advanceTax: Number(e.target.value) })}
+                            placeholder="Tax paid via challan"
+                        />
+                    </div>
                 </div>
             </div>
-            <div className="mt-4 flex gap-4">
-                <Button size="sm">Yes, I hold foreign assets</Button>
-                <Button size="sm" variant="ghost">No</Button>
+        </div>
+    );
+};
+
+const ReviewStep = ({ data }: { data: FilingFormData }) => {
+    const result: TaxResult = calculateTax({
+        salary: Number(data.salary) || 0,
+        houseProperty: Number(data.houseProperty) || 0,
+        otherSources: {
+            savingsInterest: Number(data.savingsInterest) || 0,
+            fdInterest: Number(data.fdInterest) || 0,
+            dividends: Number(data.dividends) || 0
+        },
+        deductions: {
+            section80C: Number(data.section80C) || 0,
+            section80D: Number(data.section80D) || 0
+        },
+        vdaGains: Number(data.vdaGains) || 0,
+        regime: data.regime || "new"
+    });
+
+    const taxCredits = (Number(data.tdsPaid) || 0) + (Number(data.advanceTax) || 0);
+    const netPayable = Math.max(0, result.finalTax - taxCredits);
+    const refund = Math.max(0, taxCredits - result.finalTax);
+
+    return (
+        <div className="space-y-8 animate-in zoom-in duration-500">
+            <div className="text-center">
+                <h2 className="text-3xl font-black tracking-tighter text-slate-900">Tax Computation FY 2025-26</h2>
+                <p className="text-sm font-medium text-slate-500">Assessment Year 2026-27 • {data.regime === 'old' ? 'Old Regime' : 'New Regime'}</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8">
+                {/* Result Summary */}
+                <Card className={`overflow-hidden border-none shadow-2xl ${refund > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white'}`}>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest opacity-70">
+                            {refund > 0 ? <TrendingUp className="h-4 w-4" /> : <PieChart className="h-4 w-4" />}
+                            {refund > 0 ? 'Net Refund Due' : 'Net Tax Payable'}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-8">
+                        <div className="text-6xl font-black tracking-tighter mb-2">
+                            ₹{Math.round(refund > 0 ? refund : netPayable).toLocaleString()}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Badge className="bg-white/20 text-white hover:bg-white/30 border-none">
+                                {refund > 0 ? 'To be credited to Bank' : 'Pay via Challan 280'}
+                            </Badge>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Computation Breakdown */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Detailed Breakdown</h4>
+                    <div className="space-y-3">
+                        <BreakdownRow label="Gross Total Income" value={result.grossTotalIncome} />
+                        <BreakdownRow label="Deductions Claimed" value={result.totalDeductions} faded />
+                        <BreakdownRow label="Taxable Income" value={result.taxableIncome} bold />
+                        <BreakdownRow label="Tax on Income" value={result.taxPayable} />
+                        {result.vdaTax > 0 && <BreakdownRow label="VDA Tax (30%)" value={result.vdaTax} highlight />}
+                        <BreakdownRow label="Health & Edu Cess (4%)" value={result.cess} />
+                        <Separator />
+                        <BreakdownRow label="Total Tax Liability" value={result.finalTax} bold />
+                        <BreakdownRow label="Tax Credits (TDS/Paid)" value={taxCredits} color="text-emerald-500" />
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-6 border-2 border-indigo-100 bg-indigo-50/30 rounded-3xl flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                        <FileJson className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-slate-900">Next Step: e-File Submission</h4>
+                        <p className="text-xs text-muted-foreground">Ready to generate your ITR-1 JSON for upload to IT Portal.</p>
+                    </div>
+                </div>
+                <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 font-black shadow-xl shadow-indigo-100">
+                    GENERATE ITR JSON
+                </Button>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
-const ReviewStep = ({ data }: { data: Record<string, unknown> }) => (
-    <div className="text-center space-y-6 py-10">
-        <div className="h-20 w-20 bg-accent/20 rounded-full flex items-center justify-center mx-auto text-accent mb-4">
-            <CheckCircle2 className="h-10 w-10" />
-        </div>
-        <h2 className="text-3xl font-bold">Calculation Complete!</h2>
-        <div className="max-w-xs mx-auto p-4 rounded-xl border-2 border-primary/20 bg-primary/5">
-            <p className="text-sm text-muted-foreground font-medium">Estimated Tax Refund</p>
-            <p className="text-4xl font-black text-primary">₹12,450</p>
-        </div>
-        <p className="text-sm text-muted-foreground">We found ₹4,500 extra savings via Section 80D.</p>
+const BreakdownRow = ({ label, value, bold, faded, highlight, color }: { label: string, value: number, bold?: boolean, faded?: boolean, highlight?: boolean, color?: string }) => (
+    <div className={`flex justify-between items-center ${faded ? 'opacity-50' : ''} ${highlight ? 'bg-indigo-50 p-2 rounded-lg' : ''}`}>
+        <span className={`text-xs ${bold ? 'font-bold text-slate-900' : 'text-slate-600 font-medium'}`}>{label}</span>
+        <span className={`text-sm ${bold ? 'font-black text-slate-900' : 'font-bold text-slate-700'} ${color || ''}`}>₹{Math.round(value).toLocaleString()}</span>
     </div>
 );
 
@@ -443,11 +652,11 @@ const Badge = ({ children, className }: BadgeProps) => (
 
 const getTipForStep = (idx: number) => {
     const tips = [
-        "Most salaried Indians qualify for ITR-1. If you trade stocks, you'll need ITR-2.",
-        "Did you know? Even ₹10,000 in dividends must be reported to avoid income tax notices.",
-        "Section 80C allows deductions up to ₹1.5L. Don't forget your EPF contributions!",
-        "Failure to report a foreign bank account can lead to a ₹10 Lakh penalty under the Black Money Act. Be safe!",
-        "Review your regime comparison carefully. The new regime is often better if you lack major investments."
+        "Your PAN is essential to fetch pre-filled data from the IT Portal via AI-Link.",
+        "Dividends from Indian companies are taxable in your hands at slab rates.",
+        "Under Section 80D, you can claim up to ₹25,000 for self/family and another ₹25,000 for parents.",
+        "Always verify TDS with Form 26AS to avoid errors and mismatch notices.",
+        "The New Regime is now the default regime unless you explicitly opt out."
     ];
     return tips[idx] || "";
 }
