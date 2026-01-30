@@ -99,6 +99,50 @@ export default function CryptoTaxPage() {
   // File input ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Financial Year state and helper
+  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+
+  // Available Financial Years
+  const FINANCIAL_YEARS = [
+    { value: '2025-26', label: 'FY 2025-26', start: '2025-04-01', end: '2026-03-31' },
+    { value: '2024-25', label: 'FY 2024-25', start: '2024-04-01', end: '2025-03-31' },
+    { value: '2023-24', label: 'FY 2023-24', start: '2023-04-01', end: '2024-03-31' },
+    { value: '2022-23', label: 'FY 2022-23', start: '2022-04-01', end: '2023-03-31' },
+  ];
+
+  // Get Financial Year from a date
+  const getFinancialYear = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const month = date.getMonth(); // 0-11
+    const year = date.getFullYear();
+    // FY starts April (month 3). If Jan-Mar, it's previous year's FY
+    if (month < 3) { // Jan, Feb, Mar
+      return `${year - 1}-${String(year).slice(2)}`;
+    }
+    return `${year}-${String(year + 1).slice(2)}`;
+  };
+
+  // Filter trades by selected FY
+  const filteredTrades = useMemo(() => {
+    const fy = FINANCIAL_YEARS.find(f => f.value === selectedFY);
+    if (!fy) return trades;
+
+    return trades.filter(t => {
+      const tradeDate = new Date(t.trade_date);
+      return tradeDate >= new Date(fy.start) && tradeDate <= new Date(fy.end);
+    });
+  }, [trades, selectedFY]);
+
+  // Get FY-wise trade counts for badges
+  const fyTradeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    trades.forEach(t => {
+      const fy = getFinancialYear(t.trade_date);
+      counts[fy] = (counts[fy] || 0) + 1;
+    });
+    return counts;
+  }, [trades]);
+
   useEffect(() => {
     if (user) fetchTrades();
   }, [user]);
@@ -114,7 +158,13 @@ export default function CryptoTaxPage() {
         .order('trade_date', { ascending: false });
 
       if (!error && data) {
-        setTrades(data);
+        // Map data to match Trade interface, handling metadata type
+        setTrades(data.map(d => ({
+          ...d,
+          metadata: typeof d.metadata === 'object' && d.metadata !== null
+            ? d.metadata as { fee?: number; tds_deducted?: number }
+            : undefined
+        })));
       } else if (error) {
         console.error('Error fetching trades:', error);
         toast.error('Failed to fetch trades');
@@ -315,7 +365,7 @@ export default function CryptoTaxPage() {
 
   // ============= PORTFOLIO CALCULATIONS =============
   const engineTransactions: Transaction[] = useMemo(() =>
-    trades.map(t => ({
+    filteredTrades.map(t => ({
       id: t.id,
       token: t.token_symbol,
       type: t.trade_type as 'buy' | 'sell',
@@ -325,23 +375,23 @@ export default function CryptoTaxPage() {
       exchange: t.exchange,
       fee: t.fee || t.metadata?.fee || 0,
       tdsDeducted: t.metadata?.tds_deducted || 0
-    })), [trades]);
+    })), [filteredTrades]);
 
   const portfolio = useMemo(() => {
     if (engineTransactions.length === 0) return null;
     return calculateDetailedPortfolio(engineTransactions, settings);
   }, [engineTransactions, settings]);
 
-  // ============= STATISTICS =============
+  // ============= STATISTICS (FY-wise) =============
   const stats = useMemo(() => {
-    const buyTrades = trades.filter(t => t.trade_type === 'buy');
-    const sellTrades = trades.filter(t => t.trade_type === 'sell');
+    const buyTrades = filteredTrades.filter(t => t.trade_type === 'buy');
+    const sellTrades = filteredTrades.filter(t => t.trade_type === 'sell');
     const buyVolume = buyTrades.reduce((sum, t) => sum + t.quantity * t.buy_price, 0);
     const sellVolume = sellTrades.reduce((sum, t) => sum + t.quantity * t.buy_price, 0);
-    const tdsDeducted = trades.reduce((sum, t) => sum + (t.metadata?.tds_deducted || 0), 0) || sellVolume * 0.01;
+    const tdsDeducted = filteredTrades.reduce((sum, t) => sum + (t.metadata?.tds_deducted || 0), 0) || sellVolume * 0.01;
 
     return {
-      totalTrades: trades.length,
+      totalTrades: filteredTrades.length,
       buyTrades: buyTrades.length,
       sellTrades: sellTrades.length,
       buyVolume,
@@ -349,14 +399,14 @@ export default function CryptoTaxPage() {
       netGain: portfolio?.totalTaxableGains || 0,
       taxPayable: portfolio?.netTaxDue || 0,
       tdsCredit: portfolio?.totalTDSPaid || tdsDeducted,
-      uniqueTokens: new Set(trades.map(t => t.token_symbol)).size
+      uniqueTokens: new Set(filteredTrades.map(t => t.token_symbol)).size
     };
-  }, [trades, portfolio]);
+  }, [filteredTrades, portfolio]);
 
-  // ============= CHART DATA =============
+  // ============= CHART DATA (FY-wise) =============
   const tokenAllocation = useMemo(() => {
     const holdings: Record<string, number> = {};
-    trades.forEach(t => {
+    filteredTrades.forEach(t => {
       if (!holdings[t.token_symbol]) holdings[t.token_symbol] = 0;
       const value = t.quantity * t.buy_price;
       holdings[t.token_symbol] += t.trade_type === 'buy' ? value : -value;
@@ -366,11 +416,11 @@ export default function CryptoTaxPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6)
       .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i] }));
-  }, [trades]);
+  }, [filteredTrades]);
 
   const monthlyVolume = useMemo(() => {
     const data: Record<string, { month: string; buys: number; sells: number }> = {};
-    trades.forEach(t => {
+    filteredTrades.forEach(t => {
       const d = new Date(t.trade_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const monthLabel = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
@@ -380,7 +430,7 @@ export default function CryptoTaxPage() {
       else data[key].sells += value;
     });
     return Object.values(data).slice(-6);
-  }, [trades]);
+  }, [filteredTrades]);
 
   // ============= HELPERS =============
   const formatCurrency = (value: number): string => {
@@ -446,12 +496,33 @@ export default function CryptoTaxPage() {
                     <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
                       Crypto Tax Calculator
                     </h1>
-                    <p className="text-sm text-slate-500">FY 2025-26 • Section 115BBH</p>
+                    <p className="text-sm text-slate-500">Section 115BBH • 30% Tax Rate</p>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
+                {/* FY Selector */}
+                <Select value={selectedFY} onValueChange={setSelectedFY}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Select FY" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FINANCIAL_YEARS.map(fy => (
+                      <SelectItem key={fy.value} value={fy.value}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>{fy.label}</span>
+                          {fyTradeCounts[fy.value] && (
+                            <Badge variant="secondary" className="ml-2 text-xs">
+                              {fyTradeCounts[fy.value]}
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 <Button variant="outline" size="sm" onClick={fetchTrades} disabled={loading}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Refresh
