@@ -230,7 +230,7 @@ export default function Index() {
       </section>
 
       {/* ===== STATS SECTION ===== */}
-      <section className="py-16 bg-white border-y border-gray-100">
+      {/* <section className="py-16 bg-white border-y border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
             <div>
@@ -251,7 +251,7 @@ export default function Index() {
             </div>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* ===== FEATURES SECTION ===== */}
       <section id="features" className="py-20 lg:py-28 bg-white">
@@ -529,7 +529,7 @@ export default function Index() {
             Ready to File Your ITR?
           </h2>
           <p className="text-lg text-indigo-100 mb-8 max-w-2xl mx-auto">
-            Join 85,000+ taxpayers who trust TaxMitra for accurate, hassle-free tax filing.
+            Join taxpayers who trust TaxMitra for accurate, hassle-free tax filing.
             Start your filing today and save both time and money.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

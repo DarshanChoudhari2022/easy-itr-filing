@@ -73,6 +73,7 @@ export default function CryptoTaxPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings'>('overview');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+
   // Initialize from localStorage if available
   const [settings, setSettings] = useState<TaxSettings>(() => {
     const saved = localStorage.getItem('taxSettings');
@@ -143,11 +144,7 @@ export default function CryptoTaxPage() {
     return counts;
   }, [trades]);
 
-  useEffect(() => {
-    if (user) fetchTrades();
-  }, [user]);
-
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -158,7 +155,6 @@ export default function CryptoTaxPage() {
         .order('trade_date', { ascending: false });
 
       if (!error && data) {
-        // Map data to match Trade interface, handling metadata type
         setTrades(data.map(d => ({
           ...d,
           metadata: typeof d.metadata === 'object' && d.metadata !== null
@@ -170,10 +166,15 @@ export default function CryptoTaxPage() {
         toast.error('Failed to fetch trades');
       }
     } catch (err) {
-      console.error('Error:', err);
+      console.error('Error fetching crypto:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) fetchTrades();
+  }, [user, fetchTrades]);
 
   // ============= CSV IMPORT HANDLER =============
   const handleCSVUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,67 +189,36 @@ export default function CryptoTaxPage() {
 
     try {
       const content = await file.text();
-      console.log('CSV Content Preview:', content.substring(0, 500));
 
-      // Parse CSV based on selected exchange
       let result;
       switch (selectedExchange) {
-        case 'CoinDCX':
-          result = parseCoinDCXCSV(content, user.id);
-          break;
-        case 'WazirX':
-          result = parseWazirXCSV(content, user.id);
-          break;
-        case 'Binance':
-          result = parseBinanceCSV(content, user.id);
-          break;
-        default:
-          result = parseExchangeCSV(content, user.id, selectedExchange);
+        case 'CoinDCX': result = parseCoinDCXCSV(content, user.id); break;
+        case 'WazirX': result = parseWazirXCSV(content, user.id); break;
+        case 'Binance': result = parseBinanceCSV(content, user.id); break;
+        default: result = parseExchangeCSV(content, user.id, selectedExchange);
       }
 
-      console.log('Parse Result:', result);
-
       if (result.transactions.length === 0) {
-        setImportResult({
-          success: 0,
-          errors: result.errors.length,
-          messages: [
-            'No valid transactions found in the CSV file.',
-            'Please ensure the file format matches the expected format for ' + selectedExchange,
-            ...result.errors.map(e => `Line ${e.line}: ${e.message}`)
-          ]
-        });
         toast.error('No transactions found in CSV');
         setImporting(false);
         return;
       }
 
-      // Filter out invalid dates to prevent crashes
+      // Filter valid transactions
       const validTransactions = result.transactions.filter(t => t.date && !isNaN(t.date.getTime()));
 
-      if (validTransactions.length < result.transactions.length) {
-        toast.warning(`Skipped ${result.transactions.length - validTransactions.length} trades with invalid dates`);
-      }
-
-      if (validTransactions.length === 0) {
-        toast.error('No valid transactions to import after filtering');
-        setImporting(false);
-        return;
-      }
-
-      // Convert parsed transactions to database format
+      // Convert to database format - SAVE FULL ISO TIMESTAMP
       const tradesToInsert = validTransactions.map(tx => ({
         user_id: user.id,
         token_symbol: tx.token.toUpperCase(),
         trade_type: tx.type,
         quantity: tx.quantity,
         buy_price: tx.pricePerUnit,
-        trade_date: tx.date.toISOString().split('T')[0],
+        trade_date: tx.date.toISOString(), // Full precision
         exchange: tx.exchange || selectedExchange,
-        fee: tx.fee || 0,
         metadata: {
           fee: tx.fee || 0,
-          tds_deducted: tx.type === 'sell' ? (tx.quantity * tx.pricePerUnit) * 0.01 : 0
+          tds_deducted: tx.tdsDeducted || 0
         }
       }));
 
@@ -294,7 +264,7 @@ export default function CryptoTaxPage() {
         fileInputRef.current.value = '';
       }
     }
-  }, [user, selectedExchange]);
+  }, [user, selectedExchange, fetchTrades]);
 
   // ============= MANUAL TRADE ADD =============
   const handleAddTrade = async () => {
@@ -397,7 +367,7 @@ export default function CryptoTaxPage() {
       buyVolume,
       sellVolume,
       netGain: portfolio?.totalTaxableGains || 0,
-      taxPayable: portfolio?.netTaxDue || 0,
+      taxPayable: portfolio?.totalTaxAt30 || 0,
       tdsCredit: portfolio?.totalTDSPaid || tdsDeducted,
       uniqueTokens: new Set(filteredTrades.map(t => t.token_symbol)).size
     };
@@ -671,7 +641,7 @@ export default function CryptoTaxPage() {
                 <CardContent className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                      <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability (FY 2025-26)</p>
+                      <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
                       <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
                       <p className="text-indigo-200 text-sm mt-2">@ 30% flat rate + 4% cess</p>
                     </div>
@@ -1110,8 +1080,8 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           pan: user?.user_metadata?.pan || 'XXXXX0000X',
           email: user?.email || ''
         },
-        financialYear: '2025-26',
-        assessmentYear: '2026-27',
+        financialYear: '2024-25',
+        assessmentYear: '2025-26',
         generatedAt: new Date(),
         summary: {
           totalBuyValue: trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0),

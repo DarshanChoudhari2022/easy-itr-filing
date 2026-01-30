@@ -28,6 +28,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { calculateTax, compareRegimes } from '@/lib/tax-calculation';
 import { downloadITRJson, validateITRData, ITRFilingData } from '@/lib/itr-json-generator';
+import { calculateDetailedPortfolio } from '@/lib/crypto-engine';
 
 // ============= TYPES =============
 interface IncomeSource {
@@ -329,18 +330,38 @@ export function SmartFilingWizard() {
                 .eq('user_id', user.id);
 
             if (trades && trades.length > 0) {
-                const gains = trades
-                    .filter(t => t.trade_type === 'sell')
-                    .reduce((sum, t) => sum + (t.quantity * t.buy_price * 0.15), 0); // Simplified
-                const tds = gains * 0.01;
+                // Map to engine transactions
+                const engineTx = trades.map(t => {
+                    const metadata = t.metadata as any || {};
+                    return {
+                        id: t.id,
+                        token: t.token_symbol,
+                        type: t.trade_type as any,
+                        quantity: Number(t.quantity),
+                        pricePerUnit: Number(t.buy_price),
+                        date: new Date(t.trade_date),
+                        exchange: t.exchange,
+                        fee: Number(metadata.fee || 0),
+                        tdsDeducted: Number(metadata.tds_deducted || 0)
+                    };
+                });
+
+                const settings: any = {
+                    accountingMethod: 'FIFO',
+                    assessmentYear: '2025-26',
+                    treatAirdropsAsIncome: true,
+                    baseCurrency: 'INR'
+                };
+
+                const summary = calculateDetailedPortfolio(engineTx, settings);
 
                 setIncome(prev => ({
                     ...prev,
                     hasCrypto: true,
-                    cryptoGains: Math.round(gains),
-                    cryptoTDS: Math.round(tds)
+                    cryptoGains: Math.round(summary.totalTaxableGains),
+                    cryptoTDS: Math.round(summary.totalTDSPaid)
                 }));
-                toast.success(`Fetched ${trades.length} crypto trades`);
+                console.log('Wizard Crypto Summary:', summary);
             }
         } catch (err) {
             console.error('Error fetching crypto:', err);
