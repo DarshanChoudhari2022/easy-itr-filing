@@ -147,21 +147,21 @@ export default function GSTCenter() {
                 <div className="grid gap-4 md:grid-cols-3">
                     <StatCard
                         title="GSTR-1 Liability"
-                        value="₹4,25,000"
-                        trend="+12%"
+                        value={`₹${invoices.reduce((sum, inv) => sum + (inv.igst || 0), 0).toLocaleString('en-IN')}`}
+                        trend="+0%"
                         status="In Progress"
                     />
                     <StatCard
                         title="ITC (GSTR-2B)"
-                        value="₹3,80,000"
-                        trend="+5%"
+                        value="₹0"
+                        trend="+0%"
                         status="Reconciled"
                         color="text-accent"
                     />
                     <StatCard
                         title="Net Cash Payable"
-                        value="₹45,000"
-                        trend="-2%"
+                        value={`₹${invoices.reduce((sum, inv) => sum + (inv.igst || 0), 0).toLocaleString('en-IN')}`}
+                        trend="+0%"
                         status="Pending"
                         color="text-warning"
                     />

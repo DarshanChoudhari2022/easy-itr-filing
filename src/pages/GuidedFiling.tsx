@@ -111,6 +111,68 @@ export default function GuidedFiling() {
         setLoading(false);
     };
 
+    const handleDownloadJSON = () => {
+        if (!formData.pan) {
+            toast.error("Please provide your PAN in the Profile step");
+            return;
+        }
+
+        const result: TaxResult = calculateTax({
+            salary: Number(formData.salary) || 0,
+            houseProperty: Number(formData.houseProperty) || 0,
+            businessIncome: Number(formData.businessIncome) || 0,
+            otherSources: {
+                savingsInterest: Number(formData.savingsInterest) || 0,
+                fdInterest: Number(formData.fdInterest) || 0,
+                dividends: Number(formData.dividends) || 0,
+                misc: Number(formData.otherSourcesAmount) || 0
+            },
+            deductions: {
+                section80C: Number(formData.section80C) || 0,
+                section80D: Number(formData.section80D) || 0
+            },
+            vdaGains: Number(formData.vdaGains) || 0,
+            regime: formData.regime || "new"
+        });
+
+        const itrData = {
+            assessmentYear: "2026-27",
+            financialYear: "2025-26",
+            formType: "ITR-1",
+            personalInfo: {
+                pan: formData.pan,
+                name: user?.user_metadata?.full_name || "User",
+                address: "AUTO_GENERATED_VIA_ITD_KYC"
+            },
+            incomeDetails: {
+                salary: Number(formData.salary) || 0,
+                otherSources: (Number(formData.savingsInterest) || 0) + (Number(formData.fdInterest) || 0) + (Number(formData.dividends) || 0) + (Number(formData.otherSourcesAmount) || 0),
+            },
+            taxComputation: {
+                regime: formData.regime || "new",
+                totalTaxLiability: Math.round(result.finalTax),
+                tdsClaimed: Number(formData.tdsPaid) || 0,
+                balanceToPay: Math.max(0, Math.round(result.finalTax) - (Number(formData.tdsPaid) || 0)),
+                refundDue: Math.max(0, (Number(formData.tdsPaid) || 0) - Math.round(result.finalTax))
+            },
+            verification: {
+                place: "Mumbai",
+                date: new Date().toISOString()
+            }
+        };
+
+        const blob = new Blob([JSON.stringify(itrData, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `TaxMitra_ITR_${formData.pan}_AY2627.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("ITR JSON generated and downloaded!");
+    };
+
     const currentStep = STEPS[currentStepIndex];
     const progress = ((currentStepIndex + 1) / STEPS.length) * 100;
 
@@ -218,7 +280,7 @@ export default function GuidedFiling() {
                                         {currentStep.id === "income" && <IncomeStep data={formData} update={setFormData} />}
                                         {currentStep.id === "deductions" && <DeductionStep data={formData} update={setFormData} />}
                                         {currentStep.id === "credits" && <CreditsStep data={formData} update={setFormData} />}
-                                        {currentStep.id === "review" && <ReviewStep data={formData} />}
+                                        {currentStep.id === "review" && <ReviewStep data={formData} onDownload={handleDownloadJSON} />}
                                     </CardContent>
                                     <CardFooter className="flex justify-between border-t bg-muted/10 p-6">
                                         <Button variant="ghost" onClick={prevStep} disabled={currentStepIndex === 0}>
@@ -571,7 +633,7 @@ const CreditsStep = ({ data, update }: StepProps) => {
     );
 };
 
-const ReviewStep = ({ data }: { data: FilingFormData }) => {
+const ReviewStep = ({ data, onDownload }: { data: FilingFormData; onDownload: () => void }) => {
     const result: TaxResult = calculateTax({
         salary: Number(data.salary) || 0,
         houseProperty: Number(data.houseProperty) || 0,
@@ -655,7 +717,11 @@ const ReviewStep = ({ data }: { data: FilingFormData }) => {
                         <p className="text-xs text-muted-foreground">Ready to generate your ITR-1 JSON for upload to IT Portal.</p>
                     </div>
                 </div>
-                <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 font-black shadow-xl shadow-indigo-100">
+                <Button
+                    size="lg"
+                    className="bg-indigo-600 hover:bg-indigo-700 font-black shadow-xl shadow-indigo-100"
+                    onClick={onDownload}
+                >
                     GENERATE ITR JSON
                 </Button>
             </div>

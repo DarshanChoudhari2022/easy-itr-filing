@@ -66,6 +66,7 @@ export default function EFile() {
 
       if (stepsRes.data?.answers) {
         const answers = stepsRes.data.answers as any;
+        setFilingPan(answers.pan);
         const result = calculateTax({
           salary: Number(answers.salary) || 0,
           houseProperty: Number(answers.houseProperty) || 0,
@@ -122,8 +123,12 @@ export default function EFile() {
     setFetchingAIS(false);
   };
 
+  const [filingPan, setFilingPan] = useState<string | null>(null);
+
   const generateJSON = async () => {
-    if (!profile?.pan_number) {
+    const panToUse = profile?.pan_number || filingPan;
+
+    if (!panToUse) {
       toast.error("Please add your PAN number first");
       return;
     }
@@ -138,20 +143,20 @@ export default function EFile() {
       financialYear: "2025-26",
       formType: taxSummary?.suggested_itr_form || "ITR-1",
       personalInfo: {
-        pan: profile.pan_number,
-        name: profile.full_name,
+        pan: panToUse,
+        name: profile?.full_name || user?.user_metadata?.full_name || "User",
         address: "AUTO_GENERATED_VIA_ITD_KYC"
       },
       incomeDetails: {
         salary: taxSummary?.total_income || 0,
-        otherSources: taxSummary?.total_income === taxSummary?.total_income ? 0 : 0, // Placeholder
+        otherSources: 0, // Simplified
       },
       taxComputation: {
         regime: taxSummary?.suggested_regime || "new",
-        totalTaxLiability: taxSummary?.tax_payable || 0,
+        totalTaxLiability: Math.round(taxSummary?.tax_payable || 0),
         tdsClaimed: taxSummary?.tds_total || 0,
-        balanceToPay: Math.max(0, (taxSummary?.tax_payable || 0) - (taxSummary?.tds_total || 0)),
-        refundDue: Math.max(0, (taxSummary?.tds_total || 0) - (taxSummary?.tax_payable || 0))
+        balanceToPay: Math.max(0, Math.round(taxSummary?.tax_payable || 0) - (taxSummary?.tds_total || 0)),
+        refundDue: Math.max(0, (taxSummary?.tds_total || 0) - Math.round(taxSummary?.tax_payable || 0))
       },
       verification: {
         place: "Mumbai",
@@ -164,7 +169,7 @@ export default function EFile() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `TaxMitra_ITR_${profile.pan_number}_AY2627.json`;
+    a.download = `TaxMitra_ITR_${panToUse}_AY2627.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -191,11 +196,12 @@ export default function EFile() {
       "Section_80_Proofs_Snapshot.pdf"
     ];
 
-    const blob = new Blob([`Audit Pack for ${profile?.pan_number}\nFiles: ${files.join(", ")}`], { type: "text/plain" });
+    const panToUse = profile?.pan_number || filingPan;
+    const blob = new Blob([`Audit Pack for ${panToUse}\nFiles: ${files.join(", ")}`], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `AUDIT_DEFENSE_PACK_${profile?.pan_number}.txt`; // Simplified as txt for demo
+    a.download = `AUDIT_DEFENSE_PACK_${panToUse}.txt`; // Simplified as txt for demo
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
