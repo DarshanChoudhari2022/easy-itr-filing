@@ -51,6 +51,7 @@ export default function AISReconciler() {
             { category: "SFT-005 (Dividends)", source_name: "TATA MOTORS LTD", reported_value: 12500, status: "unmatched" },
             { category: "SFT-001 (Savings Interest)", source_name: "HDFC BANK", reported_value: 4200, status: "matched" },
             { category: "SFT-006 (Mutual Funds Sale)", source_name: "ZERODHA", reported_value: 85000, status: "unmatched" },
+            { category: "SFT-010 (IPO Allotment)", source_name: "GROWW / BSE", reported_value: 14500, status: "unmatched" },
             { category: "SFT-002 (FD Interest)", source_name: "ICICI BANK", reported_value: 15600, status: "mismatch" },
         ];
 

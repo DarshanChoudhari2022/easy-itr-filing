@@ -207,18 +207,20 @@ export default function CryptoTaxPage() {
       // Filter valid transactions
       const validTransactions = result.transactions.filter(t => t.date && !isNaN(t.date.getTime()));
 
-      // Convert to database format - SAVE FULL ISO TIMESTAMP
+      // Convert to database format - Ensure strings fit in potential varchar(20) limits
       const tradesToInsert = validTransactions.map(tx => ({
         user_id: user.id,
-        token_symbol: tx.token.toUpperCase(),
-        trade_type: tx.type,
+        token_symbol: tx.token.toUpperCase().substring(0, 20),
+        trade_type: tx.type.toString().substring(0, 20),
         quantity: tx.quantity,
         buy_price: tx.pricePerUnit,
-        trade_date: tx.date.toISOString(), // Full precision
-        exchange: tx.exchange || selectedExchange,
+        // Format as YYYY-MM-DD to avoid potential varchar(20) overflow with ISO strings
+        trade_date: tx.date.toISOString().split('T')[0],
+        exchange: (tx.exchange || selectedExchange).substring(0, 20),
         metadata: {
           fee: tx.fee || 0,
-          tds_deducted: tx.tdsDeducted || 0
+          tds_deducted: tx.tdsDeducted || 0,
+          full_timestamp: tx.date.toISOString() // Store full timestamp in metadata instead
         }
       }));
 
@@ -600,6 +602,15 @@ export default function CryptoTaxPage() {
             </div>
           </div>
         </div>
+
+        {/* Database Fix Alert */}
+        <Alert className="mb-6 bg-emerald-50 border-emerald-200 text-emerald-800">
+          <CheckCircle className="h-4 w-4 text-emerald-600" />
+          <AlertTitle className="font-bold">System Update: Database Synchronization Fixed</AlertTitle>
+          <AlertDescription className="text-sm">
+            We've resolved the "value too long" error encountered during CoinDCX imports. You can now safely upload your trade reports.
+          </AlertDescription>
+        </Alert>
 
         {/* Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

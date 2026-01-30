@@ -78,4 +78,4 @@ export const YEAR_CONFIGS: Record<AssessmentYear, YearConfig> = {
     },
 };
 
-export const DEFAULT_AY: AssessmentYear = "2025-26";
+export const DEFAULT_AY: AssessmentYear = "2026-27";
