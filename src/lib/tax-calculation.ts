@@ -11,12 +11,14 @@ export interface TaxData {
         savingsInterest?: number;
         fdInterest?: number;
         dividends?: number;
+        misc?: number;
     };
     deductions?: {
         section80C?: number; // Caps at 1.5L
         section80D?: number; // Health Insurance
         section80TTA?: number; // Savings interest (Old regime only)
     };
+    businessIncome?: number; // For consultants/freelancers (Net Taxable)
     vdaGains?: number; // Crypto/VDA - Taxed at 30% flat (Section 115BBH)
     regime: "old" | "new";
 }
@@ -38,18 +40,19 @@ export function calculateTax(data: TaxData): TaxResult {
         houseProperty = 0,
         otherSources = { savingsInterest: 0, fdInterest: 0, dividends: 0 },
         deductions = { section80C: 0, section80D: 0, section80TTA: 0 },
+        businessIncome = 0,
         vdaGains = 0,
         regime = "new"
     } = data;
 
     // 1. Gross Total Income (Excluding VDA which is taxed separately)
-    const otherTotal = (otherSources.savingsInterest || 0) + (otherSources.fdInterest || 0) + (otherSources.dividends || 0);
+    const otherTotal = (otherSources.savingsInterest || 0) + (otherSources.fdInterest || 0) + (otherSources.dividends || 0) + (otherSources.misc || 0);
     const standardDeduction = regime === "new" ? 75000 : 50000;
 
     // Adjusted Salary after Standard Deduction
     const taxableSalary = Math.max(0, salary - standardDeduction);
 
-    const grossTotalIncome = taxableSalary + houseProperty + otherTotal;
+    const grossTotalIncome = taxableSalary + houseProperty + otherTotal + businessIncome;
 
     // 2. Deductions
     let totalDeductions = 0;

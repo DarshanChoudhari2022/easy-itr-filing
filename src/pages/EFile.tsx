@@ -69,10 +69,12 @@ export default function EFile() {
         const result = calculateTax({
           salary: Number(answers.salary) || 0,
           houseProperty: Number(answers.houseProperty) || 0,
+          businessIncome: Number(answers.businessIncome) || 0,
           otherSources: {
             savingsInterest: Number(answers.savingsInterest) || 0,
             fdInterest: Number(answers.fdInterest) || 0,
-            dividends: Number(answers.dividends) || 0
+            dividends: Number(answers.dividends) || 0,
+            misc: Number(answers.otherSourcesAmount) || 0
           },
           deductions: {
             section80C: Number(answers.section80C) || 0,

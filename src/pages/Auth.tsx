@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, Shield, TrendingUp, FileText, Mail, CheckCircle2, Sparkles } from "lucide-react";
+import { Loader2, Shield, TrendingUp, FileText, Mail, CheckCircle2, Sparkles, ArrowLeft } from "lucide-react";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -192,11 +192,18 @@ export default function Auth() {
       {/* Right side - Auth forms */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
             <img src="/logo.png" alt="TaxMitra" className="h-10 w-10 rounded-xl" />
             <span className="text-xl font-bold">TaxMitra</span>
           </div>
+
+          <Button
+            variant="ghost"
+            className="mb-4 -ml-4 text-muted-foreground hover:text-primary gap-2"
+            onClick={() => navigate("/")}
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Home
+          </Button>
 
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-8">

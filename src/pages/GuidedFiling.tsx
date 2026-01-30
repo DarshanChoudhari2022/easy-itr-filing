@@ -57,9 +57,11 @@ interface FilingFormData {
     fdInterest?: number;
     dividends?: number;
     vdaGains?: number;
-    houseProperty?: number;
     section80C?: number;
     section80D?: number;
+    houseProperty?: number;
+    businessIncome?: number;
+    otherSourcesAmount?: number;
     tdsPaid?: number;
     advanceTax?: number;
     regime?: "old" | "new";
@@ -303,9 +305,11 @@ const ProfileStep = ({ data, update }: StepProps) => {
 const IncomeStep = ({ data, update }: StepProps) => {
     const sources = [
         { id: 'salary', label: 'Salary / Pension', icon: <Wallet className="h-4 w-4" />, desc: 'Income fixed by employer' },
-        { id: 'interest', label: 'Interest & Dividends', icon: <Wallet className="h-4 w-4" />, desc: 'Savings, FD & Stock dividends' },
+        { id: 'business', label: 'Freelancer / Consultant', icon: <User className="h-4 w-4" />, desc: 'Professional or Business income' },
+        { id: 'interest', label: 'Interest & Dividends', icon: <IndianRupee className="h-4 w-4" />, desc: 'Savings, FD & Stock dividends' },
         { id: 'crypto', label: 'Crypto / VDAs', icon: <Bitcoin className="h-4 w-4" />, desc: 'Bitcoin, NFTs, Trading gains' },
         { id: 'house_property', label: 'House Property', icon: <Building className="h-4 w-4" />, desc: 'Rental income from owned property' },
+        { id: 'other', label: 'Other Sources', icon: <Sparkles className="h-4 w-4" />, desc: 'Commission, lottery, etc.' },
     ];
 
     const toggleSource = (id: string) => {
@@ -322,7 +326,7 @@ const IncomeStep = ({ data, update }: StepProps) => {
         <div className="space-y-8">
             <div className="space-y-4">
                 <h3 className="text-lg font-bold text-slate-900">Select Income Sources</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {sources.map(s => (
                         <div
                             key={s.id}
@@ -357,6 +361,25 @@ const IncomeStep = ({ data, update }: StepProps) => {
                                 placeholder="12,00,000"
                             />
                         </div>
+                    </div>
+                )}
+
+                {currentSources.includes('business') && (
+                    <div className="space-y-2 animate-in slide-in-from-left duration-300">
+                        <Label className="text-sm font-bold flex items-center gap-2">
+                            <User className="h-4 w-4 text-indigo-500" /> Professional / Freelance Income (Net Taxable)
+                        </Label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">₹</span>
+                            <Input
+                                type="number"
+                                className="pl-8 h-12 text-lg font-black border-indigo-200"
+                                value={data.businessIncome || ""}
+                                onChange={(e) => update({ ...data, businessIncome: Number(e.target.value) })}
+                                placeholder="Example: 50% of gross receipts (Sec 44ADA)"
+                            />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground italic">Enter your net profit after expenses. Professionals can claim 50% of receipts as profit.</p>
                     </div>
                 )}
 
@@ -398,6 +421,39 @@ const IncomeStep = ({ data, update }: StepProps) => {
                             placeholder="Gains from Crypto Trading"
                         />
                         <p className="text-[10px] text-muted-foreground italic">Taxed at a flat 30% plus 4% cess. Losses cannot be set off.</p>
+                    </div>
+                )}
+
+                {currentSources.includes('house_property') && (
+                    <div className="space-y-2 animate-in slide-in-from-right duration-300">
+                        <Label className="text-sm font-bold flex items-center gap-2">
+                            <Building className="h-4 w-4 text-indigo-500" /> Rental Income (Net of 30% Deduction)
+                        </Label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">₹</span>
+                            <Input
+                                type="number"
+                                className="pl-8 h-10 font-bold"
+                                value={data.houseProperty || ""}
+                                onChange={(e) => update({ ...data, houseProperty: Number(e.target.value) })}
+                                placeholder="Total annual rent minus 30%"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {currentSources.includes('other') && (
+                    <div className="space-y-2 animate-in slide-in-from-bottom duration-300">
+                        <Label className="text-sm font-bold flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-indigo-500" /> Other Income (Commission, Gifts, etc.)
+                        </Label>
+                        <Input
+                            type="number"
+                            className="h-10 font-bold"
+                            value={data.otherSourcesAmount || ""}
+                            onChange={(e) => update({ ...data, otherSourcesAmount: Number(e.target.value) })}
+                            placeholder="Amount received"
+                        />
                     </div>
                 )}
             </div>
@@ -519,10 +575,12 @@ const ReviewStep = ({ data }: { data: FilingFormData }) => {
     const result: TaxResult = calculateTax({
         salary: Number(data.salary) || 0,
         houseProperty: Number(data.houseProperty) || 0,
+        businessIncome: Number(data.businessIncome) || 0,
         otherSources: {
             savingsInterest: Number(data.savingsInterest) || 0,
             fdInterest: Number(data.fdInterest) || 0,
-            dividends: Number(data.dividends) || 0
+            dividends: Number(data.dividends) || 0,
+            misc: Number(data.otherSourcesAmount) || 0
         },
         deductions: {
             section80C: Number(data.section80C) || 0,
@@ -568,9 +626,15 @@ const ReviewStep = ({ data }: { data: FilingFormData }) => {
                 <div className="space-y-4">
                     <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Detailed Breakdown</h4>
                     <div className="space-y-3">
-                        <BreakdownRow label="Gross Total Income" value={result.grossTotalIncome} />
+                        {Number(data.salary) > 0 && <BreakdownRow label="Salary Income (Net)" value={Number(data.salary) - (data.regime === 'old' ? 50000 : 75000)} faded />}
+                        {Number(data.businessIncome) > 0 && <BreakdownRow label="Freelance / Business Profit" value={Number(data.businessIncome)} faded />}
+                        {Number(data.houseProperty) > 0 && <BreakdownRow label="House Property (Net)" value={Number(data.houseProperty)} faded />}
+                        {Number(result.grossTotalIncome - (Number(data.salary) || 0) - (Number(data.businessIncome) || 0) - (Number(data.houseProperty) || 0) + (data.regime === 'old' ? 50000 : 75000)) > 0 &&
+                            <BreakdownRow label="Other Sources (Interest, etc.)" value={result.grossTotalIncome - (Number(data.salary) || 0) - (Number(data.businessIncome) || 0) - (Number(data.houseProperty) || 0) + (data.regime === 'old' ? 50000 : 75000)} faded />
+                        }
+                        <BreakdownRow label="Gross Total Income" value={result.grossTotalIncome} bold />
                         <BreakdownRow label="Deductions Claimed" value={result.totalDeductions} faded />
-                        <BreakdownRow label="Taxable Income" value={result.taxableIncome} bold />
+                        <BreakdownRow label="Taxable Income" value={result.taxableIncome} bold highlight />
                         <BreakdownRow label="Tax on Income" value={result.taxPayable} />
                         {result.vdaTax > 0 && <BreakdownRow label="VDA Tax (30%)" value={result.vdaTax} highlight />}
                         <BreakdownRow label="Health & Edu Cess (4%)" value={result.cess} />
