@@ -572,41 +572,122 @@ export interface CSVParseResult {
  */
 /**
  * Helper to safely parse dates from various CSV formats
+ * Handles: Unix timestamps, ISO, DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.
  */
 function safeParseDate(dateStr: string): Date {
-    if (!dateStr) return new Date();
-
-    // Try standard constructor first
-    let date = new Date(dateStr);
-    if (!isNaN(date.getTime())) return date;
-
-    // Try parsing DD-MM-YYYY or DD/MM/YYYY
-    // Regex for DD-MM-YYYY HH:mm:ss or DD/MM/YYYY HH:mm:ss
-    const dmyPattern = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
-    const dmyMatch = dateStr.match(dmyPattern);
-
-    if (dmyMatch) {
-        const [_, day, month, year, hours, minutes, seconds] = dmyMatch;
-        date = new Date(
-            parseInt(year),
-            parseInt(month) - 1, // Month is 0-indexed
-            parseInt(day),
-            hours ? parseInt(hours) : 0,
-            minutes ? parseInt(minutes) : 0,
-            seconds ? parseInt(seconds) : 0
-        );
-        if (!isNaN(date.getTime())) return date;
+    if (!dateStr) {
+        console.warn('[safeParseDate] Empty date string, using current date');
+        return new Date();
     }
 
-    // Try parsing MM-DD-YYYY or MM/DD/YYYY (US format)
-    const mdyPattern = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
-    const mdyMatch = dateStr.match(mdyPattern); // Note: Same regex, just interpretation differs
+    const trimmed = dateStr.trim();
+    console.log('[safeParseDate] Parsing:', trimmed);
 
-    // If ambiguous (e.g. 01/02/2024), we usually assume DD/MM first for India/UK apps
-    // But if DD > 12, it must be DD-MM. If MM > 12, check.
+    // 1. Try Unix timestamp (milliseconds - 13 digits)
+    if (/^\d{13}$/.test(trimmed)) {
+        const date = new Date(parseInt(trimmed));
+        if (!isNaN(date.getTime())) {
+            console.log('[safeParseDate] Parsed as Unix ms:', date);
+            return date;
+        }
+    }
 
-    // Fallback: Return invalid date (validation will catch it)
-    return new Date(dateStr);
+    // 2. Try Unix timestamp (seconds - 10 digits)
+    if (/^\d{10}$/.test(trimmed)) {
+        const date = new Date(parseInt(trimmed) * 1000);
+        if (!isNaN(date.getTime())) {
+            console.log('[safeParseDate] Parsed as Unix sec:', date);
+            return date;
+        }
+    }
+
+    // 3. Try ISO format directly (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss)
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        const date = new Date(trimmed);
+        if (!isNaN(date.getTime())) {
+            console.log('[safeParseDate] Parsed as ISO:', date);
+            return date;
+        }
+    }
+
+    // 4. Try DD-MM-YYYY or DD/MM/YYYY (Indian format)
+    const dmyPattern = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
+    const dmyMatch = trimmed.match(dmyPattern);
+    if (dmyMatch) {
+        const [, day, month, year, hours, minutes, seconds] = dmyMatch;
+        const d = parseInt(day), m = parseInt(month);
+        // If day > 12, it's definitely DD-MM format
+        if (d <= 31 && m <= 12) {
+            const date = new Date(
+                parseInt(year),
+                m - 1,
+                d,
+                hours ? parseInt(hours) : 0,
+                minutes ? parseInt(minutes) : 0,
+                seconds ? parseInt(seconds) : 0
+            );
+            if (!isNaN(date.getTime())) {
+                console.log('[safeParseDate] Parsed as DD-MM-YYYY:', date);
+                return date;
+            }
+        }
+    }
+
+    // 5. Try MM-DD-YYYY (US format) if first number > 12
+    const mdyPattern = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
+    const mdyMatch = trimmed.match(mdyPattern);
+    if (mdyMatch) {
+        const [, month, day, year, hours, minutes, seconds] = mdyMatch;
+        const d = parseInt(day), m = parseInt(month);
+        if (m <= 12 && d <= 31) {
+            const date = new Date(
+                parseInt(year),
+                m - 1,
+                d,
+                hours ? parseInt(hours) : 0,
+                minutes ? parseInt(minutes) : 0,
+                seconds ? parseInt(seconds) : 0
+            );
+            if (!isNaN(date.getTime())) {
+                console.log('[safeParseDate] Parsed as MM-DD-YYYY:', date);
+                return date;
+            }
+        }
+    }
+
+    // 6. Handle "Jan 15, 2024" or "15 Jan 2024" format
+    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const namedMonthPattern = /(\d{1,2})\s+(\w{3})\s+(\d{4})|(\w{3})\s+(\d{1,2}),?\s+(\d{4})/i;
+    const namedMatch = trimmed.match(namedMonthPattern);
+    if (namedMatch) {
+        let day: number, monthIdx: number, year: number;
+        if (namedMatch[1]) {
+            day = parseInt(namedMatch[1]);
+            monthIdx = monthNames.indexOf(namedMatch[2].toLowerCase());
+            year = parseInt(namedMatch[3]);
+        } else {
+            monthIdx = monthNames.indexOf(namedMatch[4].toLowerCase());
+            day = parseInt(namedMatch[5]);
+            year = parseInt(namedMatch[6]);
+        }
+        if (monthIdx >= 0) {
+            const date = new Date(year, monthIdx, day);
+            if (!isNaN(date.getTime())) {
+                console.log('[safeParseDate] Parsed as named month:', date);
+                return date;
+            }
+        }
+    }
+
+    // 7. Last resort - try native parser
+    const lastTry = new Date(trimmed);
+    if (!isNaN(lastTry.getTime())) {
+        console.log('[safeParseDate] Parsed natively:', lastTry);
+        return lastTry;
+    }
+
+    console.error('[safeParseDate] FAILED to parse:', trimmed);
+    return new Date(NaN); // Return invalid date
 }
 
 /**
@@ -651,39 +732,99 @@ export function parseWazirXCSV(csvContent: string, userId: string): CSVParseResu
 
 /**
  * Parse CoinDCX CSV export format
+ * Auto-detects column headers for flexibility
  */
 export function parseCoinDCXCSV(csvContent: string, userId: string): CSVParseResult {
     const transactions: Transaction[] = [];
     const errors: { line: number; message: string }[] = [];
     const lines = csvContent.split('\n').filter(l => l.trim());
 
-    // Skip header
+    if (lines.length < 2) {
+        errors.push({ line: 1, message: 'CSV file is empty or has no data' });
+        return { transactions, errors, exchange: 'CoinDCX' };
+    }
+
+    // Parse header to detect column indices
+    const headerLine = lines[0].toLowerCase();
+    const headers = headerLine.split(',').map(h => h.trim().replace(/"/g, ''));
+
+    console.log('[CoinDCX Parser] Headers detected:', headers);
+
+    // Map column indices - CoinDCX uses various column names
+    const indices = {
+        date: headers.findIndex(h => h.includes('time') || h.includes('date') || h.includes('created')),
+        pair: headers.findIndex(h => h.includes('pair') || h.includes('market') || h.includes('symbol') || h.includes('coin')),
+        side: headers.findIndex(h => h.includes('side') || h.includes('type') || h.includes('order_type') || h === 'buy/sell'),
+        quantity: headers.findIndex(h => h.includes('quantity') || h.includes('amount') || h.includes('volume') || h.includes('qty')),
+        price: headers.findIndex(h => h.includes('price') || h.includes('rate')),
+        fee: headers.findIndex(h => h.includes('fee') || h.includes('commission')),
+        total: headers.findIndex(h => h.includes('total') || h.includes('value'))
+    };
+
+    console.log('[CoinDCX Parser] Detected indices:', indices);
+
+    // Check if we have minimum required columns
+    if (indices.date === -1 || indices.quantity === -1) {
+        // Try fully generic parsing
+        console.log('[CoinDCX Parser] Using positional parsing');
+        indices.date = 0;
+        indices.pair = 1;
+        indices.side = 2;
+        indices.quantity = 3;
+        indices.price = 4;
+        indices.fee = 5;
+    }
+
+    // Parse data rows
     for (let i = 1; i < lines.length; i++) {
         try {
             const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
-            if (cols.length < 6) continue;
+            if (cols.length < 4) {
+                errors.push({ line: i + 1, message: 'Insufficient columns' });
+                continue;
+            }
 
-            // CoinDCX format: Timestamp, Pair, Side, Quantity, Price, Fee, Total
-            const [timestamp, pair, side, quantity, price, fee, total] = cols;
+            const dateStr = cols[indices.date] || '';
+            const pairStr = cols[indices.pair] || '';
+            const sideStr = cols[indices.side] || 'buy';
+            const qtyStr = cols[indices.quantity] || '0';
+            const priceStr = cols[indices.price >= 0 ? indices.price : 4] || '0';
+            const feeStr = cols[indices.fee >= 0 ? indices.fee : 5] || '0';
 
-            const token = pair.split('INR')[0]?.toUpperCase() || pair.split('USDT')[0]?.toUpperCase() || 'UNKNOWN';
+            console.log(`[CoinDCX Parser] Row ${i}: date=${dateStr}, pair=${pairStr}, side=${sideStr}, qty=${qtyStr}`);
+
+            // Extract token from pair (e.g., "BTCINR" -> "BTC", "BTC/INR" -> "BTC")
+            let token = pairStr.replace(/[/_]?(INR|USDT|BUSD|BTC)$/i, '').toUpperCase();
+            if (!token) token = 'UNKNOWN';
+
+            const parsedDate = safeParseDate(dateStr);
+
+            // Skip if date is invalid
+            if (isNaN(parsedDate.getTime())) {
+                errors.push({ line: i + 1, message: `Invalid date: ${dateStr}` });
+                continue;
+            }
+
+            const sideNormalized = sideStr.toLowerCase();
+            const isBuy = sideNormalized.includes('buy') || sideNormalized === 'b';
 
             transactions.push({
                 id: `coindcx-${i}-${Date.now()}`,
-                type: side.toLowerCase() === 'buy' ? 'buy' : 'sell',
+                type: isBuy ? 'buy' : 'sell',
                 token,
-                quantity: parseFloat(quantity) || 0,
-                pricePerUnit: parseFloat(price) || 0,
-                date: safeParseDate(timestamp),
+                quantity: parseFloat(qtyStr) || 0,
+                pricePerUnit: parseFloat(priceStr) || 0,
+                date: parsedDate,
                 exchange: 'CoinDCX',
-                fee: parseFloat(fee) || 0,
+                fee: parseFloat(feeStr) || 0,
                 assessmentYear: '2025-26'
             });
         } catch (err) {
-            errors.push({ line: i + 1, message: `Failed to parse line: ${(err as Error).message}` });
+            errors.push({ line: i + 1, message: `Parse error: ${(err as Error).message}` });
         }
     }
 
+    console.log(`[CoinDCX Parser] Parsed ${transactions.length} transactions, ${errors.length} errors`);
     return { transactions, errors, exchange: 'CoinDCX' };
 }
 
