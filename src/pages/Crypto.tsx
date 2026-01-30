@@ -21,7 +21,8 @@ import {
   Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Plus, History,
   BarChart3, Settings, Zap, Coins, RefreshCw, ShieldCheck, AlertTriangle,
   CheckCircle, Upload, Eye, EyeOff, Trash2, ArrowUpRight, ArrowDownRight,
-  Filter, Sparkles, Target, Activity, Info, XCircle, FileText, Clock
+  Filter, Sparkles, Target, Activity, Info, XCircle, FileText, Clock,
+  Calendar, CheckCircle2, FileCheck
 } from "lucide-react";
 import {
   calculateDetailedPortfolio,
@@ -937,19 +938,93 @@ export default function CryptoTaxPage() {
                     </Button>
                   </div>
 
-                  {/* Help Info */}
-                  <Alert>
-                    <Info className="h-4 w-4" />
-                    <AlertTitle>How to download CSV from {selectedExchange}?</AlertTitle>
-                    <AlertDescription className="text-sm">
-                      <ol className="list-decimal list-inside mt-2 space-y-1">
-                        <li>Login to {selectedExchange}</li>
-                        <li>Go to Trade History / Order History</li>
-                        <li>Click on Export or Download as CSV</li>
-                        <li>Upload the downloaded file here</li>
-                      </ol>
-                    </AlertDescription>
-                  </Alert>
+                  {/* Help Info & Document Checklist */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <Card className="border-0 shadow-sm bg-slate-50">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <FileCheck className="h-4 w-4 text-indigo-600" />
+                          </div>
+                          <CardTitle className="text-sm font-semibold">Required Document Checklist</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-3">
+                          {[
+                            { item: "Annual Information Statement (AIS)", desc: "Mandatory for cross-verifying all income" },
+                            { item: "Taxpayer Information Summary (TIS)", desc: "Simplified summary of your tax data" },
+                            { item: "Exchange Trade Report (CSV)", desc: "Full history from CoinDCX/WazirX/Binance" },
+                            { item: "Form 26AS", desc: "For verifying TDS deducted on crypto sales (1%)" },
+                            { item: "Bank Statements", desc: "To reconcile deposits and withdrawals" }
+                          ].map((doc, i) => (
+                            <li key={i} className="flex gap-3">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">{doc.item}</p>
+                                <p className="text-xs text-slate-500 font-normal">{doc.desc}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-0 shadow-sm bg-slate-50">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                            <Zap className="h-4 w-4 text-orange-600" />
+                          </div>
+                          <CardTitle className="text-sm font-semibold">Baby Steps: Get CoinDCX Report</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="relative space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                          {[
+                            { step: "Step 1", text: "Login to CoinDCX on Desktop browser" },
+                            { step: "Step 2", text: "Go to 'Orders' → 'Trade History'" },
+                            { step: "Step 3", text: "Click 'Download Report' button" },
+                            { step: "Step 4", text: "Select 'Trade History' and your 'Financial Year'" },
+                            { step: "Step 5", text: "Choose CSV format and click 'Generate'" }
+                          ].map((s, i) => (
+                            <div key={i} className="relative pl-6">
+                              <div className="absolute left-0 top-1.5 h-4 w-4 rounded-full border-2 border-slate-300 bg-white" />
+                              <p className="text-xs font-semibold text-slate-400 uppercase tracking-tight">{s.step}</p>
+                              <p className="text-sm text-slate-700 font-medium">{s.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="md:col-span-2 border-0 shadow-sm bg-gradient-to-br from-indigo-50 to-white">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-indigo-600" />
+                          <CardTitle className="text-sm font-semibold">How to Calculate for Desired Financial Year</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid sm:grid-cols-3 gap-4">
+                          <div className="p-3 rounded-lg bg-white border border-indigo-100">
+                            <p className="text-xs font-bold text-indigo-600 mb-1">FY 2025-26</p>
+                            <p className="text-[10px] text-slate-500">Current Year</p>
+                            <p className="text-sm font-medium mt-1">April 1, 2025 to March 31, 2026</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-white border border-slate-100">
+                            <p className="text-xs font-bold text-slate-600 mb-1">FY 2024-25</p>
+                            <p className="text-[10px] text-slate-500">Past Year</p>
+                            <p className="text-sm font-medium mt-1">April 1, 2024 to March 31, 2025</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-indigo-600 text-white">
+                            <p className="text-xs font-bold mb-1 opacity-90">Quick Tip</p>
+                            <p className="text-xs leading-relaxed">Always use the **FY Selector** at the top to filter trades accurately for each individual tax filing period.</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </CardContent>
               </Card>
             </div>
