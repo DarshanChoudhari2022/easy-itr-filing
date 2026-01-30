@@ -73,7 +73,16 @@ export default function CryptoTaxPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings'>('overview');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
+  // Initialize from localStorage if available
+  const [settings, setSettings] = useState<TaxSettings>(() => {
+    const saved = localStorage.getItem('taxSettings');
+    return saved ? JSON.parse(saved) : DEFAULT_TAX_SETTINGS;
+  });
+
+  // Save changes to localStorage
+  useEffect(() => {
+    localStorage.setItem('taxSettings', JSON.stringify(settings));
+  }, [settings]);
 
   // Import states
   const [selectedExchange, setSelectedExchange] = useState('CoinDCX');
@@ -526,8 +535,8 @@ export default function CryptoTaxPage() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
-                      ? 'border-indigo-600 text-indigo-600'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                     }`}
                 >
                   <tab.icon className="h-4 w-4" />
@@ -782,8 +791,8 @@ export default function CryptoTaxPage() {
                         key={exchange.id}
                         onClick={() => setSelectedExchange(exchange.id)}
                         className={`p-4 rounded-xl border-2 text-left transition-all ${selectedExchange === exchange.id
-                            ? 'border-indigo-500 bg-indigo-50'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
                           }`}
                       >
                         <p className="font-medium text-slate-900">{exchange.name}</p>
@@ -971,7 +980,7 @@ function StatCard({ label, value, subtext, icon, highlight }: {
           <div>
             <p className="text-sm text-slate-500 mb-1">{label}</p>
             <p className={`text-2xl font-semibold ${highlight === 'positive' ? 'text-emerald-600' :
-                highlight === 'negative' ? 'text-red-600' : 'text-slate-900'
+              highlight === 'negative' ? 'text-red-600' : 'text-slate-900'
               }`}>{value}</p>
             <p className="text-xs text-slate-400 mt-1">{subtext}</p>
           </div>
@@ -1002,6 +1011,15 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
     setGenerating(type);
 
     try {
+      // Flatten matched lots from all tokens to create the Schedule VDA
+      // This uses the actual FIFO/LIFO/HIFO calculation results
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allMatchedLots = portfolio?.breakdown?.flatMap((res: any) => res.matchedLots) || [];
+
+      // Sort by sell date
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allMatchedLots.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
+
       const reportData: TaxReportData = {
         user: {
           name: user?.user_metadata?.full_name || 'Taxpayer',
@@ -1032,17 +1050,27 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           totalValue: t.quantity * t.buy_price,
           exchange: t.exchange || 'Unknown'
         })),
-        scheduleVDA: trades.filter(t => t.trade_type === 'sell').map((t, i) => ({
+        // Use actual calculated lots for the report
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scheduleVDA: allMatchedLots.map((lot: any, i: number) => ({
           slNo: i + 1,
-          dateOfTransfer: new Date(t.trade_date).toLocaleDateString('en-IN'),
+          dateOfTransfer: new Date(lot.sellDate).toLocaleDateString('en-IN'),
           headOfIncome: 'Income from VDA',
-          descriptionOfVDA: t.token_symbol,
-          saleConsideration: t.quantity * t.buy_price,
-          costOfAcquisition: t.quantity * t.buy_price * 0.85, // Estimated
-          gainLoss: t.quantity * t.buy_price * 0.15
+          descriptionOfVDA: lot.token,
+          saleConsideration: lot.sellPrice * lot.quantity,
+          costOfAcquisition: lot.buyPrice * lot.quantity,
+          gainLoss: lot.gainLoss
         })),
-        tokenWiseSummary: [],
-        exchangeWiseTDS: []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tokenWiseSummary: portfolio?.tokenWise?.map((t: any) => ({
+          token: t.name,
+          totalBought: 0, // Simplified in summary view, detailed in breakdown
+          totalSold: 0,
+          avgBuyPrice: 0,
+          realizedGain: t.gain - t.loss,
+          currentHolding: t.holding
+        })) || [],
+        exchangeWiseTDS: [] // To be implemented if exchange data is granular enough
       };
 
       if (type === 'complete') {

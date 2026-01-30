@@ -570,6 +570,48 @@ export interface CSVParseResult {
 /**
  * Parse WazirX CSV export format
  */
+/**
+ * Helper to safely parse dates from various CSV formats
+ */
+function safeParseDate(dateStr: string): Date {
+    if (!dateStr) return new Date();
+
+    // Try standard constructor first
+    let date = new Date(dateStr);
+    if (!isNaN(date.getTime())) return date;
+
+    // Try parsing DD-MM-YYYY or DD/MM/YYYY
+    // Regex for DD-MM-YYYY HH:mm:ss or DD/MM/YYYY HH:mm:ss
+    const dmyPattern = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
+    const dmyMatch = dateStr.match(dmyPattern);
+
+    if (dmyMatch) {
+        const [_, day, month, year, hours, minutes, seconds] = dmyMatch;
+        date = new Date(
+            parseInt(year),
+            parseInt(month) - 1, // Month is 0-indexed
+            parseInt(day),
+            hours ? parseInt(hours) : 0,
+            minutes ? parseInt(minutes) : 0,
+            seconds ? parseInt(seconds) : 0
+        );
+        if (!isNaN(date.getTime())) return date;
+    }
+
+    // Try parsing MM-DD-YYYY or MM/DD/YYYY (US format)
+    const mdyPattern = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/;
+    const mdyMatch = dateStr.match(mdyPattern); // Note: Same regex, just interpretation differs
+
+    // If ambiguous (e.g. 01/02/2024), we usually assume DD/MM first for India/UK apps
+    // But if DD > 12, it must be DD-MM. If MM > 12, check.
+
+    // Fallback: Return invalid date (validation will catch it)
+    return new Date(dateStr);
+}
+
+/**
+ * Parse WazirX CSV export format
+ */
 export function parseWazirXCSV(csvContent: string, userId: string): CSVParseResult {
     const transactions: Transaction[] = [];
     const errors: { line: number; message: string }[] = [];
@@ -593,7 +635,7 @@ export function parseWazirXCSV(csvContent: string, userId: string): CSVParseResu
                 token,
                 quantity: parseFloat(volume) || 0,
                 pricePerUnit: parseFloat(price) || 0,
-                date: new Date(date),
+                date: safeParseDate(date),
                 exchange: 'WazirX',
                 fee: parseFloat(fee) || 0,
                 feeCurrency: feeCurrency || 'INR',
@@ -632,7 +674,7 @@ export function parseCoinDCXCSV(csvContent: string, userId: string): CSVParseRes
                 token,
                 quantity: parseFloat(quantity) || 0,
                 pricePerUnit: parseFloat(price) || 0,
-                date: new Date(timestamp),
+                date: safeParseDate(timestamp),
                 exchange: 'CoinDCX',
                 fee: parseFloat(fee) || 0,
                 assessmentYear: '2025-26'
@@ -678,7 +720,7 @@ export function parseBinanceCSV(csvContent: string, userId: string): CSVParseRes
                 token,
                 quantity: parseFloat(executed) || 0,
                 pricePerUnit: parseFloat(price) || 0,
-                date: new Date(dateStr),
+                date: safeParseDate(dateStr),
                 exchange: 'Binance',
                 fee: parseFloat(fee) || 0,
                 assessmentYear: '2025-26'
@@ -764,12 +806,7 @@ function parseGenericCSV(csvContent: string, userId: string): CSVParseResult {
 
             let date = new Date();
             if (indices.date >= 0) {
-                const dateStr = cols[indices.date];
-                date = new Date(dateStr);
-                if (isNaN(date.getTime())) {
-                    // Try alternate formats
-                    date = new Date(dateStr.replace(/(\d+)-(\d+)-(\d+)/, '$3-$2-$1'));
-                }
+                date = safeParseDate(cols[indices.date]);
             }
 
             if (quantity > 0 && token) {
