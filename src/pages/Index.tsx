@@ -1,8 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+/**
+ * TaxMitra Landing Page
+ * Professional, Clean Design with Premium Typography
+ */
+
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   ArrowRight,
   CheckCircle2,
@@ -18,642 +23,614 @@ import {
   Star,
   Menu,
   X,
-  Play,
-  ChevronRight,
-  Bot,
   Calculator,
   TrendingUp,
   Lock,
   Award,
   BarChart3,
-  Briefcase,
   Target,
-  Rocket,
-  Heart,
   ShieldCheck,
-  Search,
   PieChart,
-  Activity
+  ChevronRight,
+  Play,
+  Wallet,
+  Receipt,
+  FileCheck,
+  Bot,
+  Phone,
+  Mail,
+  MapPin
 } from "lucide-react";
 import TaxChatbot from "@/components/TaxChatbot";
 
-interface AnimatedSectionProps {
-  children: React.ReactNode;
-  className?: string;
-  delay?: number;
-}
-
-// Scroll-triggered animation component
-function AnimatedSection({ children, className = "", delay = 0 }: AnimatedSectionProps) {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 60 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 60 }}
-      transition={{ duration: 0.8, delay, ease: [0.21, 0.47, 0.32, 0.98] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-interface Card3DProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-// 3D Card with hover effect
-function Card3D({ children, className = "" }: Card3DProps) {
-  return (
-    <motion.div
-      whileHover={{
-        rotateX: -5,
-        rotateY: 5,
-        scale: 1.02,
-        boxShadow: "0 25px 50px -12px rgba(79, 70, 229, 0.25)"
-      }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      className={`transform-gpu perspective-1000 ${className}`}
-      style={{ transformStyle: "preserve-3d" }}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-interface Float3DProps {
-  children: React.ReactNode;
-  delay?: number;
-  duration?: number;
-}
-
-// Floating 3D element
-function Float3D({ children, delay = 0, duration = 3 }: Float3DProps) {
-  return (
-    <motion.div
-      animate={{
-        y: [-10, 10, -10],
-        rotateZ: [-1, 1, -1]
-      }}
-      transition={{
-        duration,
-        delay,
-        repeat: Infinity,
-        ease: "easeInOut"
-      }}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
 export default function Index() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { scrollYProgress } = useScroll();
-  const heroOpacity = useTransform(scrollYProgress, [0, 0.2], [1, 0]);
-  const heroScale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95]);
 
   return (
-    <div className="min-h-screen bg-white font-sans antialiased overflow-x-hidden">
-      {/* Progress Bar */}
-      <motion.div
-        className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-600 via-teal-400 to-indigo-600 z-[100] origin-left"
-        style={{ scaleX: scrollYProgress }}
-      />
-
+    <div className="min-h-screen bg-white">
       {/* ===== NAVIGATION ===== */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 lg:h-20">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-                <ShieldCheck className="text-white h-6 w-6" />
+            <Link to="/" className="flex items-center gap-2.5">
+              <div className="h-9 w-9 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <ShieldCheck className="text-white h-5 w-5" />
               </div>
-              <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-slate-900 to-indigo-600 bg-clip-text text-transparent">
-                TaxMitra
-              </span>
+              <span className="text-xl font-bold text-gray-900">TaxMitra</span>
             </Link>
 
             {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center gap-10">
-              <a href="#solutions" className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors">Solutions</a>
-              <a href="#features" className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors">Features</a>
-              <a href="#pricing" className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors">Pricing</a>
-              <a href="#expert" className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors">Hire Expert</a>
+            <nav className="hidden lg:flex items-center gap-8">
+              <a href="#features" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Features</a>
+              <a href="#solutions" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Solutions</a>
+              <a href="#pricing" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Pricing</a>
+              <a href="#contact" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">Contact</a>
             </nav>
 
             {/* Desktop CTAs */}
-            <div className="hidden md:flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-3">
               <Link to="/auth">
-                <Button variant="ghost" className="font-bold text-slate-600">Sign In</Button>
+                <Button variant="ghost" className="text-gray-600 font-medium">Sign In</Button>
               </Link>
               <Link to="/auth">
-                <Button className="bg-slate-900 hover:bg-slate-800 shadow-xl shadow-slate-200 font-bold rounded-full px-8 h-11">
-                  Start Free Filing
+                <Button className="bg-indigo-600 hover:bg-indigo-700 font-medium px-5">
+                  Start Free
                 </Button>
               </Link>
             </div>
 
             {/* Mobile Menu Button */}
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-slate-900">
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden p-2">
+              {mobileMenuOpen ? <X className="h-6 w-6 text-gray-900" /> : <Menu className="h-6 w-6 text-gray-900" />}
             </button>
           </div>
         </div>
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            className="md:hidden bg-white border-t border-slate-100 px-6 py-6 space-y-4 shadow-2xl"
-          >
-            <a href="#solutions" className="block text-slate-900 font-bold py-2">Solutions</a>
-            <a href="#features" className="block text-slate-900 font-bold py-2">Features</a>
-            <a href="#pricing" className="block text-slate-900 font-bold py-2">Pricing</a>
-            <Link to="/auth" className="block pt-4">
-              <Button className="w-full bg-indigo-600 h-12 rounded-xl font-bold">Get Started</Button>
-            </Link>
-          </motion.div>
+          <div className="lg:hidden bg-white border-t border-gray-100 px-4 py-4 space-y-3">
+            <a href="#features" className="block text-gray-900 font-medium py-2">Features</a>
+            <a href="#solutions" className="block text-gray-900 font-medium py-2">Solutions</a>
+            <a href="#pricing" className="block text-gray-900 font-medium py-2">Pricing</a>
+            <a href="#contact" className="block text-gray-900 font-medium py-2">Contact</a>
+            <div className="pt-4 space-y-2">
+              <Link to="/auth" className="block">
+                <Button variant="outline" className="w-full">Sign In</Button>
+              </Link>
+              <Link to="/auth" className="block">
+                <Button className="w-full bg-indigo-600 hover:bg-indigo-700">Start Free</Button>
+              </Link>
+            </div>
+          </div>
         )}
       </header>
 
       {/* ===== HERO SECTION ===== */}
-      <section className="relative pt-40 pb-24 px-6 lg:px-8 min-h-[90vh] flex items-center overflow-hidden bg-slate-50">
-        {/* Modern Background Accents */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-24 -left-24 w-[600px] h-[600px] bg-indigo-50 rounded-full mix-blend-multiply opacity-70 blur-3xl animate-pulse" />
-          <div className="absolute top-1/2 -right-24 w-[500px] h-[500px] bg-teal-50 rounded-full mix-blend-multiply opacity-70 blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
-        </div>
-
-        <div className="max-w-7xl mx-auto w-full relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+      <section className="pt-24 lg:pt-32 pb-16 lg:pb-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-gray-50 to-white">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             {/* Left: Content */}
-            <motion.div
-              style={{ opacity: heroOpacity, scale: heroScale }}
-              className="text-center lg:text-left space-y-8"
-            >
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6 }}
-              >
-                <Badge className="bg-white border border-slate-200 text-slate-600 px-4 py-2 text-xs font-black rounded-full uppercase tracking-widest shadow-sm">
-                  <Star className="h-3 w-3 mr-2 inline text-amber-500 fill-amber-500" />
-                  India's #1 Premium Tax Compliance Platform
-                </Badge>
-              </motion.div>
+            <div className="space-y-8 text-center lg:text-left">
+              <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 px-4 py-1.5 text-sm font-medium">
+                <Star className="h-3.5 w-3.5 mr-1.5 text-amber-500 fill-amber-500" />
+                AY 2025-26 Ready
+              </Badge>
 
-              <motion.h1
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2, duration: 0.8 }}
-                className="text-5xl md:text-7xl font-black tracking-tight text-slate-950 leading-[0.95]"
-              >
-                Precision Tax
-                <span className="block text-indigo-600">Compliance</span>
-                <span className="block italic font-serif font-light text-slate-800">Redefined.</span>
-              </motion.h1>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight tracking-tight">
+                File Your ITR
+                <span className="block text-indigo-600">With Confidence</span>
+              </h1>
 
-              <motion.p
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.8 }}
-                className="text-xl text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0 font-medium"
-              >
-                TaxMitra empowers business owners and professionals with AI-driven tax intelligence. From complex Crypto audits to seamless GST filings – experience a tax journey that is accurate, expert-led, and entirely stress-free.
-              </motion.p>
+              <p className="text-lg text-gray-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
+                India's most trusted tax filing platform. AI-powered calculations,
+                expert guidance, and seamless e-filing for salaried professionals,
+                businesses, and crypto investors.
+              </p>
 
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.8 }}
-                className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-6"
-              >
+              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                 <Link to="/auth">
-                  <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 h-16 px-12 rounded-2xl text-lg font-black shadow-2xl shadow-indigo-200 group transition-all hover:scale-105 active:scale-95">
-                    Start Your Filing
-                    <ArrowRight className="ml-3 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 h-12 px-8 text-base font-medium shadow-lg shadow-indigo-200">
+                    Start Filing Now
+                    <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-                <div className="flex flex-col items-start gap-1">
-                  <div className="flex -space-x-3">
-                    {[1, 2, 3, 4].map(i => (
-                      <div key={i} className="h-10 w-10 rounded-full border-4 border-white bg-slate-200 overflow-hidden ring-2 ring-indigo-50">
-                        <img src={`https://i.pravatar.cc/100?u=${i}`} alt="user" />
+                <Link to="/auth">
+                  <Button size="lg" variant="outline" className="h-12 px-8 text-base font-medium">
+                    <Calculator className="mr-2 h-4 w-4" />
+                    Try Tax Calculator
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Trust Indicators */}
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-6 pt-4">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <span>85,000+ Users</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Shield className="h-4 w-4 text-indigo-500" />
+                  <span>Bank-Grade Security</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                  <span>10 Min Filing</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Dashboard Preview */}
+            <div className="relative hidden lg:block">
+              <div className="bg-white rounded-2xl shadow-2xl shadow-gray-200 border border-gray-100 overflow-hidden">
+                {/* Dashboard Header */}
+                <div className="bg-gray-900 px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+                        <BarChart3 className="h-4 w-4 text-white" />
+                      </div>
+                      <span className="text-white font-semibold text-sm">Tax Dashboard</span>
+                    </div>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-xs">AY 2025-26</Badge>
+                  </div>
+                </div>
+
+                {/* Dashboard Content */}
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-gray-50">
+                      <p className="text-xs text-gray-500 font-medium">Gross Income</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">₹12,50,000</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-indigo-50">
+                      <p className="text-xs text-indigo-600 font-medium">Tax Saved</p>
+                      <p className="text-2xl font-bold text-indigo-600 mt-1">₹1,25,000</p>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 font-medium">Filing Progress</span>
+                      <span className="text-indigo-600 font-semibold">85%</span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-600 rounded-full" style={{ width: '85%' }} />
+                    </div>
+                  </div>
+
+                  {/* Action Items */}
+                  <div className="space-y-2">
+                    {['Salary Details ✓', 'Form 16 Uploaded ✓', 'Deductions Added ✓', 'Bank Details Pending'].map((item, i) => (
+                      <div key={i} className={`flex items-center gap-2 p-3 rounded-lg ${i === 3 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                        <CheckCircle2 className={`h-4 w-4 ${i === 3 ? 'text-amber-500' : 'text-emerald-500'}`} />
+                        <span className="text-sm font-medium text-gray-700">{item}</span>
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs font-bold text-slate-500 ml-1">Joined by 85k+ Professionals</p>
                 </div>
-              </motion.div>
-            </motion.div>
+              </div>
 
-            {/* Right: Premium Dashboard Visualization */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, rotateY: 20 }}
-              animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-              transition={{ duration: 1, ease: "easeOut" }}
-              className="relative perspective-2000 hidden lg:block"
-            >
-              <Float3D>
-                <div className="relative rounded-[40px] p-2 bg-gradient-to-br from-indigo-500/10 via-slate-200 to-indigo-500/10 shadow-2xl">
-                  <div className="bg-slate-900 rounded-[32px] overflow-hidden border border-white/10 shadow-inner p-1">
-                    {/* Dashboard Content Mockup */}
-                    <div className="bg-[#0f172a] p-8 space-y-8 min-h-[500px]">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-                            <Activity className="h-4 w-4 text-white" />
-                          </div>
-                          <span className="text-white font-black text-sm uppercase tracking-widest">Tax Console</span>
-                        </div>
-                        <Badge className="bg-emerald-500/20 text-emerald-400 border-none font-black text-[10px]">AY 2026-27 ACTIVE</Badge>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-6 rounded-3xl bg-white/5 border border-white/5 space-y-2">
-                          <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider">Total Liability</p>
-                          <p className="text-3xl font-black text-white">₹4,500</p>
-                        </div>
-                        <div className="p-6 rounded-3xl bg-indigo-600 space-y-2 shadow-xl shadow-indigo-600/20">
-                          <p className="text-white/70 text-[10px] font-black uppercase tracking-wider">Total Tax Saved</p>
-                          <p className="text-3xl font-black text-white">₹1.2L</p>
-                        </div>
-                      </div>
-
-                      <div className="relative h-48 w-full bg-slate-800/50 rounded-3xl border border-white/5 overflow-hidden p-6">
-                        <div className="flex justify-between items-end h-full gap-2">
-                          {[40, 70, 45, 90, 65, 80, 50].map((h, i) => (
-                            <motion.div
-                              key={i}
-                              initial={{ height: 0 }}
-                              animate={{ height: `${h}%` }}
-                              transition={{ delay: 1 + (i * 0.1), duration: 1 }}
-                              className={`flex-1 rounded-full ${i === 3 ? 'bg-indigo-500' : 'bg-slate-700/50 hover:bg-indigo-400/50 transition-colors'}`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-                        <motion.div
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ delay: 1.5, type: "spring" }}
-                          className="bg-white/90 backdrop-blur-3xl rounded-[32px] p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] border border-white/50 text-center min-w-[320px]"
-                        >
-                          <div className="h-16 w-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                          </div>
-                          <h4 className="text-2xl font-black text-slate-900">Tax Filed Successfully</h4>
-                          <p className="text-slate-500 text-sm font-bold mt-2">Fiscal Year 2023-24 Consolidated</p>
-                          <Button className="w-full mt-6 bg-slate-900 h-12 rounded-xl font-bold">Download Ack Receipt</Button>
-                        </motion.div>
-                      </div>
-                    </div>
+              {/* Floating Cards */}
+              <div className="absolute -top-4 -right-4 bg-white rounded-xl shadow-lg border border-gray-100 p-4 transform rotate-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <TrendingUp className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Tax Optimization</p>
+                    <p className="text-lg font-bold text-emerald-600">+₹45,000</p>
                   </div>
                 </div>
-              </Float3D>
-
-              {/* Decorative Floating Icons */}
-              <div className="absolute -top-12 -right-12 h-24 w-24 bg-white rounded-3xl shadow-2xl flex items-center justify-center border border-slate-100 animate-bounce" style={{ animationDuration: "3s" }}>
-                <Bitcoin className="h-10 w-10 text-orange-400" />
               </div>
-              <div className="absolute -bottom-16 -left-16 h-32 w-32 bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-100 p-8 space-y-4">
-                <div className="h-2 w-full bg-indigo-100 rounded-full" />
-                <div className="h-2 w-3/4 bg-slate-100 rounded-full" />
-                <div className="h-2 w-1/2 bg-slate-100 rounded-full" />
-                <PieChart className="h-8 w-8 text-indigo-600 mt-4 mx-auto" />
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== TRUSTED BY MARQUEE / STATS ===== */}
-      <section className="py-16 bg-white border-y border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-12 items-center text-center">
-            <div className="space-y-1">
-              <p className="text-4xl font-black text-slate-950">₹3.5B+</p>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">Tax Refunded</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-4xl font-black text-indigo-600">99.9%</p>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">Accuracy Rate</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-4xl font-black text-slate-950">85,000+</p>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">Active Users</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-4xl font-black text-teal-500">24/7</p>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">Expert Support</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ===== CORE SOLUTIONS SECTION ===== */}
-      <section id="solutions" className="py-32 bg-white relative">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <AnimatedSection className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-20">
-            <div className="max-w-2xl">
-              <Badge className="bg-indigo-50 text-indigo-600 px-4 py-1.5 text-xs font-black rounded-full mb-6 tracking-widest uppercase">Expert Ecosystem</Badge>
-              <h2 className="text-4xl md:text-6xl font-black text-slate-950 tracking-tighter leading-none">
-                Beyond Automated <br />
-                <span className="text-indigo-600">Calculations.</span>
-              </h2>
+      {/* ===== STATS SECTION ===== */}
+      <section className="py-16 bg-white border-y border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
+            <div>
+              <p className="text-3xl lg:text-4xl font-bold text-gray-900">₹350Cr+</p>
+              <p className="text-sm text-gray-500 font-medium mt-1">Tax Refunds Processed</p>
             </div>
-            <p className="text-lg text-slate-500 font-medium max-w-sm">
-              We bridge the gap between AI efficiency and human expertise for a bulletproof tax strategy.
+            <div>
+              <p className="text-3xl lg:text-4xl font-bold text-indigo-600">99.9%</p>
+              <p className="text-sm text-gray-500 font-medium mt-1">Accuracy Rate</p>
+            </div>
+            <div>
+              <p className="text-3xl lg:text-4xl font-bold text-gray-900">85,000+</p>
+              <p className="text-sm text-gray-500 font-medium mt-1">Happy Taxpayers</p>
+            </div>
+            <div>
+              <p className="text-3xl lg:text-4xl font-bold text-emerald-600">24/7</p>
+              <p className="text-sm text-gray-500 font-medium mt-1">Expert Support</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== FEATURES SECTION ===== */}
+      <section id="features" className="py-20 lg:py-28 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 mb-4">Features</Badge>
+            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+              Everything You Need for Tax Filing
+            </h2>
+            <p className="text-lg text-gray-600">
+              From auto-import to e-filing, we've built every feature you need
+              to file your ITR accurately and on time.
             </p>
-          </AnimatedSection>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+            {[
+              {
+                icon: <FileText className="h-6 w-6" />,
+                title: "Auto Form 16 Import",
+                desc: "Upload your Form 16 PDF and we automatically extract all salary details, TDS, and employer information.",
+                color: "bg-blue-500"
+              },
+              {
+                icon: <Calculator className="h-6 w-6" />,
+                title: "Smart Regime Comparison",
+                desc: "Our AI compares Old vs New tax regime and recommends the one that saves you more money.",
+                color: "bg-indigo-500"
+              },
+              {
+                icon: <Shield className="h-6 w-6" />,
+                title: "AIS Reconciliation",
+                desc: "Cross-verify your income data with Annual Information Statement to avoid discrepancies.",
+                color: "bg-emerald-500"
+              },
+              {
+                icon: <Bitcoin className="h-6 w-6" />,
+                title: "Crypto Tax Calculator",
+                desc: "Import trades from CoinDCX, WazirX, Binance. Auto-calculate gains and generate Schedule VDA.",
+                color: "bg-orange-500"
+              },
+              {
+                icon: <Bot className="h-6 w-6" />,
+                title: "AI Tax Assistant",
+                desc: "Get instant answers to your tax questions. Our AI understands Indian tax laws deeply.",
+                color: "bg-purple-500"
+              },
+              {
+                icon: <FileCheck className="h-6 w-6" />,
+                title: "One-Click E-Filing",
+                desc: "Generate ITR JSON ready for income tax portal. File ITR-1, 2, 3, 4 with ease.",
+                color: "bg-teal-500"
+              }
+            ].map((feature, i) => (
+              <Card key={i} className="border-gray-100 hover:border-indigo-200 hover:shadow-lg transition-all">
+                <CardContent className="p-6">
+                  <div className={`h-12 w-12 ${feature.color} rounded-xl flex items-center justify-center text-white mb-4`}>
+                    {feature.icon}
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h3>
+                  <p className="text-gray-600 text-sm leading-relaxed">{feature.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== SOLUTIONS SECTION ===== */}
+      <section id="solutions" className="py-20 lg:py-28 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 mb-4">Solutions</Badge>
+            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+              Built for Every Taxpayer
+            </h2>
+            <p className="text-lg text-gray-600">
+              Whether you're a salaried professional, business owner, or crypto investor,
+              we have the right solution for you.
+            </p>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-8">
+            {[
+              {
+                title: "Salaried Professionals",
+                desc: "Easy ITR-1 & ITR-2 filing with Form 16 auto-import, HRA calculator, and regime optimization.",
+                icon: <Receipt className="h-8 w-8" />,
+                features: ["Form 16 Auto-Import", "HRA & LTA Calculator", "Section 80C/80D Optimizer", "New vs Old Regime Comparison"],
+                color: "from-blue-500 to-indigo-600"
+              },
+              {
+                title: "Crypto Investors",
+                desc: "Complete VDA tax compliance with exchange sync, FIFO calculation, and Schedule VDA generation.",
+                icon: <Bitcoin className="h-8 w-8" />,
+                features: ["Multi-Exchange Import", "FIFO Cost Basis", "Schedule VDA Report", "30% Tax + TDS Tracking"],
+                color: "from-orange-500 to-amber-600",
+                popular: true
+              },
+              {
+                title: "Business & Freelancers",
+                desc: "ITR-3 & ITR-4 filing with presumptive taxation, GST reconciliation, and P&L preparation.",
+                icon: <Building2 className="h-8 w-8" />,
+                features: ["44AD/44ADA Support", "GST + ITR Sync", "Capital Gains Handling", "Balance Sheet Prep"],
+                color: "from-emerald-500 to-teal-600"
+              }
+            ].map((solution, i) => (
+              <div
+                key={i}
+                className={`relative bg-white rounded-2xl p-8 border ${solution.popular ? 'border-indigo-200 shadow-xl' : 'border-gray-100'}`}
+              >
+                {solution.popular && (
+                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white border-0">
+                    Most Popular
+                  </Badge>
+                )}
+                <div className={`h-16 w-16 rounded-2xl bg-gradient-to-br ${solution.color} flex items-center justify-center text-white mb-6`}>
+                  {solution.icon}
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">{solution.title}</h3>
+                <p className="text-gray-600 text-sm mb-6">{solution.desc}</p>
+                <ul className="space-y-3 mb-8">
+                  {solution.features.map((f, j) => (
+                    <li key={j} className="flex items-center gap-3 text-sm text-gray-700">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link to="/auth">
+                  <Button className={`w-full ${solution.popular ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-900 hover:bg-gray-800'}`}>
+                    Get Started
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== HOW IT WORKS ===== */}
+      <section className="py-20 lg:py-28 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 mb-4">How It Works</Badge>
+            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+              File Your ITR in 3 Simple Steps
+            </h2>
+            <p className="text-lg text-gray-600">
+              Our guided wizard makes tax filing as easy as ordering food online.
+            </p>
+          </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
-                title: "Advanced Crypto Compliance",
-                desc: "Industry-leading Section 115BBH matching engine with KoinX-level accuracy for VDA schedules.",
-                icon: <Bitcoin className="h-8 w-8" />,
-                color: "bg-orange-500"
+                step: "01",
+                title: "Import Your Data",
+                desc: "Upload Form 16, connect your crypto exchanges, or enter income details manually. Our AI auto-fills most fields."
               },
               {
-                title: "Business Wealth Intelligence",
-                desc: "Automated P&L drafting, GST reconciliation, and balance sheet preparation for SMBs.",
-                icon: <Building2 className="h-8 w-8" />,
-                color: "bg-indigo-600"
+                step: "02",
+                title: "Review & Optimize",
+                desc: "Compare tax regimes, add deductions, and verify your income against AIS. We show you exactly where you can save."
               },
               {
-                title: "Global Asset Reporting",
-                desc: "Specialized handling for Foreign Stocks (Schedule FA), RSUs, and international income tax credits.",
-                icon: <Globe className="h-8 w-8" />,
-                color: "bg-teal-500"
+                step: "03",
+                title: "File & Download",
+                desc: "Generate ITR JSON, download for e-filing portal upload, or use CA-assisted filing for complex cases."
               }
-            ].map((solution, i) => (
-              <AnimatedSection key={i} delay={i * 0.15}>
-                <motion.div
-                  whileHover={{ y: -10 }}
-                  className="p-10 rounded-[40px] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-2xl hover:shadow-indigo-100 transition-all group"
-                >
-                  <div className={`h-16 w-16 ${solution.color} rounded-2xl flex items-center justify-center text-white mb-8 shadow-xl`}>
-                    {solution.icon}
-                  </div>
-                  <h3 className="text-2xl font-black text-slate-950 mb-4">{solution.title}</h3>
-                  <p className="text-slate-600 leading-relaxed font-medium">{solution.desc}</p>
-                  <Button variant="ghost" className="mt-8 p-0 text-indigo-600 font-black hover:bg-transparent group-hover:gap-3 transition-all">
-                    Learn More <ArrowRight className="h-5 w-5" />
-                  </Button>
-                </motion.div>
-              </AnimatedSection>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== PROFESSIONAL FEATURES GRID ===== */}
-      <section id="features" className="py-32 px-6 lg:px-8 bg-slate-950 text-white relative overflow-hidden">
-        {/* Subtle Background Elements */}
-        <div className="absolute top-0 right-0 h-[600px] w-[600px] bg-indigo-600/10 blur-[150px] rounded-full pointer-events-none" />
-        <div className="absolute bottom-0 left-0 h-[600px] w-[600px] bg-teal-600/10 blur-[150px] rounded-full pointer-events-none" />
-
-        <div className="max-w-7xl mx-auto relative z-10">
-          <AnimatedSection className="text-center mb-24">
-            <h2 className="text-4xl md:text-6xl font-black tracking-tight leading-none mb-6">
-              Empowering the <br />
-              <span className="text-indigo-400">Professional Era.</span>
-            </h2>
-            <p className="mt-6 text-xl text-slate-400 max-w-2xl mx-auto font-medium">
-              Enterprise-grade infrastructure designed for individual filers, CA firms, and corporate entities.
-            </p>
-          </AnimatedSection>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              { icon: <Target className="text-indigo-400" />, title: "Precision Form Selector", desc: "Our proprietary logic predicts the correct ITR (1-4) based on your income footprint, eliminating filing errors." },
-              { icon: <Zap className="text-amber-400" />, title: "Live AIS Reconciliation", desc: "Instantly cross-check your tax statement with your ledgers to detect discrepancies before submission." },
-              { icon: <Search className="text-teal-400" />, title: "Audit Trail Analysis", desc: "Maintain a complete digital trail for every deduction claimed, ensuring you are 100% audit-ready." },
-              { icon: <Users className="text-purple-400" />, title: "Family & Firm Managed Hub", desc: "Consolidated dashboard to manage multiple PANs, clients, or family members under one secure vault." },
-              { icon: <Bot className="text-rose-400" />, title: "Intelligent Regime Optimizer", desc: "AI-simulated comparisons of Old vs New regimes with detailed tax-saving recommendations." },
-              { icon: <ShieldCheck className="text-emerald-400" />, title: "Military-Grade Security", desc: "AES-256 bit encryption and SOC 2 Type II compliance ensure your financial data remains private." },
-            ].map((feature, idx) => (
-              <AnimatedSection key={idx} delay={idx * 0.08}>
-                <div className="p-10 rounded-[32px] bg-white/5 border border-white/10 hover:border-indigo-500/50 transition-all h-full group">
-                  <div className="h-12 w-12 rounded-xl bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                    {feature.icon}
-                  </div>
-                  <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed font-medium">{feature.desc}</p>
+            ].map((step, i) => (
+              <div key={i} className="text-center">
+                <div className="h-16 w-16 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                  {step.step}
                 </div>
-              </AnimatedSection>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== HIRE AN EXPERT SECTION ===== */}
-      <section id="expert" className="py-32 px-6 lg:px-8 bg-white relative overflow-hidden">
-        <div className="max-w-7xl mx-auto">
-          <div className="relative rounded-[60px] bg-indigo-600 p-12 md:p-24 overflow-hidden shadow-3xl">
-            {/* Decorative Background */}
-            <div className="absolute top-0 right-0 h-full w-1/2 bg-gradient-to-l from-white/10 to-transparent flex items-center justify-center">
-              <Briefcase className="h-[400px] w-[400px] text-white/5 -rotate-12 translate-x-32" />
-            </div>
-
-            <div className="relative z-10 max-w-2xl">
-              <Badge className="bg-white/20 text-white font-black px-4 py-2 border-none rounded-full mb-8">CA-ASSISTED FILING</Badge>
-              <h2 className="text-4xl md:text-6xl font-black text-white leading-[0.9] tracking-tighter mb-8">
-                Complex Portfolio? <br />
-                <span className="text-indigo-200">Our Experts </span>
-                Got You.
-              </h2>
-              <p className="text-xl text-indigo-100 font-medium mb-12 leading-relaxed">
-                Don't leave your compliance to chance. For a small fee, hire a dedicated Tax Expert to review your filing, maximize deductions, and handle data-heavy audits.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button size="lg" className="bg-white text-indigo-700 hover:bg-indigo-50 h-16 px-10 rounded-2xl text-lg font-black group">
-                  Book Expert Review
-                  <ArrowRight className="ml-3 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                </Button>
-                <Button size="lg" variant="outline" className="h-16 px-8 rounded-2xl text-lg font-bold border-2 border-white/50 text-white bg-white/10 hover:bg-white/20">
-                  View Pricing Plans
-                </Button>
+                <h3 className="text-xl font-semibold text-gray-900 mb-3">{step.title}</h3>
+                <p className="text-gray-600">{step.desc}</p>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== PRICING ===== */}
-      <section id="pricing" className="py-32 px-6 lg:px-8 bg-slate-50">
-        <div className="max-w-7xl mx-auto">
-          <AnimatedSection className="text-center mb-24">
-            <h2 className="text-4xl md:text-6xl font-black tracking-tight text-slate-950">
-              Transparent <span className="text-indigo-600">Pricing.</span>
-            </h2>
-            <p className="mt-6 text-xl text-slate-500 max-w-2xl mx-auto font-medium">Simple, scalable plans for every financial footprint.</p>
-          </AnimatedSection>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {[
-              {
-                name: "Standard",
-                price: "Free",
-                desc: "Classic Salary & House Property",
-                features: ["ITR-1 Filing", "AI Regime Optimizer", "Standard Deduction Check", "Document Vault (1GB)"],
-                color: "slate-900",
-                cta: "Start Free Filing"
-              },
-              {
-                name: "Premium Pro",
-                price: "₹499",
-                priceDesc: "Per Fin. Year",
-                desc: "Calculations for Stocks & VDS",
-                features: ["ITR-1, 2, 3, 4 Support", "Full Crypto Audit Engine", "AIS Recon Dashboard", "Foreign Asset Schedule", "Priority Support"],
-                popular: true,
-                color: "indigo-600",
-                cta: "Get Pro Access"
-              },
-              {
-                name: "Assisted",
-                price: "Var.",
-                desc: "Expert-Led Tax Optimization",
-                features: ["Chartered Accountant Review", "Audit Defense Pack", "Customized Tax Planning", "Representation Support (Optional)", "Firm Hub Access"],
-                color: "teal-600",
-                cta: "Hire Expert Now"
-              },
-            ].map((plan, idx) => (
-              <AnimatedSection key={idx} delay={idx * 0.1}>
-                <div className={`relative rounded-[40px] p-10 h-full flex flex-col ${plan.popular ? 'bg-indigo-600 text-white shadow-3xl' : 'bg-white border border-slate-200'}`}>
-                  {plan.popular && (
-                    <div className="absolute -top-5 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-slate-950 text-white font-black px-6 py-2 rounded-full border-none shadow-xl tracking-widest uppercase text-[10px]">Most Preferred</Badge>
-                    </div>
-                  )}
-                  <h3 className="text-2xl font-black mb-1">{plan.name}</h3>
-                  <p className={`text-sm font-bold mb-10 ${plan.popular ? 'text-indigo-200' : 'text-slate-400'}`}>{plan.desc}</p>
-
-                  <div className="mb-10">
-                    <span className="text-5xl font-black">{plan.price}</span>
-                    {plan.priceDesc && <span className={`text-sm block font-bold ${plan.popular ? 'text-indigo-200' : 'text-slate-400'}`}>{plan.priceDesc}</span>}
-                  </div>
-
-                  <div className="flex-1 space-y-4 mb-12">
-                    {plan.features.map((f, i) => (
-                      <div key={i} className="flex items-start gap-4 text-sm font-bold">
-                        <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${plan.popular ? 'bg-indigo-500' : 'bg-slate-100'}`}>
-                          <CheckCircle2 className={`h-4 w-4 ${plan.popular ? 'text-white' : 'text-indigo-600'}`} />
-                        </div>
-                        <span>{f}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Button className={`w-full h-16 rounded-2xl font-black text-lg shadow-xl ${plan.popular ? 'bg-white text-indigo-600 hover:bg-indigo-50 shadow-indigo-700/50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>
-                    {plan.cta}
-                  </Button>
-                </div>
-              </AnimatedSection>
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* ===== FINAL CTA ===== */}
-      <section className="py-40 px-6 lg:px-8 bg-white relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-slate-50 rounded-full blur-3xl opacity-50" />
-        </div>
-
-        <AnimatedSection className="max-w-5xl mx-auto text-center relative z-10">
-          <h2 className="text-5xl md:text-8xl font-black text-slate-950 tracking-[.01em] leading-none mb-10">
-            File with <br />
-            <span className="text-indigo-600 italic font-serif font-light">Certainty.</span>
-          </h2>
-          <p className="mt-8 text-2xl text-slate-600 max-w-2xl mx-auto font-medium leading-relaxed">
-            Join the thousands of smart professionals who have transformed tax filing into a strategic advantage.
-          </p>
-          <div className="mt-16 flex flex-col sm:flex-row items-center justify-center gap-6">
+          <div className="text-center mt-12">
             <Link to="/auth">
-              <Button size="lg" className="bg-slate-950 text-white hover:bg-slate-800 h-16 px-16 rounded-2xl text-xl font-black group shadow-3xl">
-                Ready to Start
-                <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-1 transition-transform" />
+              <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 h-12 px-8">
+                Start Your Filing
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
           </div>
-          <div className="mt-12 flex items-center justify-center gap-8 text-slate-400">
-            <div className="flex items-center gap-2"><Lock className="h-4 w-4" /><span className="text-xs font-black uppercase tracking-widest">SOC 2 TYPE II</span></div>
-            <div className="flex items-center gap-2"><Shield className="h-4 w-4" /><span className="text-xs font-black uppercase tracking-widest">AES-256 BANK GRADE</span></div>
+        </div>
+      </section>
+
+      {/* ===== PRICING SECTION ===== */}
+      <section id="pricing" className="py-20 lg:py-28 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 mb-4">Pricing</Badge>
+            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+              Simple, Transparent Pricing
+            </h2>
+            <p className="text-lg text-gray-600">
+              No hidden fees. Pay only for what you need.
+            </p>
           </div>
-        </AnimatedSection>
+
+          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {[
+              {
+                name: "Free",
+                price: "₹0",
+                desc: "For simple ITR-1 filing",
+                features: ["ITR-1 (Sahaj) Filing", "Form 16 Import", "Basic Tax Calculator", "Email Support"],
+                cta: "Start Free"
+              },
+              {
+                name: "Pro",
+                price: "₹499",
+                period: "/year",
+                desc: "For advanced users",
+                features: ["All ITR Forms (1-4)", "Crypto Tax Engine", "AIS Reconciliation", "Regime Optimizer", "Priority Support"],
+                popular: true,
+                cta: "Get Pro"
+              },
+              {
+                name: "Expert Assisted",
+                price: "₹1,999",
+                period: "/filing",
+                desc: "CA-reviewed filing",
+                features: ["Everything in Pro", "Dedicated CA Review", "Audit Support", "Tax Planning Call", "Document Preparation"],
+                cta: "Book Expert"
+              }
+            ].map((plan, i) => (
+              <div
+                key={i}
+                className={`rounded-2xl p-8 ${plan.popular ? 'bg-indigo-600 text-white ring-4 ring-indigo-100' : 'bg-white border border-gray-200'}`}
+              >
+                {plan.popular && (
+                  <Badge className="bg-white text-indigo-600 border-0 mb-4">Most Popular</Badge>
+                )}
+                <h3 className={`text-xl font-semibold ${plan.popular ? 'text-white' : 'text-gray-900'}`}>{plan.name}</h3>
+                <p className={`text-sm mt-1 ${plan.popular ? 'text-indigo-200' : 'text-gray-500'}`}>{plan.desc}</p>
+
+                <div className="my-6">
+                  <span className="text-4xl font-bold">{plan.price}</span>
+                  {plan.period && <span className={`text-sm ${plan.popular ? 'text-indigo-200' : 'text-gray-500'}`}>{plan.period}</span>}
+                </div>
+
+                <ul className="space-y-3 mb-8">
+                  {plan.features.map((f, j) => (
+                    <li key={j} className={`flex items-center gap-3 text-sm ${plan.popular ? 'text-indigo-100' : 'text-gray-600'}`}>
+                      <CheckCircle2 className={`h-4 w-4 ${plan.popular ? 'text-indigo-300' : 'text-emerald-500'} shrink-0`} />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <Link to="/auth">
+                  <Button
+                    className={`w-full ${plan.popular ? 'bg-white text-indigo-600 hover:bg-indigo-50' : 'bg-gray-900 hover:bg-gray-800 text-white'}`}
+                  >
+                    {plan.cta}
+                  </Button>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== CTA SECTION ===== */}
+      <section className="py-20 lg:py-28 bg-indigo-600">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
+            Ready to File Your ITR?
+          </h2>
+          <p className="text-lg text-indigo-100 mb-8 max-w-2xl mx-auto">
+            Join 85,000+ taxpayers who trust TaxMitra for accurate, hassle-free tax filing.
+            Start your filing today and save both time and money.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link to="/auth">
+              <Button size="lg" className="bg-white text-indigo-600 hover:bg-indigo-50 h-12 px-8 font-medium">
+                Start Filing Now
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+            <Link to="/auth">
+              <Button size="lg" variant="outline" className="h-12 px-8 font-medium border-white/30 text-white bg-white/10 hover:bg-white/20">
+                Try Free Calculator
+              </Button>
+            </Link>
+          </div>
+          <div className="flex items-center justify-center gap-6 mt-8 text-indigo-200 text-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              <span>256-bit SSL</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />
+              <span>Bank-Grade Security</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* ===== FOOTER ===== */}
-      <footer className="bg-slate-950 text-white py-24 px-6 lg:px-8 border-t border-white/5">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-5 gap-16">
-            <div className="md:col-span-2 space-y-8">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center">
-                  <ShieldCheck className="text-white h-6 w-6" />
+      <footer id="contact" className="bg-gray-900 text-white py-16 lg:py-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-12">
+            {/* Brand */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 bg-indigo-600 rounded-lg flex items-center justify-center">
+                  <ShieldCheck className="text-white h-5 w-5" />
                 </div>
-                <span className="text-2xl font-black tracking-tight">TaxMitra</span>
+                <span className="text-xl font-bold">TaxMitra</span>
               </div>
-              <p className="text-slate-400 font-medium leading-loose max-w-xs">
-                India's premier tax intelligence platform. Empowering financial compliance through automation and human expertise.
+              <p className="text-gray-400 text-sm leading-relaxed">
+                India's trusted tax filing platform. AI-powered, secure, and designed for everyone.
               </p>
-              <div className="flex items-center gap-6">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="h-10 w-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-all cursor-pointer border border-white/5">
-                    <div className="h-4 w-4 bg-slate-500 rounded-sm" />
-                  </div>
-                ))}
+              <div className="flex items-center gap-4 pt-2">
+                <div className="h-10 w-10 rounded-full bg-gray-800 flex items-center justify-center hover:bg-gray-700 cursor-pointer">
+                  <span className="text-xs">𝕏</span>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-gray-800 flex items-center justify-center hover:bg-gray-700 cursor-pointer">
+                  <span className="text-xs">in</span>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="font-black text-xs uppercase tracking-[.2em] text-indigo-400">Solutions</h4>
-              <ul className="space-y-4 text-sm font-bold text-slate-400">
-                <li><a href="#" className="hover:text-white transition-colors">Business Tax Console</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Crypto Tax Engine</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Individual ITR filing</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Firm Workflow Hub</a></li>
+            {/* Quick Links */}
+            <div>
+              <h4 className="font-semibold mb-4">Product</h4>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li><a href="#" className="hover:text-white transition-colors">ITR Filing</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Crypto Tax</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Tax Calculator</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">CA Assistance</a></li>
               </ul>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="font-black text-xs uppercase tracking-[.2em] text-indigo-400">Company</h4>
-              <ul className="space-y-4 text-sm font-bold text-slate-400">
-                <li><a href="#" className="hover:text-white transition-colors">Expert Network</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Regulatory Compliance</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Data Privacy</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact Relations</a></li>
+            {/* Resources */}
+            <div>
+              <h4 className="font-semibold mb-4">Resources</h4>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li><a href="#" className="hover:text-white transition-colors">Tax Guide 2025</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">ITR Deadlines</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
               </ul>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="font-black text-xs uppercase tracking-[.2em] text-indigo-400">Support</h4>
-              <ul className="space-y-4 text-sm font-bold text-slate-400">
-                <li><a href="#" className="hover:text-white transition-colors">Filing Helpdesk</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Tax Knowledge Base</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">ITR Ack Tracker</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">API Documentation</a></li>
+            {/* Contact */}
+            <div>
+              <h4 className="font-semibold mb-4">Contact</h4>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  <span>support@taxmitra.in</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Phone className="h-4 w-4" />
+                  <span>+91 98765 43210</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 mt-0.5" />
+                  <span>Mumbai, Maharashtra, India</span>
+                </li>
               </ul>
             </div>
           </div>
 
-          <div className="mt-32 pt-12 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-8">
-            <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">© 2026 TaxMitra Technologies Private Limited. All Rights Reserved.</p>
-            <div className="flex items-center gap-8">
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Privacy Protocol</span>
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Security Framework</span>
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">ISO 27001 Certified</span>
+          <div className="mt-12 pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-sm text-gray-500">© 2026 TaxMitra Technologies Pvt. Ltd. All rights reserved.</p>
+            <div className="flex items-center gap-6 text-sm text-gray-500">
+              <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+              <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+              <a href="#" className="hover:text-white transition-colors">Security</a>
             </div>
           </div>
         </div>
