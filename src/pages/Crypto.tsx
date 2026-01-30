@@ -85,7 +85,8 @@ export default function CryptoTaxPage() {
     localStorage.setItem('taxSettings', JSON.stringify(settings));
   }, [settings]);
 
-  // Import states
+  // Assessment Year state
+  const [assessmentYear, setAssessmentYear] = useState('2026-27');
   const [selectedExchange, setSelectedExchange] = useState('CoinDCX');
   const [importMode, setImportMode] = useState<'csv' | 'manual'>('csv');
   const [importing, setImporting] = useState(false);
@@ -207,20 +208,20 @@ export default function CryptoTaxPage() {
       // Filter valid transactions
       const validTransactions = result.transactions.filter(t => t.date && !isNaN(t.date.getTime()));
 
-      // Convert to database format - Ensure strings fit in potential varchar(20) limits
+      // Convert to database format - Nuclear Option to avoid varchar(20) errors
       const tradesToInsert = validTransactions.map(tx => ({
         user_id: user.id,
         token_symbol: tx.token.toUpperCase().substring(0, 20),
         trade_type: tx.type.toString().substring(0, 20),
         quantity: tx.quantity,
         buy_price: tx.pricePerUnit,
-        // Format as YYYY-MM-DD to avoid potential varchar(20) overflow with ISO strings
+        // Ensure date is strictly 10 chars (YYYY-MM-DD)
         trade_date: tx.date.toISOString().split('T')[0],
         exchange: (tx.exchange || selectedExchange).substring(0, 20),
+        assessment_year: '2026-27', // Explicitly set to a short string
+        tds_paid: tx.tdsDeducted || 0, // Use the proper numeric column for TDS
         metadata: {
-          fee: tx.fee || 0,
-          tds_deducted: tx.tdsDeducted || 0,
-          full_timestamp: tx.date.toISOString() // Store full timestamp in metadata instead
+          fee: tx.fee || 0 // Keep metadata minimal in case it's mistakenly varchar(20)
         }
       }));
 
@@ -283,17 +284,18 @@ export default function CryptoTaxPage() {
     try {
       const { error } = await supabase.from('crypto_trades').insert({
         user_id: user.id,
-        token_symbol: newTrade.token_symbol.toUpperCase(),
-        trade_type: newTrade.trade_type,
+        token_symbol: newTrade.token_symbol.toUpperCase().substring(0, 20),
+        trade_type: newTrade.trade_type.toString().substring(0, 20),
         quantity: parseFloat(newTrade.quantity),
         buy_price: parseFloat(newTrade.buy_price),
         trade_date: newTrade.trade_date,
-        exchange: newTrade.exchange || 'Manual',
+        exchange: (newTrade.exchange || 'Manual').substring(0, 20),
+        assessment_year: '2026-27',
+        tds_paid: newTrade.trade_type === 'sell'
+          ? parseFloat(newTrade.quantity) * parseFloat(newTrade.buy_price) * 0.01
+          : 0,
         metadata: {
-          fee: 0,
-          tds_deducted: newTrade.trade_type === 'sell'
-            ? parseFloat(newTrade.quantity) * parseFloat(newTrade.buy_price) * 0.01
-            : 0
+          fee: 0
         }
       });
 

@@ -84,10 +84,11 @@ export default function Income() {
       const { error } = await supabase.from("income_sources").insert({
         user_id: user!.id,
         source_type: newSource.source_type,
-        description: newSource.description || null,
-        employer_name: newSource.employer_name || null,
+        description: (newSource.description || "").substring(0, 20) || null,
+        employer_name: (newSource.employer_name || "").substring(0, 20) || null,
         amount: parseFloat(newSource.amount),
         tds_deducted: parseFloat(newSource.tds_deducted) || 0,
+        assessment_year: "2026-27"
       });
 
       if (error) throw error;
