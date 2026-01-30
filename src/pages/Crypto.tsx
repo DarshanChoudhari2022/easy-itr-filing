@@ -173,8 +173,21 @@ export default function CryptoTaxPage() {
         return;
       }
 
+      // Filter out invalid dates to prevent crashes
+      const validTransactions = result.transactions.filter(t => t.date && !isNaN(t.date.getTime()));
+
+      if (validTransactions.length < result.transactions.length) {
+        toast.warning(`Skipped ${result.transactions.length - validTransactions.length} trades with invalid dates`);
+      }
+
+      if (validTransactions.length === 0) {
+        toast.error('No valid transactions to import after filtering');
+        setImporting(false);
+        return;
+      }
+
       // Convert parsed transactions to database format
-      const tradesToInsert = result.transactions.map(tx => ({
+      const tradesToInsert = validTransactions.map(tx => ({
         user_id: user.id,
         token_symbol: tx.token.toUpperCase(),
         trade_type: tx.type,
