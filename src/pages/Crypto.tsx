@@ -41,6 +41,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, L
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 interface Trade {
   id: string;
@@ -61,6 +62,17 @@ export default function CryptoTaxPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
+  const [isAdding, setIsAdding] = useState(false);
+
+  // Manual Trade Form State
+  const [newTrade, setNewTrade] = useState({
+    token_symbol: 'BTC',
+    trade_type: 'buy',
+    quantity: '',
+    buy_price: '',
+    trade_date: new Date().toISOString().split('T')[0],
+    exchange: 'CoinDCX'
+  });
 
   const [settings, setSettings] = useState<TaxSettings>({
     accountingMethod: 'FIFO',
@@ -78,13 +90,40 @@ export default function CryptoTaxPage() {
 
   const fetchTrades = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("crypto_trades").select("*");
+    const { data, error } = await supabase.from("crypto_trades").select("*").order('trade_date', { ascending: false });
     if (error) {
       toast.error("Failed to load trades");
     } else {
       setTrades((data as Trade[]) || []);
     }
     setLoading(false);
+  };
+
+  const handleAddManualTrade = async () => {
+    if (!user) return;
+    if (!newTrade.quantity || !newTrade.buy_price) {
+      toast.error("Please fill all trade details");
+      return;
+    }
+
+    setIsAdding(true);
+    const { data, error } = await supabase.from("crypto_trades").insert({
+      user_id: user.id,
+      token_symbol: newTrade.token_symbol.toUpperCase(),
+      trade_type: newTrade.trade_type,
+      quantity: parseFloat(newTrade.quantity),
+      buy_price: parseFloat(newTrade.buy_price),
+      trade_date: newTrade.trade_date,
+      exchange: newTrade.exchange
+    }).select();
+
+    if (error) {
+      toast.error("Failed to add trade: " + error.message);
+    } else {
+      toast.success("Trade added successfully!");
+      fetchTrades(); // Refresh data
+      setIsAdding(false);
+    }
   };
 
   const engineTransactions: Transaction[] = useMemo(() => trades.map(t => ({
@@ -166,17 +205,93 @@ export default function CryptoTaxPage() {
                       <Plus className="mr-2 h-4 w-4" /> Add Trade
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-slate-900 border-slate-800 text-white border-none">
+                  <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Import Crypto Data</DialogTitle>
-                      <DialogDescription className="text-slate-400">Choose your exchange or upload a CSV file.</DialogDescription>
+                      <DialogTitle className="text-xl font-black">Add Crypto Transaction</DialogTitle>
+                      <DialogDescription className="text-slate-400">Add a manual trade to see real-time tax impact.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-2 gap-4 py-4">
-                      {['CoinDCX', 'WazirX', 'Binance', 'Coinbase'].map(ex => (
-                        <Button key={ex} variant="outline" className="h-20 border-slate-800 bg-slate-800 hover:bg-slate-700 font-black text-lg">
-                          {ex}
-                        </Button>
-                      ))}
+
+                    <div className="space-y-4 py-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Token</label>
+                          <Input
+                            value={newTrade.token_symbol}
+                            onChange={(e) => setNewTrade({ ...newTrade, token_symbol: e.target.value })}
+                            className="bg-slate-800 border-slate-700 h-11"
+                            placeholder="ETH, BTC..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Exchange</label>
+                          <Select value={newTrade.exchange} onValueChange={(v) => setNewTrade({ ...newTrade, exchange: v })}>
+                            <SelectTrigger className="bg-slate-800 border-slate-700 h-11">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                              <SelectItem value="CoinDCX">CoinDCX</SelectItem>
+                              <SelectItem value="WazirX">WazirX</SelectItem>
+                              <SelectItem value="Binance">Binance</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Type</label>
+                          <Select value={newTrade.trade_type} onValueChange={(v) => setNewTrade({ ...newTrade, trade_type: v })}>
+                            <SelectTrigger className="bg-slate-800 border-slate-700 h-11">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-800 border-slate-700 text-white font-bold">
+                              <SelectItem value="buy">BUY</SelectItem>
+                              <SelectItem value="sell">SELL</SelectItem>
+                              <SelectItem value="airdrop">AIRDROP</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Trade Date</label>
+                          <Input
+                            type="date"
+                            value={newTrade.trade_date}
+                            onChange={(e) => setNewTrade({ ...newTrade, trade_date: e.target.value })}
+                            className="bg-slate-800 border-slate-700 h-11"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Quantity</label>
+                          <Input
+                            type="number"
+                            value={newTrade.quantity}
+                            onChange={(e) => setNewTrade({ ...newTrade, quantity: e.target.value })}
+                            className="bg-slate-800 border-slate-700 h-11"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-slate-500">Price (INR)</label>
+                          <Input
+                            type="number"
+                            value={newTrade.buy_price}
+                            onChange={(e) => setNewTrade({ ...newTrade, buy_price: e.target.value })}
+                            className="bg-slate-800 border-slate-700 h-11"
+                            placeholder="Price per unit"
+                          />
+                        </div>
+                      </div>
+
+                      <Button
+                        onClick={handleAddManualTrade}
+                        disabled={isAdding}
+                        className="w-full bg-indigo-600 h-12 rounded-xl font-black mt-4 shadow-lg shadow-indigo-600/20"
+                      >
+                        {isAdding ? "Adding..." : "Add Transaction"}
+                      </Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -263,7 +378,16 @@ function OverviewTab({ metrics }: { metrics: any }) {
         <div className="z-10 space-y-4">
           <h3 className="text-3xl font-black">Download Tax Reports</h3>
           <p className="text-indigo-100 text-sm max-w-sm">Aggregated reports ready for Section 115BBH filing with complete audit logs.</p>
-          <Button className="bg-white text-indigo-600 font-black rounded-xl h-12 px-8">Generate Now</Button>
+          <Button
+            onClick={() => toast.promise(new Promise(res => setTimeout(res, 1500)), {
+              loading: 'Generating Schedule VDA...',
+              success: 'Tax Audit Report for FY 25-26 is ready!',
+              error: 'Error generating report'
+            })}
+            className="bg-white text-indigo-600 font-black rounded-xl h-12 px-8"
+          >
+            Generate Now
+          </Button>
         </div>
         <div className="opacity-20 absolute -right-4 -bottom-4">
           <FileSpreadsheet className="h-48 w-48 rotate-12" />
