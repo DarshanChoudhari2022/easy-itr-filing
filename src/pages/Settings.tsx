@@ -2,7 +2,8 @@
  * Settings Page - Account & Privacy Settings
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
     User, Lock, Bell, Shield, Eye, EyeOff, Save, Check,
     Smartphone, Mail, Key, AlertTriangle, Loader2, LogOut,
-    CreditCard, MapPin
+    CreditCard, MapPin, Sparkles
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,7 +28,24 @@ import { updateProfileKYC } from '@/lib/supabase-data-service';
 import BankDetailsManager from '@/components/BankDetailsManager';
 
 export default function SettingsPage() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user, signOut } = useAuth();
+
+    // Tab State
+    const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'account');
+
+    // Update URL when tab changes
+    const handleTabChange = (val: string) => {
+        setActiveTab(val);
+        setSearchParams({ tab: val });
+    };
+
+    // Sync from URL if it changes externally
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab) setActiveTab(tab);
+    }, [searchParams]);
+
     const [saving, setSaving] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
@@ -234,8 +252,8 @@ export default function SettingsPage() {
                     <p className="text-slate-500 mt-1">Manage your account preferences and security</p>
                 </div>
 
-                <Tabs defaultValue="account" className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-5">
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+                    <TabsList className="grid w-full grid-cols-6 mb-8 overflow-x-auto">
                         <TabsTrigger value="account" className="flex items-center gap-2">
                             <User className="h-4 w-4" />
                             <span className="hidden sm:inline">Account</span>
@@ -244,6 +262,11 @@ export default function SettingsPage() {
                             <CreditCard className="h-4 w-4" />
                             <span className="hidden sm:inline">KYC</span>
                         </TabsTrigger>
+                        <TabsTrigger value="plan" className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4" />
+                            <span className="hidden sm:inline">Plan</span>
+                        </TabsTrigger>
+
                         <TabsTrigger value="security" className="flex items-center gap-2">
                             <Lock className="h-4 w-4" />
                             <span className="hidden sm:inline">Security</span>
@@ -426,6 +449,68 @@ export default function SettingsPage() {
 
                             {/* Bank Details */}
                             <BankDetailsManager />
+                        </div>
+                    </TabsContent>
+
+                    {/* Plan Settings */}
+                    <TabsContent value="plan">
+                        <div className="space-y-6">
+                            <div className="grid gap-6 md:grid-cols-3">
+                                {/* Free Plan */}
+                                <Card className="border-slate-200">
+                                    <CardHeader>
+                                        <CardTitle>Free</CardTitle>
+                                        <CardDescription>Essential filing for salary income</CardDescription>
+                                        <div className="mt-4 text-3xl font-bold">₹0<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <ul className="space-y-3 text-sm">
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> ITR-1 Filing</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Basic AIS Check</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Rent Receipts</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Email Support</li>
+                                        </ul>
+                                        <Button className="w-full mt-6" variant="outline" disabled>Current Plan</Button>
+                                    </CardContent>
+                                </Card>
+
+                                {/* Pro Plan */}
+                                <Card className="border-indigo-600 border-2 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 bg-indigo-600 text-white text-xs px-3 py-1 font-medium rounded-bl-lg">Most Popular</div>
+                                    <CardHeader>
+                                        <CardTitle className="text-indigo-700">Pro</CardTitle>
+                                        <CardDescription>For investors & traders</CardDescription>
+                                        <div className="mt-4 text-3xl font-bold">₹1,499<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <ul className="space-y-3 text-sm">
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-indigo-500" /> All ITR Forms (1-4)</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-indigo-500" /> Crypto & Stocks (Capital Gains)</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-indigo-500" /> Full AIS Reconciliation</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-indigo-500" /> Priority Support</li>
+                                        </ul>
+                                        <Button className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700">Upgrade to Pro</Button>
+                                    </CardContent>
+                                </Card>
+
+                                {/* Expert Plan */}
+                                <Card className="border-slate-200">
+                                    <CardHeader>
+                                        <CardTitle>Expert Assisted</CardTitle>
+                                        <CardDescription>CA-guided filing & planning</CardDescription>
+                                        <div className="mt-4 text-3xl font-bold">₹3,999<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <ul className="space-y-3 text-sm">
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Everything in Pro</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Dedicated CA Review</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Tax Planning Call (30 min)</li>
+                                            <li className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Notice Management</li>
+                                        </ul>
+                                        <Button className="w-full mt-6" variant="outline">Contact Sales</Button>
+                                    </CardContent>
+                                </Card>
+                            </div>
                         </div>
                     </TabsContent>
 
