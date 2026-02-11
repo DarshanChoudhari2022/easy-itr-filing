@@ -307,20 +307,46 @@ export function SmartFilingWizard() {
         accountNumber: '', ifsc: '', bankName: '', accountType: 'SB' as const
     });
 
-    // Load user data from Supabase profile
+    // Save progress to database
+    const saveProgress = useCallback(async (currentStep: number, currentIncome: UserIncome, currentDeductions: Deductions, currentPersonalInfo: any, currentBank: any) => {
+        if (!user) return;
+
+        try {
+            const { error } = await supabase
+                .from('filing_steps_state')
+                .upsert({
+                    user_id: user.id,
+                    current_step: currentStep,
+                    answers: {
+                        income: currentIncome,
+                        deductions: currentDeductions,
+                        personalInfo: currentPersonalInfo,
+                        bankDetails: currentBank
+                    },
+                    updated_at: new Date().toISOString()
+                });
+
+            if (error) throw error;
+            console.log("Progress saved at step:", currentStep);
+        } catch (e) {
+            console.error("Error saving progress:", e);
+        }
+    }, [user]);
+
+    // Load user data and previous progress
     useEffect(() => {
-        const loadProfile = async () => {
+        const loadAllData = async () => {
             if (!user) return;
-            setPersonalInfo(prev => ({
-                ...prev,
-                email: user.email || '',
-            }));
+            setLoading(true);
+
             try {
+                // 1. Load basic profile info
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('*')
                     .eq('id', user.id)
                     .single();
+
                 if (profile) {
                     const fullName = (profile as any).full_name || '';
                     const parts = fullName.split(' ');
@@ -338,12 +364,15 @@ export function SmartFilingWizard() {
                         pincode: (profile as any).pincode || '',
                     }));
                 }
+
+                // 2. Load primary bank
                 const { data: banks } = await supabase
                     .from('bank_details')
                     .select('*')
                     .eq('user_id', user.id)
                     .eq('is_primary', true)
                     .limit(1);
+
                 if (banks && banks.length > 0) {
                     const bank = banks[0] as any;
                     setBankDetails({
@@ -353,11 +382,31 @@ export function SmartFilingWizard() {
                         accountType: bank.account_type === 'savings' ? 'SB' : 'CA'
                     });
                 }
+
+                // 3. Load saved filing progress
+                const { data: progress } = await supabase
+                    .from('filing_steps_state')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (progress) {
+                    const answers = progress.answers || {};
+                    if (progress.current_step) setStep(progress.current_step);
+                    if (answers.income) setIncome(answers.income);
+                    if (answers.deductions) setDeductions(answers.deductions);
+                    if (answers.personalInfo) setPersonalInfo(prev => ({ ...prev, ...answers.personalInfo }));
+                    if (answers.bankDetails) setBankDetails(answers.bankDetails);
+                    toast.info(`Resuming from Step ${progress.current_step}`);
+                }
             } catch (e) {
-                console.error('Error loading profile:', e);
+                console.error('Error loading data:', e);
+            } finally {
+                setLoading(false);
             }
         };
-        loadProfile();
+
+        loadAllData();
     }, [user]);
 
     // Fetch crypto data from database
@@ -1459,13 +1508,21 @@ export function SmartFilingWizard() {
             <div className="flex justify-between pt-6 border-t mt-4">
                 <Button
                     variant="outline"
-                    onClick={() => setStep(Math.max(1, step - 1))}
+                    onClick={() => {
+                        const nextStep = Math.max(1, step - 1);
+                        setStep(nextStep);
+                        saveProgress(nextStep, income, deductions, personalInfo, bankDetails);
+                    }}
                     disabled={step === 1}
                 >
                     <ArrowLeft className="h-4 w-4 mr-2" /> Previous
                 </Button>
                 {step < 7 ? (
-                    <Button onClick={() => setStep(step + 1)}>
+                    <Button onClick={() => {
+                        const nextStep = step + 1;
+                        setStep(nextStep);
+                        saveProgress(nextStep, income, deductions, personalInfo, bankDetails);
+                    }}>
                         {step === 1 ? "I Have My Data" : step === 6 ? "How to Upload" : "Next"} <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                 ) : null}
