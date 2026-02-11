@@ -14,6 +14,7 @@ import {
     AISData, ReconciliationResult, getAutoFillSuggestions
 } from '../lib/ais-parser';
 import { formatINR } from '../lib/validators';
+import { DEMO_AIS_DATA } from '../lib/ais-mock-data';
 
 interface AISUploaderProps {
     /** User-entered ITR data for reconciliation */
@@ -138,6 +139,25 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
         if (file) handleFile(file);
     }, [handleFile]);
 
+    const handleDemoLoad = () => {
+        setStatus('processing');
+        setTimeout(() => {
+            setAisData(DEMO_AIS_DATA);
+            setStatus('parsed');
+
+            if (itrData && Object.values(itrData).some(v => (v || 0) > 0)) {
+                const results = reconcileWithITR(DEMO_AIS_DATA, itrData);
+                setReconciliation(results);
+                setStatus('reconciled');
+            }
+
+            toast({
+                title: '🧪 Demo Mode',
+                description: 'Loaded sample AIS data for testing.',
+            });
+        }, 800);
+    };
+
     const handleAutoFill = () => {
         if (aisData && onAutoFill) {
             const suggestions = getAutoFillSuggestions(aisData);
@@ -222,6 +242,17 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
                                     onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
                                     className="hidden"
                                 />
+                            </div>
+
+                            <div className="mt-2 text-center">
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    onClick={handleDemoLoad}
+                                    className="text-xs text-indigo-400 hover:text-indigo-600 h-auto p-0"
+                                >
+                                    Don't have a file? Use Sample Data
+                                </Button>
                             </div>
                         </>
                     )}
