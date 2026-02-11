@@ -114,7 +114,7 @@ export default function Index() {
             <div className="space-y-8 text-center lg:text-left">
               <Badge className="bg-indigo-50 text-indigo-700 border-indigo-100 px-4 py-1.5 text-sm font-medium">
                 <Star className="h-3.5 w-3.5 mr-1.5 text-amber-500 fill-amber-500" />
-                AY 2025-26 Ready
+                AY 2026-27 • Budget 2025 Ready
               </Badge>
 
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight tracking-tight">
@@ -123,9 +123,9 @@ export default function Index() {
               </h1>
 
               <p className="text-lg text-gray-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
-                India's most trusted tax filing platform. AI-powered calculations,
-                expert guidance, and seamless e-filing for salaried professionals,
-                businesses, and crypto investors.
+                India's most trusted tax filing platform. Budget 2025 slabs with ₹12L zero-tax rebate,
+                AI-powered calculations, crypto Schedule VDA, and seamless e-filing for salaried
+                professionals, freelancers, and crypto investors.
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
@@ -172,7 +172,7 @@ export default function Index() {
                       </div>
                       <span className="text-white font-semibold text-sm">Tax Dashboard</span>
                     </div>
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-xs">AY 2025-26</Badge>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-xs">AY 2026-27</Badge>
                   </div>
                 </div>
 

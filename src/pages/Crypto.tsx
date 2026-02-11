@@ -38,6 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
+import { PlanGate } from "@/hooks/usePlanGuard";
 
 // Types
 interface Trade {
@@ -457,652 +458,654 @@ export default function CryptoTaxPage() {
 
   return (
     <AppLayout>
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        <div className="bg-white border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                    <Coins className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
-                      Crypto Tax Calculator
-                    </h1>
-                    <p className="text-sm text-slate-500">Section 115BBH • 30% Tax Rate</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {/* FY Selector */}
-                <Select value={selectedFY} onValueChange={setSelectedFY}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Select FY" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FINANCIAL_YEARS.map(fy => (
-                      <SelectItem key={fy.value} value={fy.value}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{fy.label}</span>
-                          {fyTradeCounts[fy.value] && (
-                            <Badge variant="secondary" className="ml-2 text-xs">
-                              {fyTradeCounts[fy.value]}
-                            </Badge>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Button variant="outline" size="sm" onClick={fetchTrades} disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
-                <Dialog open={showAddTrade} onOpenChange={setShowAddTrade}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Trade
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Add Manual Trade</DialogTitle>
-                      <DialogDescription>Enter the details of your crypto transaction.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Token Symbol *</Label>
-                          <Input
-                            placeholder="BTC, ETH, SOL..."
-                            value={newTrade.token_symbol}
-                            onChange={e => setNewTrade({ ...newTrade, token_symbol: e.target.value.toUpperCase() })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Type *</Label>
-                          <Select value={newTrade.trade_type} onValueChange={v => setNewTrade({ ...newTrade, trade_type: v })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="buy">Buy</SelectItem>
-                              <SelectItem value="sell">Sell</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Quantity *</Label>
-                          <Input
-                            type="number"
-                            step="any"
-                            placeholder="0.00"
-                            value={newTrade.quantity}
-                            onChange={e => setNewTrade({ ...newTrade, quantity: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Price per Unit (₹) *</Label>
-                          <Input
-                            type="number"
-                            step="any"
-                            placeholder="0.00"
-                            value={newTrade.buy_price}
-                            onChange={e => setNewTrade({ ...newTrade, buy_price: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2 col-span-2">
-                          <Label>Trade Date *</Label>
-                          <Input
-                            type="date"
-                            value={newTrade.trade_date}
-                            onChange={e => setNewTrade({ ...newTrade, trade_date: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2 col-span-2">
-                          <Label>Exchange</Label>
-                          <Input
-                            placeholder="CoinDCX, WazirX, etc."
-                            value={newTrade.exchange}
-                            onChange={e => setNewTrade({ ...newTrade, exchange: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-3 pt-4">
-                        <Button variant="outline" onClick={() => setShowAddTrade(false)}>Cancel</Button>
-                        <Button onClick={handleAddTrade} className="bg-indigo-600 hover:bg-indigo-700">Add Trade</Button>
-                      </div>
+      <PlanGate feature="crypto">
+        <div className="min-h-screen bg-slate-50">
+          {/* Header */}
+          <div className="bg-white border-b border-slate-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                      <Coins className="h-5 w-5 text-white" />
                     </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div className="flex gap-1 mt-6 border-b border-slate-200 -mb-px overflow-x-auto">
-              {[
-                { id: 'overview', label: 'Overview', icon: BarChart3 },
-                { id: 'transactions', label: 'Transactions', icon: History },
-                { id: 'import', label: 'Import Data', icon: Upload },
-                { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
-                { id: 'settings', label: 'Settings', icon: Settings }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                    }`}
-                >
-                  <tab.icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Database Fix Alert */}
-        <Alert className="mb-6 bg-emerald-50 border-emerald-200 text-emerald-800">
-          <CheckCircle className="h-4 w-4 text-emerald-600" />
-          <AlertTitle className="font-bold">System Update: Database Synchronization Fixed</AlertTitle>
-          <AlertDescription className="text-sm">
-            We've resolved the "value too long" error encountered during CoinDCX imports. You can now safely upload your trade reports.
-          </AlertDescription>
-        </Alert>
-
-        {/* Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-
-          {/* ============= OVERVIEW TAB ============= */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                  label="Total Trades"
-                  value={stats.totalTrades.toString()}
-                  subtext={`${stats.buyTrades} buys, ${stats.sellTrades} sells`}
-                  icon={<Activity className="h-5 w-5 text-indigo-600" />}
-                />
-                <StatCard
-                  label="Buy Volume"
-                  value={formatCurrency(stats.buyVolume)}
-                  subtext={`${stats.uniqueTokens} tokens`}
-                  icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
-                />
-                <StatCard
-                  label="Sell Volume"
-                  value={formatCurrency(stats.sellVolume)}
-                  subtext="Total sold"
-                  icon={<TrendingDown className="h-5 w-5 text-amber-600" />}
-                />
-                <StatCard
-                  label="Net Gain/Loss"
-                  value={formatCurrency(stats.netGain)}
-                  subtext={stats.netGain >= 0 ? 'Profit' : 'Loss'}
-                  icon={<Target className="h-5 w-5 text-purple-600" />}
-                  highlight={stats.netGain >= 0 ? 'positive' : 'negative'}
-                />
-              </div>
-
-              {/* Tax Summary Card */}
-              <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                      <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
-                      <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
-                      <p className="text-indigo-200 text-sm mt-2">@ 30% flat rate + 4% cess</p>
-                    </div>
-                    <div className="flex flex-col sm:items-end gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-indigo-200 text-sm">TDS Credit (1%):</span>
-                        <Badge className="bg-white/20 text-white border-0">{formatCurrency(stats.tdsCredit)}</Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-indigo-200 text-sm">Net Payable:</span>
-                        <span className="text-xl font-bold">{formatCurrency(Math.max(0, stats.taxPayable - stats.tdsCredit))}</span>
-                      </div>
+                      <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
+                        Crypto Tax Calculator
+                      </h1>
+                      <p className="text-sm text-slate-500">Section 115BBH • 30% Tax Rate</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Charts */}
-              {trades.length > 0 ? (
-                <div className="grid lg:grid-cols-2 gap-6">
-                  {/* Monthly Volume */}
-                  <Card className="border-0 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold text-slate-900">Monthly Trading Volume</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={monthlyVolume}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                            <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
-                            <YAxis stroke="#64748b" fontSize={12} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                            <RechartsTooltip
-                              contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
-                              formatter={(value: number) => formatCurrency(value)}
-                            />
-                            <Legend />
-                            <Bar dataKey="buys" name="Buys" fill="#10b981" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="sells" name="Sells" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Token Allocation */}
-                  <Card className="border-0 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base font-semibold text-slate-900">Portfolio Allocation</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="h-64 flex items-center">
-                        {tokenAllocation.length > 0 ? (
-                          <>
-                            <ResponsiveContainer width="55%" height="100%">
-                              <RechartsPie>
-                                <Pie
-                                  data={tokenAllocation}
-                                  cx="50%"
-                                  cy="50%"
-                                  innerRadius={50}
-                                  outerRadius={80}
-                                  dataKey="value"
-                                  paddingAngle={2}
-                                >
-                                  {tokenAllocation.map((entry, index) => (
-                                    <Cell key={index} fill={entry.color} />
-                                  ))}
-                                </Pie>
-                                <RechartsTooltip
-                                  contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
-                                  formatter={(value: number) => formatCurrency(value)}
-                                />
-                              </RechartsPie>
-                            </ResponsiveContainer>
-                            <div className="flex-1 space-y-2">
-                              {tokenAllocation.map((token, i) => (
-                                <div key={i} className="flex items-center justify-between text-sm">
-                                  <div className="flex items-center gap-2">
-                                    <div className="h-3 w-3 rounded-full" style={{ backgroundColor: token.color }} />
-                                    <span className="text-slate-600">{token.name}</span>
-                                  </div>
-                                  <span className="font-medium text-slate-900">{formatCurrency(token.value)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="w-full text-center text-slate-500">No holdings data</div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
                 </div>
-              ) : (
-                <Card className="border-0 shadow-sm">
-                  <CardContent className="py-16 text-center">
-                    <Coins className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-slate-900 mb-2">No trades yet</h3>
-                    <p className="text-slate-500 mb-6 max-w-md mx-auto">
-                      Import your crypto trades from exchanges or add them manually to calculate your tax liability.
-                    </p>
-                    <div className="flex justify-center gap-3">
-                      <Button variant="outline" onClick={() => setActiveTab('import')}>
-                        <Upload className="h-4 w-4 mr-2" />
-                        Import CSV
-                      </Button>
-                      <Button onClick={() => setShowAddTrade(true)} className="bg-indigo-600 hover:bg-indigo-700">
+
+                <div className="flex items-center gap-3">
+                  {/* FY Selector */}
+                  <Select value={selectedFY} onValueChange={setSelectedFY}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Select FY" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FINANCIAL_YEARS.map(fy => (
+                        <SelectItem key={fy.value} value={fy.value}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{fy.label}</span>
+                            {fyTradeCounts[fy.value] && (
+                              <Badge variant="secondary" className="ml-2 text-xs">
+                                {fyTradeCounts[fy.value]}
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button variant="outline" size="sm" onClick={fetchTrades} disabled={loading}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                  <Dialog open={showAddTrade} onOpenChange={setShowAddTrade}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Trade
                       </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Add Manual Trade</DialogTitle>
+                        <DialogDescription>Enter the details of your crypto transaction.</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Token Symbol *</Label>
+                            <Input
+                              placeholder="BTC, ETH, SOL..."
+                              value={newTrade.token_symbol}
+                              onChange={e => setNewTrade({ ...newTrade, token_symbol: e.target.value.toUpperCase() })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Type *</Label>
+                            <Select value={newTrade.trade_type} onValueChange={v => setNewTrade({ ...newTrade, trade_type: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="buy">Buy</SelectItem>
+                                <SelectItem value="sell">Sell</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Quantity *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              placeholder="0.00"
+                              value={newTrade.quantity}
+                              onChange={e => setNewTrade({ ...newTrade, quantity: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Price per Unit (₹) *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              placeholder="0.00"
+                              value={newTrade.buy_price}
+                              onChange={e => setNewTrade({ ...newTrade, buy_price: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2 col-span-2">
+                            <Label>Trade Date *</Label>
+                            <Input
+                              type="date"
+                              value={newTrade.trade_date}
+                              onChange={e => setNewTrade({ ...newTrade, trade_date: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2 col-span-2">
+                            <Label>Exchange</Label>
+                            <Input
+                              placeholder="CoinDCX, WazirX, etc."
+                              value={newTrade.exchange}
+                              onChange={e => setNewTrade({ ...newTrade, exchange: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-4">
+                          <Button variant="outline" onClick={() => setShowAddTrade(false)}>Cancel</Button>
+                          <Button onClick={handleAddTrade} className="bg-indigo-600 hover:bg-indigo-700">Add Trade</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div className="flex gap-1 mt-6 border-b border-slate-200 -mb-px overflow-x-auto">
+                {[
+                  { id: 'overview', label: 'Overview', icon: BarChart3 },
+                  { id: 'transactions', label: 'Transactions', icon: History },
+                  { id: 'import', label: 'Import Data', icon: Upload },
+                  { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+                  { id: 'settings', label: 'Settings', icon: Settings }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
+                      ? 'border-indigo-600 text-indigo-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                      }`}
+                  >
+                    <tab.icon className="h-4 w-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Database Fix Alert */}
+          <Alert className="mb-6 bg-emerald-50 border-emerald-200 text-emerald-800">
+            <CheckCircle className="h-4 w-4 text-emerald-600" />
+            <AlertTitle className="font-bold">System Update: Database Synchronization Fixed</AlertTitle>
+            <AlertDescription className="text-sm">
+              We've resolved the "value too long" error encountered during CoinDCX imports. You can now safely upload your trade reports.
+            </AlertDescription>
+          </Alert>
+
+          {/* Content */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+            {/* ============= OVERVIEW TAB ============= */}
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard
+                    label="Total Trades"
+                    value={stats.totalTrades.toString()}
+                    subtext={`${stats.buyTrades} buys, ${stats.sellTrades} sells`}
+                    icon={<Activity className="h-5 w-5 text-indigo-600" />}
+                  />
+                  <StatCard
+                    label="Buy Volume"
+                    value={formatCurrency(stats.buyVolume)}
+                    subtext={`${stats.uniqueTokens} tokens`}
+                    icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
+                  />
+                  <StatCard
+                    label="Sell Volume"
+                    value={formatCurrency(stats.sellVolume)}
+                    subtext="Total sold"
+                    icon={<TrendingDown className="h-5 w-5 text-amber-600" />}
+                  />
+                  <StatCard
+                    label="Net Gain/Loss"
+                    value={formatCurrency(stats.netGain)}
+                    subtext={stats.netGain >= 0 ? 'Profit' : 'Loss'}
+                    icon={<Target className="h-5 w-5 text-purple-600" />}
+                    highlight={stats.netGain >= 0 ? 'positive' : 'negative'}
+                  />
+                </div>
+
+                {/* Tax Summary Card */}
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                  <CardContent className="p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div>
+                        <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
+                        <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
+                        <p className="text-indigo-200 text-sm mt-2">@ 30% flat rate + 4% cess</p>
+                      </div>
+                      <div className="flex flex-col sm:items-end gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-indigo-200 text-sm">TDS Credit (1%):</span>
+                          <Badge className="bg-white/20 text-white border-0">{formatCurrency(stats.tdsCredit)}</Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-indigo-200 text-sm">Net Payable:</span>
+                          <span className="text-xl font-bold">{formatCurrency(Math.max(0, stats.taxPayable - stats.tdsCredit))}</span>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              )}
-            </div>
-          )}
 
-          {/* ============= TRANSACTIONS TAB ============= */}
-          {activeTab === 'transactions' && (
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-semibold text-slate-900">All Transactions</CardTitle>
-                  <CardDescription>{trades.length} total trades</CardDescription>
-                </div>
-                {trades.length > 0 && (
-                  <Button variant="outline" size="sm" onClick={handleDeleteAllTrades} className="text-red-600 border-red-200 hover:bg-red-50">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete All
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent>
+                {/* Charts */}
                 {trades.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Token</TableHead>
-                          <TableHead className="text-right">Quantity</TableHead>
-                          <TableHead className="text-right">Price</TableHead>
-                          <TableHead className="text-right">Value</TableHead>
-                          <TableHead>Exchange</TableHead>
-                          <TableHead></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {trades.map(trade => (
-                          <TableRow key={trade.id}>
-                            <TableCell className="text-slate-600">{new Date(trade.trade_date).toLocaleDateString('en-IN')}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={trade.trade_type === 'buy' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-amber-200 text-amber-700 bg-amber-50'}>
-                                {trade.trade_type.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-medium text-slate-900">{trade.token_symbol}</TableCell>
-                            <TableCell className="text-right text-slate-600">{trade.quantity.toFixed(6)}</TableCell>
-                            <TableCell className="text-right text-slate-600">{formatCurrency(trade.buy_price)}</TableCell>
-                            <TableCell className="text-right font-medium text-slate-900">{formatCurrency(trade.quantity * trade.buy_price)}</TableCell>
-                            <TableCell className="text-slate-500">{trade.exchange || '-'}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm" onClick={() => handleDeleteTrade(trade.id)}>
-                                <Trash2 className="h-4 w-4 text-slate-400 hover:text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {/* Monthly Volume */}
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base font-semibold text-slate-900">Monthly Trading Volume</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={monthlyVolume}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
+                              <YAxis stroke="#64748b" fontSize={12} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
+                              <RechartsTooltip
+                                contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                                formatter={(value: number) => formatCurrency(value)}
+                              />
+                              <Legend />
+                              <Bar dataKey="buys" name="Buys" fill="#10b981" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="sells" name="Sells" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Token Allocation */}
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base font-semibold text-slate-900">Portfolio Allocation</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-64 flex items-center">
+                          {tokenAllocation.length > 0 ? (
+                            <>
+                              <ResponsiveContainer width="55%" height="100%">
+                                <RechartsPie>
+                                  <Pie
+                                    data={tokenAllocation}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={50}
+                                    outerRadius={80}
+                                    dataKey="value"
+                                    paddingAngle={2}
+                                  >
+                                    {tokenAllocation.map((entry, index) => (
+                                      <Cell key={index} fill={entry.color} />
+                                    ))}
+                                  </Pie>
+                                  <RechartsTooltip
+                                    contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                                    formatter={(value: number) => formatCurrency(value)}
+                                  />
+                                </RechartsPie>
+                              </ResponsiveContainer>
+                              <div className="flex-1 space-y-2">
+                                {tokenAllocation.map((token, i) => (
+                                  <div key={i} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: token.color }} />
+                                      <span className="text-slate-600">{token.name}</span>
+                                    </div>
+                                    <span className="font-medium text-slate-900">{formatCurrency(token.value)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="w-full text-center text-slate-500">No holdings data</div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : (
-                  <div className="text-center py-12">
-                    <p className="text-slate-500">No transactions found. Import or add trades to get started.</p>
-                  </div>
+                  <Card className="border-0 shadow-sm">
+                    <CardContent className="py-16 text-center">
+                      <Coins className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-slate-900 mb-2">No trades yet</h3>
+                      <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                        Import your crypto trades from exchanges or add them manually to calculate your tax liability.
+                      </p>
+                      <div className="flex justify-center gap-3">
+                        <Button variant="outline" onClick={() => setActiveTab('import')}>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Import CSV
+                        </Button>
+                        <Button onClick={() => setShowAddTrade(true)} className="bg-indigo-600 hover:bg-indigo-700">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Trade
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            )}
 
-          {/* ============= IMPORT TAB ============= */}
-          {activeTab === 'import' && (
-            <div className="space-y-6">
-              {/* Exchange Selection */}
+            {/* ============= TRANSACTIONS TAB ============= */}
+            {activeTab === 'transactions' && (
               <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold text-slate-900">Select Exchange</CardTitle>
-                  <CardDescription>Choose your crypto exchange to import trades</CardDescription>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base font-semibold text-slate-900">All Transactions</CardTitle>
+                    <CardDescription>{trades.length} total trades</CardDescription>
+                  </div>
+                  {trades.length > 0 && (
+                    <Button variant="outline" size="sm" onClick={handleDeleteAllTrades} className="text-red-600 border-red-200 hover:bg-red-50">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete All
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { id: 'CoinDCX', name: 'CoinDCX', desc: 'CSV Import' },
-                      { id: 'WazirX', name: 'WazirX', desc: 'CSV Import' },
-                      { id: 'Binance', name: 'Binance', desc: 'CSV Import' },
-                      { id: 'ZebPay', name: 'ZebPay', desc: 'CSV Import' }
-                    ].map(exchange => (
-                      <button
-                        key={exchange.id}
-                        onClick={() => setSelectedExchange(exchange.id)}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${selectedExchange === exchange.id
-                          ? 'border-indigo-500 bg-indigo-50'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                      >
-                        <p className="font-medium text-slate-900">{exchange.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">{exchange.desc}</p>
-                      </button>
-                    ))}
-                  </div>
+                  {trades.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Token</TableHead>
+                            <TableHead className="text-right">Quantity</TableHead>
+                            <TableHead className="text-right">Price</TableHead>
+                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead>Exchange</TableHead>
+                            <TableHead></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {trades.map(trade => (
+                            <TableRow key={trade.id}>
+                              <TableCell className="text-slate-600">{new Date(trade.trade_date).toLocaleDateString('en-IN')}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={trade.trade_type === 'buy' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-amber-200 text-amber-700 bg-amber-50'}>
+                                  {trade.trade_type.toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium text-slate-900">{trade.token_symbol}</TableCell>
+                              <TableCell className="text-right text-slate-600">{trade.quantity.toFixed(6)}</TableCell>
+                              <TableCell className="text-right text-slate-600">{formatCurrency(trade.buy_price)}</TableCell>
+                              <TableCell className="text-right font-medium text-slate-900">{formatCurrency(trade.quantity * trade.buy_price)}</TableCell>
+                              <TableCell className="text-slate-500">{trade.exchange || '-'}</TableCell>
+                              <TableCell>
+                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTrade(trade.id)}>
+                                  <Trash2 className="h-4 w-4 text-slate-400 hover:text-red-500" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <p className="text-slate-500">No transactions found. Import or add trades to get started.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+            )}
 
-              {/* CSV Upload */}
-              <Card className="border-0 shadow-sm">
+            {/* ============= IMPORT TAB ============= */}
+            {activeTab === 'import' && (
+              <div className="space-y-6">
+                {/* Exchange Selection */}
+                <Card className="border-0 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base font-semibold text-slate-900">Select Exchange</CardTitle>
+                    <CardDescription>Choose your crypto exchange to import trades</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { id: 'CoinDCX', name: 'CoinDCX', desc: 'CSV Import' },
+                        { id: 'WazirX', name: 'WazirX', desc: 'CSV Import' },
+                        { id: 'Binance', name: 'Binance', desc: 'CSV Import' },
+                        { id: 'ZebPay', name: 'ZebPay', desc: 'CSV Import' }
+                      ].map(exchange => (
+                        <button
+                          key={exchange.id}
+                          onClick={() => setSelectedExchange(exchange.id)}
+                          className={`p-4 rounded-xl border-2 text-left transition-all ${selectedExchange === exchange.id
+                            ? 'border-indigo-500 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            }`}
+                        >
+                          <p className="font-medium text-slate-900">{exchange.name}</p>
+                          <p className="text-xs text-slate-500 mt-1">{exchange.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* CSV Upload */}
+                <Card className="border-0 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base font-semibold text-slate-900">Upload CSV File</CardTitle>
+                    <CardDescription>Upload your trade history CSV from {selectedExchange}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Upload Area */}
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-400 transition-colors">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        id="csv-upload"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={handleCSVUpload}
+                        disabled={importing}
+                      />
+                      <label htmlFor="csv-upload" className={`cursor-pointer ${importing ? 'pointer-events-none opacity-50' : ''}`}>
+                        {importing ? (
+                          <RefreshCw className="h-10 w-10 text-indigo-500 mx-auto mb-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-10 w-10 text-slate-400 mx-auto mb-4" />
+                        )}
+                        <p className="font-medium text-slate-900 mb-1">
+                          {importing ? 'Processing...' : `Upload ${selectedExchange} CSV`}
+                        </p>
+                        <p className="text-sm text-slate-500">Drop your trade history file or click to browse</p>
+                      </label>
+                    </div>
+
+                    {/* Import Result */}
+                    {importResult && (
+                      <Alert className={importResult.success > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}>
+                        {importResult.success > 0 ? (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                        <AlertTitle className={importResult.success > 0 ? 'text-emerald-800' : 'text-red-800'}>
+                          {importResult.success > 0 ? 'Import Successful' : 'Import Failed'}
+                        </AlertTitle>
+                        <AlertDescription>
+                          <ul className="list-disc list-inside text-sm mt-2 space-y-1">
+                            {importResult.messages.map((msg, i) => (
+                              <li key={i} className={importResult.success > 0 ? 'text-emerald-700' : 'text-red-700'}>{msg}</li>
+                            ))}
+                          </ul>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* Download Sample Button */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-slate-500" />
+                        <div>
+                          <p className="font-medium text-slate-900">Need a sample file?</p>
+                          <p className="text-sm text-slate-500">Download a sample CSV to see the expected format</p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={downloadSampleCSV}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Sample
+                      </Button>
+                    </div>
+
+                    {/* Help Info & Document Checklist */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <Card className="border-0 shadow-sm bg-slate-50">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-8 w-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                              <FileCheck className="h-4 w-4 text-indigo-600" />
+                            </div>
+                            <CardTitle className="text-sm font-semibold">Required Document Checklist</CardTitle>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <ul className="space-y-3">
+                            {[
+                              { item: "Annual Information Statement (AIS)", desc: "Mandatory for cross-verifying all income" },
+                              { item: "Taxpayer Information Summary (TIS)", desc: "Simplified summary of your tax data" },
+                              { item: "Exchange Trade Report (CSV)", desc: "Full history from CoinDCX/WazirX/Binance" },
+                              { item: "Form 26AS", desc: "For verifying TDS deducted on crypto sales (1%)" },
+                              { item: "Bank Statements", desc: "To reconcile deposits and withdrawals" }
+                            ].map((doc, i) => (
+                              <li key={i} className="flex gap-3">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">{doc.item}</p>
+                                  <p className="text-xs text-slate-500 font-normal">{doc.desc}</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-0 shadow-sm bg-slate-50">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                              <Zap className="h-4 w-4 text-orange-600" />
+                            </div>
+                            <CardTitle className="text-sm font-semibold">Baby Steps: Get CoinDCX Report</CardTitle>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="relative space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                            {[
+                              { step: "Step 1", text: "Login to CoinDCX on Desktop browser" },
+                              { step: "Step 2", text: "Go to 'Orders' → 'Trade History'" },
+                              { step: "Step 3", text: "Click 'Download Report' button" },
+                              { step: "Step 4", text: "Select 'Trade History' and your 'Financial Year'" },
+                              { step: "Step 5", text: "Choose CSV format and click 'Generate'" }
+                            ].map((s, i) => (
+                              <div key={i} className="relative pl-6">
+                                <div className="absolute left-0 top-1.5 h-4 w-4 rounded-full border-2 border-slate-300 bg-white" />
+                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-tight">{s.step}</p>
+                                <p className="text-sm text-slate-700 font-medium">{s.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="md:col-span-2 border-0 shadow-sm bg-gradient-to-br from-indigo-50 to-white">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-indigo-600" />
+                            <CardTitle className="text-sm font-semibold">How to Calculate for Desired Financial Year</CardTitle>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid sm:grid-cols-3 gap-4">
+                            <div className="p-3 rounded-lg bg-white border border-indigo-100">
+                              <p className="text-xs font-bold text-indigo-600 mb-1">FY 2025-26</p>
+                              <p className="text-[10px] text-slate-500">Current Year</p>
+                              <p className="text-sm font-medium mt-1">April 1, 2025 to March 31, 2026</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white border border-slate-100">
+                              <p className="text-xs font-bold text-slate-600 mb-1">FY 2024-25</p>
+                              <p className="text-[10px] text-slate-500">Past Year</p>
+                              <p className="text-sm font-medium mt-1">April 1, 2024 to March 31, 2025</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-indigo-600 text-white">
+                              <p className="text-xs font-bold mb-1 opacity-90">Quick Tip</p>
+                              <p className="text-xs leading-relaxed">Always use the **FY Selector** at the top to filter trades accurately for each individual tax filing period.</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ============= REPORTS TAB ============= */}
+            {activeTab === 'reports' && (
+              <ReportsSection trades={trades} portfolio={portfolio} user={user} formatCurrency={formatCurrency} />
+            )}
+
+            {/* ============= SETTINGS TAB ============= */}
+            {activeTab === 'settings' && (
+              <Card className="border-0 shadow-sm max-w-2xl">
                 <CardHeader>
-                  <CardTitle className="text-base font-semibold text-slate-900">Upload CSV File</CardTitle>
-                  <CardDescription>Upload your trade history CSV from {selectedExchange}</CardDescription>
+                  <CardTitle className="text-base font-semibold text-slate-900">Tax Calculation Settings</CardTitle>
+                  <CardDescription>Configure how your crypto taxes are calculated</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Upload Area */}
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-400 transition-colors">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      id="csv-upload"
-                      accept=".csv"
-                      className="hidden"
-                      onChange={handleCSVUpload}
-                      disabled={importing}
-                    />
-                    <label htmlFor="csv-upload" className={`cursor-pointer ${importing ? 'pointer-events-none opacity-50' : ''}`}>
-                      {importing ? (
-                        <RefreshCw className="h-10 w-10 text-indigo-500 mx-auto mb-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-10 w-10 text-slate-400 mx-auto mb-4" />
-                      )}
-                      <p className="font-medium text-slate-900 mb-1">
-                        {importing ? 'Processing...' : `Upload ${selectedExchange} CSV`}
-                      </p>
-                      <p className="text-sm text-slate-500">Drop your trade history file or click to browse</p>
-                    </label>
-                  </div>
-
-                  {/* Import Result */}
-                  {importResult && (
-                    <Alert className={importResult.success > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}>
-                      {importResult.success > 0 ? (
-                        <CheckCircle className="h-4 w-4 text-emerald-600" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-600" />
-                      )}
-                      <AlertTitle className={importResult.success > 0 ? 'text-emerald-800' : 'text-red-800'}>
-                        {importResult.success > 0 ? 'Import Successful' : 'Import Failed'}
-                      </AlertTitle>
-                      <AlertDescription>
-                        <ul className="list-disc list-inside text-sm mt-2 space-y-1">
-                          {importResult.messages.map((msg, i) => (
-                            <li key={i} className={importResult.success > 0 ? 'text-emerald-700' : 'text-red-700'}>{msg}</li>
-                          ))}
-                        </ul>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {/* Download Sample Button */}
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-5 w-5 text-slate-500" />
-                      <div>
-                        <p className="font-medium text-slate-900">Need a sample file?</p>
-                        <p className="text-sm text-slate-500">Download a sample CSV to see the expected format</p>
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Accounting Method</p>
+                      <p className="text-sm text-slate-500">Method used to calculate cost basis</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={downloadSampleCSV}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Sample
-                    </Button>
+                    <Select value={settings.accountingMethod} onValueChange={(v: 'FIFO' | 'LIFO' | 'HIFO') => setSettings({ ...settings, accountingMethod: v })}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FIFO">FIFO</SelectItem>
+                        <SelectItem value="LIFO">LIFO</SelectItem>
+                        <SelectItem value="HIFO">HIFO</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-
-                  {/* Help Info & Document Checklist */}
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <Card className="border-0 shadow-sm bg-slate-50">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                            <FileCheck className="h-4 w-4 text-indigo-600" />
-                          </div>
-                          <CardTitle className="text-sm font-semibold">Required Document Checklist</CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-3">
-                          {[
-                            { item: "Annual Information Statement (AIS)", desc: "Mandatory for cross-verifying all income" },
-                            { item: "Taxpayer Information Summary (TIS)", desc: "Simplified summary of your tax data" },
-                            { item: "Exchange Trade Report (CSV)", desc: "Full history from CoinDCX/WazirX/Binance" },
-                            { item: "Form 26AS", desc: "For verifying TDS deducted on crypto sales (1%)" },
-                            { item: "Bank Statements", desc: "To reconcile deposits and withdrawals" }
-                          ].map((doc, i) => (
-                            <li key={i} className="flex gap-3">
-                              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm font-medium text-slate-900">{doc.item}</p>
-                                <p className="text-xs text-slate-500 font-normal">{doc.desc}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-0 shadow-sm bg-slate-50">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
-                            <Zap className="h-4 w-4 text-orange-600" />
-                          </div>
-                          <CardTitle className="text-sm font-semibold">Baby Steps: Get CoinDCX Report</CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="relative space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                          {[
-                            { step: "Step 1", text: "Login to CoinDCX on Desktop browser" },
-                            { step: "Step 2", text: "Go to 'Orders' → 'Trade History'" },
-                            { step: "Step 3", text: "Click 'Download Report' button" },
-                            { step: "Step 4", text: "Select 'Trade History' and your 'Financial Year'" },
-                            { step: "Step 5", text: "Choose CSV format and click 'Generate'" }
-                          ].map((s, i) => (
-                            <div key={i} className="relative pl-6">
-                              <div className="absolute left-0 top-1.5 h-4 w-4 rounded-full border-2 border-slate-300 bg-white" />
-                              <p className="text-xs font-semibold text-slate-400 uppercase tracking-tight">{s.step}</p>
-                              <p className="text-sm text-slate-700 font-medium">{s.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="md:col-span-2 border-0 shadow-sm bg-gradient-to-br from-indigo-50 to-white">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-indigo-600" />
-                          <CardTitle className="text-sm font-semibold">How to Calculate for Desired Financial Year</CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid sm:grid-cols-3 gap-4">
-                          <div className="p-3 rounded-lg bg-white border border-indigo-100">
-                            <p className="text-xs font-bold text-indigo-600 mb-1">FY 2025-26</p>
-                            <p className="text-[10px] text-slate-500">Current Year</p>
-                            <p className="text-sm font-medium mt-1">April 1, 2025 to March 31, 2026</p>
-                          </div>
-                          <div className="p-3 rounded-lg bg-white border border-slate-100">
-                            <p className="text-xs font-bold text-slate-600 mb-1">FY 2024-25</p>
-                            <p className="text-[10px] text-slate-500">Past Year</p>
-                            <p className="text-sm font-medium mt-1">April 1, 2024 to March 31, 2025</p>
-                          </div>
-                          <div className="p-3 rounded-lg bg-indigo-600 text-white">
-                            <p className="text-xs font-bold mb-1 opacity-90">Quick Tip</p>
-                            <p className="text-xs leading-relaxed">Always use the **FY Selector** at the top to filter trades accurately for each individual tax filing period.</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Staking Rewards as Income</p>
+                      <p className="text-sm text-slate-500">Tax staking rewards at receipt as other income</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatStakingAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatStakingAsIncome: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Airdrops as Income</p>
+                      <p className="text-sm text-slate-500">Tax airdrops at fair market value when received</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatAirdropsAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatAirdropsAsIncome: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Interest as Income</p>
+                      <p className="text-sm text-slate-500">Tax crypto interest/lending rewards as other income</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatInterestAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatInterestAsIncome: v })}
+                    />
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Assessment Year</p>
+                      <p className="text-sm text-slate-500">Current assessment year for tax calculation</p>
+                    </div>
+                    <Badge className="bg-indigo-100 text-indigo-700 border-0">{settings.assessmentYear}</Badge>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* ============= REPORTS TAB ============= */}
-          {activeTab === 'reports' && (
-            <ReportsSection trades={trades} portfolio={portfolio} user={user} formatCurrency={formatCurrency} />
-          )}
-
-          {/* ============= SETTINGS TAB ============= */}
-          {activeTab === 'settings' && (
-            <Card className="border-0 shadow-sm max-w-2xl">
-              <CardHeader>
-                <CardTitle className="text-base font-semibold text-slate-900">Tax Calculation Settings</CardTitle>
-                <CardDescription>Configure how your crypto taxes are calculated</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">Accounting Method</p>
-                    <p className="text-sm text-slate-500">Method used to calculate cost basis</p>
-                  </div>
-                  <Select value={settings.accountingMethod} onValueChange={(v: 'FIFO' | 'LIFO' | 'HIFO') => setSettings({ ...settings, accountingMethod: v })}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FIFO">FIFO</SelectItem>
-                      <SelectItem value="LIFO">LIFO</SelectItem>
-                      <SelectItem value="HIFO">HIFO</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">Treat Staking Rewards as Income</p>
-                    <p className="text-sm text-slate-500">Tax staking rewards at receipt as other income</p>
-                  </div>
-                  <Switch
-                    checked={settings.treatStakingAsIncome}
-                    onCheckedChange={v => setSettings({ ...settings, treatStakingAsIncome: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">Treat Airdrops as Income</p>
-                    <p className="text-sm text-slate-500">Tax airdrops at fair market value when received</p>
-                  </div>
-                  <Switch
-                    checked={settings.treatAirdropsAsIncome}
-                    onCheckedChange={v => setSettings({ ...settings, treatAirdropsAsIncome: v })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">Treat Interest as Income</p>
-                    <p className="text-sm text-slate-500">Tax crypto interest/lending rewards as other income</p>
-                  </div>
-                  <Switch
-                    checked={settings.treatInterestAsIncome}
-                    onCheckedChange={v => setSettings({ ...settings, treatInterestAsIncome: v })}
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">Assessment Year</p>
-                    <p className="text-sm text-slate-500">Current assessment year for tax calculation</p>
-                  </div>
-                  <Badge className="bg-indigo-100 text-indigo-700 border-0">{settings.assessmentYear}</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      </PlanGate>
     </AppLayout>
   );
 }

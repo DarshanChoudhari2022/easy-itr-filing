@@ -29,7 +29,7 @@ import {
   Loader2,
   Briefcase,
 } from "lucide-react";
-import { askTaxGuru } from "@/lib/ai-service";
+import { askTaxGuru, UserTaxContext } from "@/lib/ai-service";
 import { toast } from "sonner";
 import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -114,7 +114,17 @@ export default function Dashboard() {
     if (!question.trim()) return;
     setAsking(true);
     setAiResponse(null);
-    const result = await askTaxGuru(question);
+
+    // Build context from dashboard state
+    const context: UserTaxContext = {
+      assessmentYear,
+      grossIncome: stats.totalIncome,
+      totalDeductions: stats.totalDeductions,
+      hasCrypto: stats.vdaGains > 0,
+      cryptoGains: stats.vdaGains,
+    };
+
+    const result = await askTaxGuru(question, context);
     setAiResponse(result.answer);
     setAsking(false);
     if (result.error) toast.error("AI service transient error. Retrying...");

@@ -16,11 +16,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     User, Lock, Bell, Shield, Eye, EyeOff, Save, Check,
-    Smartphone, Mail, Key, AlertTriangle, Loader2, LogOut
+    Smartphone, Mail, Key, AlertTriangle, Loader2, LogOut,
+    CreditCard, MapPin
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { isValidPAN, isValidMobile, isValidPincode, INDIAN_STATES } from '@/lib/validators';
+import { updateProfileKYC } from '@/lib/supabase-data-service';
+import BankDetailsManager from '@/components/BankDetailsManager';
 
 export default function SettingsPage() {
     const { user, signOut } = useAuth();
@@ -32,7 +36,20 @@ export default function SettingsPage() {
         fullName: '',
         email: '',
         phone: '',
-        pan: ''
+        pan: '',
+    });
+
+    // KYC fields
+    const [kyc, setKyc] = useState({
+        dateOfBirth: '',
+        gender: '' as '' | 'M' | 'F' | 'O',
+        fatherName: '',
+        flatNo: '',
+        building: '',
+        street: '',
+        city: '',
+        state: '',
+        pincode: '',
     });
 
     // Password change
@@ -64,23 +81,78 @@ export default function SettingsPage() {
                 fullName: user.user_metadata?.full_name || '',
                 email: user.email || '',
                 phone: user.phone || '',
-                pan: user.user_metadata?.pan || ''
+                pan: user.user_metadata?.pan || '',
             });
+            // Load KYC from profiles table
+            loadKYC();
         }
     }, [user]);
 
+    const loadKYC = async () => {
+        if (!user) return;
+        try {
+            const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('user_id', user.id)
+                .maybeSingle();
+            if (data) {
+                setKyc({
+                    dateOfBirth: (data as any).date_of_birth || '',
+                    gender: (data as any).gender || '',
+                    fatherName: (data as any).father_name || '',
+                    flatNo: (data as any).flat_no || '',
+                    building: (data as any).building || '',
+                    street: (data as any).street || '',
+                    city: (data as any).city || '',
+                    state: (data as any).state || '',
+                    pincode: (data as any).pincode || '',
+                });
+                // Also fill PAN from profile if not from auth metadata
+                if ((data as any).pan_number && !profile.pan) {
+                    setProfile(p => ({ ...p, pan: (data as any).pan_number }));
+                }
+            }
+        } catch (e) {
+            console.error('Error loading KYC:', e);
+        }
+    };
+
     // Save profile
     const handleSaveProfile = async () => {
+        // Validate PAN if provided
+        if (profile.pan && !isValidPAN(profile.pan)) {
+            toast.error('Invalid PAN format. Expected: ABCDE1234F');
+            return;
+        }
+        if (profile.phone && !isValidMobile(profile.phone.replace(/\D/g, '').slice(-10))) {
+            toast.error('Invalid mobile number');
+            return;
+        }
+
         setSaving(true);
         try {
+            // Update auth metadata
             const { error } = await supabase.auth.updateUser({
                 data: {
                     full_name: profile.fullName,
                     pan: profile.pan
                 }
             });
-
             if (error) throw error;
+
+            // Also update profiles table
+            try {
+                await updateProfileKYC({
+                    full_name: profile.fullName,
+                    pan_number: profile.pan,
+                    mobile: profile.phone.replace(/\D/g, '').slice(-10),
+                });
+            } catch (e) {
+                // Non-critical — profiles table may not exist yet
+                console.warn('Could not update profiles table:', e);
+            }
+
             toast.success('Profile updated successfully');
         } catch (err) {
             toast.error('Failed to update profile');
@@ -128,6 +200,32 @@ export default function SettingsPage() {
         toast.success('Privacy settings saved');
     };
 
+    // Save KYC
+    const handleSaveKYC = async () => {
+        if (kyc.pincode && !isValidPincode(kyc.pincode)) {
+            toast.error('Invalid pincode');
+            return;
+        }
+        setSaving(true);
+        try {
+            await updateProfileKYC({
+                date_of_birth: kyc.dateOfBirth || undefined,
+                gender: kyc.gender || undefined,
+                father_name: kyc.fatherName || undefined,
+                flat_no: kyc.flatNo || undefined,
+                building: kyc.building || undefined,
+                street: kyc.street || undefined,
+                city: kyc.city || undefined,
+                state: kyc.state || undefined,
+                pincode: kyc.pincode || undefined,
+            });
+            toast.success('KYC details saved');
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to save KYC');
+        }
+        setSaving(false);
+    };
+
     return (
         <AppLayout>
             <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -137,10 +235,14 @@ export default function SettingsPage() {
                 </div>
 
                 <Tabs defaultValue="account" className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-4">
+                    <TabsList className="grid w-full grid-cols-5">
                         <TabsTrigger value="account" className="flex items-center gap-2">
                             <User className="h-4 w-4" />
                             <span className="hidden sm:inline">Account</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="kyc" className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4" />
+                            <span className="hidden sm:inline">KYC</span>
                         </TabsTrigger>
                         <TabsTrigger value="security" className="flex items-center gap-2">
                             <Lock className="h-4 w-4" />
@@ -148,7 +250,7 @@ export default function SettingsPage() {
                         </TabsTrigger>
                         <TabsTrigger value="notifications" className="flex items-center gap-2">
                             <Bell className="h-4 w-4" />
-                            <span className="hidden sm:inline">Notifications</span>
+                            <span className="hidden sm:inline">Alerts</span>
                         </TabsTrigger>
                         <TabsTrigger value="privacy" className="flex items-center gap-2">
                             <Shield className="h-4 w-4" />
@@ -207,6 +309,124 @@ export default function SettingsPage() {
                                 </div>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    {/* KYC Tab */}
+                    <TabsContent value="kyc">
+                        <div className="space-y-6">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <MapPin className="h-5 w-5 text-indigo-600" />
+                                        KYC Details
+                                    </CardTitle>
+                                    <CardDescription>Required for ITR filing. All data is encrypted and stored securely.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label>Date of Birth</Label>
+                                            <Input
+                                                type="date"
+                                                value={kyc.dateOfBirth}
+                                                onChange={e => setKyc({ ...kyc, dateOfBirth: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Gender</Label>
+                                            <Select value={kyc.gender} onValueChange={(v: 'M' | 'F' | 'O') => setKyc({ ...kyc, gender: v })}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select gender" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="M">Male</SelectItem>
+                                                    <SelectItem value="F">Female</SelectItem>
+                                                    <SelectItem value="O">Other</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2 sm:col-span-2">
+                                            <Label>Father's Name (as on PAN)</Label>
+                                            <Input
+                                                value={kyc.fatherName}
+                                                onChange={e => setKyc({ ...kyc, fatherName: e.target.value.toUpperCase() })}
+                                                placeholder="FATHER'S NAME"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Separator />
+                                    <h4 className="font-semibold text-sm text-gray-700">Address (as on Aadhaar/PAN)</h4>
+
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label>Flat / Door No.</Label>
+                                            <Input
+                                                value={kyc.flatNo}
+                                                onChange={e => setKyc({ ...kyc, flatNo: e.target.value })}
+                                                placeholder="eg. 301, A-Wing"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Building / Premises</Label>
+                                            <Input
+                                                value={kyc.building}
+                                                onChange={e => setKyc({ ...kyc, building: e.target.value })}
+                                                placeholder="eg. Sunshine Apartments"
+                                            />
+                                        </div>
+                                        <div className="space-y-2 sm:col-span-2">
+                                            <Label>Street / Road</Label>
+                                            <Input
+                                                value={kyc.street}
+                                                onChange={e => setKyc({ ...kyc, street: e.target.value })}
+                                                placeholder="eg. MG Road"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>City / Town</Label>
+                                            <Input
+                                                value={kyc.city}
+                                                onChange={e => setKyc({ ...kyc, city: e.target.value })}
+                                                placeholder="eg. Pune"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>State</Label>
+                                            <Select value={kyc.state} onValueChange={v => setKyc({ ...kyc, state: v })}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select state" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {INDIAN_STATES.map(s => (
+                                                        <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Pincode</Label>
+                                            <Input
+                                                value={kyc.pincode}
+                                                onChange={e => setKyc({ ...kyc, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                                                placeholder="411001"
+                                                maxLength={6}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-2">
+                                        <Button onClick={handleSaveKYC} disabled={saving}>
+                                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                                            Save KYC Details
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Bank Details */}
+                            <BankDetailsManager />
+                        </div>
                     </TabsContent>
 
                     {/* Security Settings */}

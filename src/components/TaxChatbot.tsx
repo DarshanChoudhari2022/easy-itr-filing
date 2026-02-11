@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles } from "lucide-react";
-import { askTaxGuru } from "@/lib/ai-service";
+import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, AlertTriangle } from "lucide-react";
+import { askTaxGuru, UserTaxContext } from "@/lib/ai-service";
 
 interface Message {
     id: string;
@@ -12,7 +12,11 @@ interface Message {
     timestamp: Date;
 }
 
-export default function TaxChatbot() {
+interface TaxChatbotProps {
+    taxContext?: UserTaxContext;
+}
+
+export default function TaxChatbot({ taxContext }: TaxChatbotProps = {}) {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
         {
@@ -49,11 +53,15 @@ export default function TaxChatbot() {
         setIsLoading(true);
 
         try {
-            const response = await askTaxGuru(input.trim());
+            const response = await askTaxGuru(input.trim(), taxContext);
+            let content = response.answer;
+            if (response.disclaimer) {
+                content += '\n\n---\n' + response.disclaimer;
+            }
             const assistantMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 role: "assistant",
-                content: response.answer,
+                content,
                 timestamp: new Date(),
             };
             setMessages((prev) => [...prev, assistantMessage]);
@@ -78,10 +86,12 @@ export default function TaxChatbot() {
     };
 
     const quickQuestions = [
+        "Which regime is better for me?",
+        "How is crypto taxed in India?",
+        "Explain my tax summary",
+        "How to maximize deductions?",
         "What is Section 80C?",
-        "How to file ITR-1?",
-        "Crypto tax rules?",
-        "Old vs New regime?",
+        "How to file ITR online?",
     ];
 
     return (
@@ -140,16 +150,16 @@ export default function TaxChatbot() {
                                 >
                                     <div
                                         className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${message.role === "user"
-                                                ? "bg-indigo-600 text-white"
-                                                : "bg-gradient-to-br from-indigo-500 to-teal-500 text-white"
+                                            ? "bg-indigo-600 text-white"
+                                            : "bg-gradient-to-br from-indigo-500 to-teal-500 text-white"
                                             }`}
                                     >
                                         {message.role === "user" ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                                     </div>
                                     <div
                                         className={`max-w-[75%] p-3 rounded-2xl text-sm leading-relaxed ${message.role === "user"
-                                                ? "bg-indigo-600 text-white rounded-br-md"
-                                                : "bg-white border border-slate-100 text-slate-700 rounded-bl-md shadow-sm"
+                                            ? "bg-indigo-600 text-white rounded-br-md"
+                                            : "bg-white border border-slate-100 text-slate-700 rounded-bl-md shadow-sm"
                                             }`}
                                     >
                                         {message.content}
@@ -215,8 +225,9 @@ export default function TaxChatbot() {
                                     <Send className="h-4 w-4" />
                                 </Button>
                             </div>
-                            <p className="text-[10px] text-slate-400 text-center mt-2">
-                                AI-powered by Hugging Face • For educational purposes only
+                            <p className="text-[10px] text-slate-400 text-center mt-2 flex items-center justify-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                AI guidance only — not legal tax advice. Consult a CA for specifics.
                             </p>
                         </div>
                     </motion.div>

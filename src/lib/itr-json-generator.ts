@@ -5,6 +5,7 @@
  */
 
 import { detectITRForm, ITRFormType } from './itr-form-detector';
+import { YEAR_CONFIGS, AssessmentYear } from './tax-config';
 
 export interface ITRPersonalInfo {
     pan: string;
@@ -155,6 +156,15 @@ export interface ITRFilingData {
     scheduleVDA?: any[];
 
     verification: ITRVerification;
+}
+
+export interface ScheduleVDAEntry {
+    tokenName: string;
+    dateOfTransfer: string;
+    saleConsideration: number;
+    costOfAcquisition: number;
+    income: number;
+    tdsDeducted: number;
 }
 
 /**
@@ -343,7 +353,37 @@ function generateITR3Json(data: ITRFilingData): object {
         "ScheduleBP": {
             "NatureOfBusiness": "Professional Services",
             "Code": "16019",
-            "GSTRegistered": false
+            "GSTRegistered": !!data.income.turnover
+        },
+
+        "ProfitAndLoss": data.income.isPresumptive ? null : {
+            "Revenue": {
+                "GrossTurnover": data.income.turnover || 0,
+                "OtherRevenue": 0,
+                "TotalRevenue": data.income.turnover || 0
+            },
+            "Expenses": {
+                "PurchaseOfGoods": 0,
+                "EmployeeBenefit": 0,
+                "Depreciation": 0,
+                "OtherExpenses": data.income.businessExpenses || 0,
+                "TotalExpenses": data.income.businessExpenses || 0
+            },
+            "NetProfit": data.income.businessNet || 0
+        },
+
+        "BalanceSheet": data.income.isPresumptive ? null : {
+            "Assets": {
+                "FixedAssets": 0,
+                "CurrentAssets": 0,
+                "TotalAssets": 0
+            },
+            "Liabilities": {
+                "Capital": 0,
+                "Loans": 0,
+                "CurrentLiabilities": 0,
+                "TotalLiabilities": 0
+            }
         }
     };
 }
@@ -354,8 +394,23 @@ function generateITR3Json(data: ITRFilingData): object {
 function generateITR4Json(data: ITRFilingData): object {
     const itr1Base = generateITR1Json(data);
 
-    const presumptiveIncome = data.income.isPresumptive && data.income.turnover ?
-        (data.income.presumptiveSection === '44ADA' ? data.income.turnover * 0.5 : data.income.turnover * 0.08) : 0;
+    // Calculate presumptive income based on section
+    let presumptiveIncome = 0;
+    const turnover = data.income.turnover || 0;
+
+    if (data.income.presumptiveSection === '44ADA') {
+        // 50% for professionals
+        presumptiveIncome = turnover * 0.5;
+    } else {
+        // 44AD: 6% digital + 8% cash
+        const digitalReceipts = data.income.businessGross || turnover;
+        const cashReceipts = data.income.businessExpenses || 0; // Reusing this field for cash receipts in UI
+        presumptiveIncome = (digitalReceipts * 0.06) + (cashReceipts * 0.08);
+        if (presumptiveIncome === 0) {
+            // Fallback to 8% of full turnover if no split provided
+            presumptiveIncome = turnover * 0.08;
+        }
+    }
 
     return {
         ...itr1Base,
@@ -364,11 +419,15 @@ function generateITR4Json(data: ITRFilingData): object {
 
         "PresumptiveIncome": {
             "Section": data.income.presumptiveSection || "44AD",
-            "Turnover": data.income.turnover || 0,
-            "PresumptiveRate": data.income.presumptiveSection === '44ADA' ? 50 : 8,
-            "PresumptiveIncome": presumptiveIncome,
-            "DigitalReceipts": data.income.turnover || 0,
-            "CashReceipts": 0
+            "NatureOfBusiness": data.income.presumptiveSection === '44ADA' ? 'Profession' : 'Business',
+            "Turnover": turnover,
+            "PresumptiveRate": data.income.presumptiveSection === '44ADA' ? 50 :
+                `6% digital + 8% cash`,
+            "PresumptiveIncome": Math.round(presumptiveIncome),
+            "DigitalReceipts": data.income.businessGross || 0,
+            "CashReceipts": data.income.businessExpenses || 0,
+            "DigitalTaxableIncome": Math.round((data.income.businessGross || 0) * 0.06),
+            "CashTaxableIncome": Math.round((data.income.businessExpenses || 0) * 0.08)
         }
     };
 }
@@ -377,80 +436,63 @@ function generateITR4Json(data: ITRFilingData): object {
  * Compute tax based on regime and income
  */
 function computeTax(taxableIncome: number, regime: 'OLD' | 'NEW', assessmentYear: string): object {
+    const ay = (assessmentYear || '2026-27') as AssessmentYear;
+    const config = YEAR_CONFIGS[ay] || YEAR_CONFIGS['2026-27'];
+
     let tax = 0;
     const slabs: { from: number; to: number; rate: number; tax: number }[] = [];
+    const activeSlabs = regime === 'NEW' ? config.newSlabs : config.oldSlabs;
 
-    if (regime === 'NEW') {
-        // New regime slabs (FY 2024-25)
-        const newSlabs = [
-            { min: 0, max: 300000, rate: 0 },
-            { min: 300000, max: 700000, rate: 5 },
-            { min: 700000, max: 1000000, rate: 10 },
-            { min: 1000000, max: 1200000, rate: 15 },
-            { min: 1200000, max: 1500000, rate: 20 },
-            { min: 1500000, max: Infinity, rate: 30 }
-        ];
+    let remaining = taxableIncome;
+    for (const slab of activeSlabs) {
+        if (remaining <= 0) break;
+        const taxable = slab.max === Infinity ? remaining : Math.min(remaining, slab.max - slab.min);
+        const slabTax = taxable * (slab.rate / 100);
+        tax += slabTax;
+        if (taxable > 0) {
+            slabs.push({
+                from: slab.min,
+                to: slab.max === Infinity ? slab.min + taxable : Math.min(slab.max, slab.min + taxable),
+                rate: slab.rate,
+                tax: Math.round(slabTax)
+            });
+        }
+        remaining -= taxable;
+    }
 
-        let remaining = taxableIncome;
-        for (const slab of newSlabs) {
-            if (remaining <= 0) break;
-            const taxable = Math.min(remaining, slab.max - slab.min);
-            const slabTax = taxable * (slab.rate / 100);
-            tax += slabTax;
-            if (taxable > 0) {
-                slabs.push({ from: slab.min, to: Math.min(slab.max, taxableIncome), rate: slab.rate, tax: slabTax });
+    // 87A Rebate using config
+    const rebateConfig = config.rebate87A;
+    let rebate = 0;
+    if (regime === 'NEW' && taxableIncome <= rebateConfig.newRegimeLimit) {
+        rebate = Math.min(tax, rebateConfig.newRegimeAmount);
+    } else if (regime === 'OLD' && taxableIncome <= rebateConfig.oldRegimeLimit) {
+        rebate = Math.min(tax, rebateConfig.oldRegimeAmount);
+    }
+    const taxAfterRebate = Math.max(0, tax - rebate);
+
+    // Surcharge using config
+    let surcharge = 0;
+    for (const surchargeSlab of config.surcharge.slabs) {
+        if (taxableIncome > surchargeSlab.min && taxableIncome <= surchargeSlab.max) {
+            let rate = surchargeSlab.rate;
+            if (regime === 'NEW' && rate > config.surcharge.maxRateNewRegime) {
+                rate = config.surcharge.maxRateNewRegime;
             }
-            remaining -= taxable;
-        }
-
-        // 87A Rebate (up to 7L)
-        if (taxableIncome <= 700000) {
-            tax = 0;
-        }
-    } else {
-        // Old regime slabs
-        const oldSlabs = [
-            { min: 0, max: 250000, rate: 0 },
-            { min: 250000, max: 500000, rate: 5 },
-            { min: 500000, max: 1000000, rate: 20 },
-            { min: 1000000, max: Infinity, rate: 30 }
-        ];
-
-        let remaining = taxableIncome;
-        for (const slab of oldSlabs) {
-            if (remaining <= 0) break;
-            const taxable = Math.min(remaining, slab.max - slab.min);
-            const slabTax = taxable * (slab.rate / 100);
-            tax += slabTax;
-            if (taxable > 0) {
-                slabs.push({ from: slab.min, to: Math.min(slab.max, taxableIncome), rate: slab.rate, tax: slabTax });
-            }
-            remaining -= taxable;
-        }
-
-        // 87A Rebate (up to 5L)
-        if (taxableIncome <= 500000) {
-            tax = 0;
+            surcharge = taxAfterRebate * (rate / 100);
+            break;
         }
     }
 
-    // Surcharge
-    let surcharge = 0;
-    if (taxableIncome > 5000000 && taxableIncome <= 10000000) surcharge = tax * 0.10;
-    else if (taxableIncome > 10000000 && taxableIncome <= 20000000) surcharge = tax * 0.15;
-    else if (taxableIncome > 20000000 && taxableIncome <= 50000000) surcharge = tax * 0.25;
-    else if (taxableIncome > 50000000) surcharge = tax * 0.37;
-
     // Cess
-    const cess = (tax + surcharge) * 0.04;
+    const cess = (taxAfterRebate + surcharge) * (config.cessRate / 100);
 
     return {
-        "TaxOnIncome": tax,
-        "Rebate87A": taxableIncome <= (regime === 'NEW' ? 700000 : 500000) ? tax : 0,
-        "TaxAfterRebate": taxableIncome <= (regime === 'NEW' ? 700000 : 500000) ? 0 : tax,
-        "Surcharge": surcharge,
-        "HealthEducationCess": cess,
-        "TotalTaxLiability": tax + surcharge + cess,
+        "TaxOnIncome": Math.round(tax),
+        "Rebate87A": Math.round(rebate),
+        "TaxAfterRebate": Math.round(taxAfterRebate),
+        "Surcharge": Math.round(surcharge),
+        "HealthEducationCess": Math.round(cess),
+        "TotalTaxLiability": Math.round(taxAfterRebate + surcharge + cess),
         "Slabs": slabs
     };
 }
@@ -514,11 +556,16 @@ export function validateITRData(data: ITRFilingData): { valid: boolean; errors: 
     }
     if (!data.personalInfo.firstName) errors.push('First name is required');
     if (!data.personalInfo.dateOfBirth) errors.push('Date of birth is required');
+    if (!data.personalInfo.fatherName) errors.push("Father's name is required for ITR");
+    if (!data.personalInfo.gender) errors.push('Gender is required');
     if (!data.personalInfo.mobile || !/^[6-9]\d{9}$/.test(data.personalInfo.mobile)) {
         errors.push('Invalid mobile number');
     }
     if (!data.personalInfo.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.personalInfo.email)) {
         errors.push('Invalid email address');
+    }
+    if (!data.personalInfo.city || !data.personalInfo.state || !data.personalInfo.pincode) {
+        errors.push('Complete address (city, state, pincode) is required');
     }
 
     // Bank details
@@ -531,9 +578,34 @@ export function validateITRData(data: ITRFilingData): { valid: boolean; errors: 
         }
     }
 
-    // Income validation
-    if (data.income.vdaGains > 0 && data.formType === 'ITR-1') {
-        errors.push('ITR-1 cannot be filed with VDA/Crypto income. Use ITR-2');
+    // Form-specific validations
+    if (data.formType === 'ITR-1') {
+        if (data.income.vdaGains > 0) {
+            errors.push('ITR-1 cannot be filed with VDA/Crypto income. Use ITR-2 or ITR-3');
+        }
+        if ((data.income.stcgEquity || 0) > 0 || (data.income.ltcgEquity || 0) > 0) {
+            errors.push('ITR-1 cannot have capital gains. Use ITR-2');
+        }
+        if ((data.income.businessGross || 0) > 0) {
+            errors.push('ITR-1 cannot have business income. Use ITR-3 or ITR-4');
+        }
+        const totalIncome = data.income.salaryNetTaxable + (data.income.netHousePropertyIncome || 0) +
+            data.income.savingsInterest + data.income.fdInterest + data.income.dividendIncome + data.income.otherIncome;
+        if (totalIncome > 5000000) {
+            warnings.push('Total income exceeds ₹50L — ITR-1 may not be applicable. Verify eligibility.');
+        }
+    }
+
+    if (data.formType === 'ITR-4') {
+        if (!data.income.isPresumptive) {
+            warnings.push('ITR-4 is meant for presumptive taxation. Use ITR-3 for regular business accounting.');
+        }
+        if ((data.income.turnover || 0) > 30000000 && data.income.presumptiveSection === '44AD') {
+            errors.push('44AD not applicable if turnover > ₹3 Cr. File ITR-3 instead.');
+        }
+        if ((data.income.turnover || 0) > 7500000 && data.income.presumptiveSection === '44ADA') {
+            errors.push('44ADA not applicable if receipts > ₹75L. File ITR-3 instead.');
+        }
     }
 
     // Warnings
@@ -541,7 +613,13 @@ export function validateITRData(data: ITRFilingData): { valid: boolean; errors: 
         warnings.push('No TDS on salary reported. Please verify Form 26AS');
     }
     if (data.income.fdInterest > 40000 && data.taxesPaid.tdsInterest === 0) {
-        warnings.push('FD interest exceeds ₹40,000 but no TDS reported');
+        warnings.push('FD interest exceeds ₹40,000 but no TDS reported. Verify with bank.');
+    }
+    if (data.income.dividendIncome > 500000 && data.taxesPaid.tdsDividend === 0) {
+        warnings.push('Dividend income exceeds ₹5L but no TDS reported');
+    }
+    if (data.income.vdaGains > 0 && (data.income.vdaTDSPaid || 0) === 0) {
+        warnings.push('Crypto gains reported but no TDS under Section 194S. Verify exchange statements.');
     }
 
     return { valid: errors.length === 0, errors, warnings };
