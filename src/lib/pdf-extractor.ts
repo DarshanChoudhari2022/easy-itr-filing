@@ -74,6 +74,7 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
 
             let pageText = '';
             let lastY = -1;
+            let lastX = -1;
 
             // Sort items by Y (descending for top-to-bottom) then X (ascending) to ensure reading order
             // PDF coordinates: (0,0) is usually bottom-left
@@ -91,21 +92,35 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
                 });
 
             for (const item of items) {
+                // If vertical gap is significant, start a new line
                 if (lastY !== -1 && Math.abs(item.y - lastY) > 5) {
                     pageText += '\n';
-                } else if (pageText.length > 0 && !pageText.endsWith('\n')) {
-                    pageText += ' '; // Add space between words on same line
+                    lastX = -1; // Reset X for new line
                 }
+
+                // Horizontal spacing preservation
+                if (lastX !== -1) {
+                    const gap = item.x - lastX;
+                    if (gap > 100) {
+                        pageText += '\t\t'; // Large gap -> double tab
+                    } else if (gap > 40) {
+                        pageText += '\t'; // Medium gap -> tab
+                    } else if (gap > 5) {
+                        pageText += ' '; // Small gap -> space
+                    }
+                }
+
                 pageText += item.str;
                 lastY = item.y;
+                lastX = item.x + (item.w || 0); // Estimate end of current string
             }
 
             pageTexts.push(pageText);
             totalCharCount += pageText.replace(/\s/g, '').length;
-            fullText += pageText + '\n\n--- Page Break ---\n\n';
+            fullText += pageText + '\n\n';
         }
 
-        // Clean up the extracted text
+        // Clean up the extracted text (but preserve structure)
         fullText = cleanExtractedText(fullText);
 
         // Check if it's an image-based PDF (very little text extracted)
@@ -153,20 +168,16 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
  */
 function cleanExtractedText(text: string): string {
     return text
-        // Normalize whitespace
-        .replace(/\s+/g, ' ')
         // Fix common OCR/extraction issues
         .replace(/\u00A0/g, ' ')  // Non-breaking spaces
         .replace(/[\u200B-\u200D\uFEFF]/g, '') // Zero-width chars
         // Fix comma-separated numbers that got split
         .replace(/(\d),\s+(\d)/g, '$1,$2')
-        // Fix amounts that got split (e.g., "1,50, 000" → "1,50,000")
-        .replace(/(\d),(\d{2}),\s+(\d{3})/g, '$1,$2,$3')
         // Normalize line endings
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n')
-        // Remove excessive newlines
-        .replace(/\n{3,}/g, '\n\n')
+        // Remove excessive newlines while keeping structure
+        .replace(/\n{4,}/g, '\n\n')
         .trim();
 }
 

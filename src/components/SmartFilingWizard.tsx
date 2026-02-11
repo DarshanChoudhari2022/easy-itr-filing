@@ -518,6 +518,17 @@ export function SmartFilingWizard() {
         return { totalIncome, taxableIncome, totalTax: finalTax, tdsPaid, netPayable, refund };
     }, [income, deductions, selectedRegime]);
 
+    // Auto-save when details change
+    useEffect(() => {
+        // Debounce save to avoid spamming the database
+        const timer = setTimeout(() => {
+            if (step > 1 && !loading) {
+                saveProgress(step, income, deductions, personalInfo, bankDetails);
+            }
+        }, 2000);
+        return () => clearTimeout(timer);
+    }, [income, deductions, personalInfo, bankDetails, step, loading, saveProgress]);
+
     // Handle income source toggle
     const toggleIncomeSource = (sourceId: string, enabled: boolean) => {
         const key = `has${sourceId.charAt(0).toUpperCase() + sourceId.slice(1)}` as keyof UserIncome;

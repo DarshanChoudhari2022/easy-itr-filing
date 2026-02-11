@@ -521,81 +521,58 @@ function extractAISFromPDFText(text: string): Record<string, any> {
         vdaTransactions: [],
         mutualFundTransactions: [],
         sftShares: [],
-        propertyTransactions: []
+        propertyTransactions: [],
+        pan: '',
+        assessmentYear: ''
     };
 
-    // Try to find PAN
+    // 1. Identity Regex (Same as before but useful for context)
     const panMatch = text.match(/PAN.*?\b([A-Z]{5}\d{4}[A-Z])\b/i);
     if (panMatch) data.pan = panMatch[1];
 
-    // Try to find Assessment Year
-    const ayMatch = text.match(/Assessment\s+Year\s*[:\-]\s*(\d{4}-\d{2,4})/i) || text.match(/A\.Y\.?\s*[:\-]?\s*(\d{4}-\d{2,4})/i);
-    if (ayMatch) data.assessmentYear = ayMatch[1];
+    const yearMatch = text.match(/Assessment Year.*?(\d{4}-\d{2})/i);
+    if (yearMatch) data.assessmentYear = yearMatch[1];
 
-    // Scan lines for transaction data
-    // We look for lines that contain keywords AND amounts
+    // 2. Tab-Aware Table Processing
     const lines = text.split('\n');
 
     for (const line of lines) {
         const cleanLine = line.trim();
-        if (cleanLine.length < 10) continue;
+        if (cleanLine.length < 15) continue;
 
-        // Strict boundary-aware regex to avoid merging adjacent numbers (like Year + Amount)
-        const matches = cleanLine.match(/\b[\d,]{3,}\b/g);
-        if (!matches) continue;
+        // Split by tabs to get columns (cells)
+        const columns = cleanLine.split('\t').map(c => c.trim()).filter(Boolean);
+        if (columns.length < 2) continue; // Need at least Description and Amount
 
-        let maxAmount = 0;
-        for (const match of matches) {
-            const val = parseFloat(match.replace(/,/g, ''));
+        // Standard logic: The financial amount is usually in the last 1 or 2 columns
+        const potentialAmounts = columns.slice(-2).map(c => {
+            const valMatch = c.match(/[\d,]+(?:\.\d{2})?/);
+            if (!valMatch) return null;
+            const val = parseFloat(valMatch[0].replace(/,/g, ''));
+            // Filter out years and tiny numbers
+            return (!isNaN(val) && (val < 2020 || val > 2030) && val > 10) ? val : null;
+        }).filter(v => v !== null) as number[];
 
-            // Ignore common tax years (2020-2030) to prevent miscalculation
-            if (val >= 2020 && val <= 2030) continue;
+        if (potentialAmounts.length === 0) continue;
 
-            if (!isNaN(val) && val > maxAmount) maxAmount = val;
-        }
+        // Structure Rule: The "Processed/Accepted" amount is typically the very LAST valid number in the row
+        const amount = potentialAmounts[potentialAmounts.length - 1];
+        const rowHeader = columns[0].toUpperCase();
+        const fullRowText = cleanLine.toUpperCase();
 
-        if (maxAmount < 100) continue;
-        const amount = maxAmount;
-
-        const upperLine = cleanLine.toUpperCase();
-
-        // Categorize based on keywords
-        if (upperLine.includes('192') || upperLine.includes('SALARY')) {
-            data.tdsSalary.push({
-                grossSalary: amount,
-                deductorName: 'Employer (Auto-extracted)',
-                tdsAmount: 0 // Cannot reliably distinguish TDS vs Income in single line heuristics without column detection
-            });
-        }
-        else if (upperLine.includes('194A') || upperLine.includes('INTEREST FROM SAVINGS') || upperLine.includes('INTEREST FROM DEPOSIT')) {
-            data.tdsInterest.push({
-                grossAmount: amount,
-                deductorName: 'Bank (Auto-extracted)'
-            });
-        }
-        else if (upperLine.includes('194') && upperLine.includes('DIVIDEND')) {
-            data.tdsDividend.push({
-                income: amount,
-                companyName: 'Company (Auto-extracted)'
-            });
-        }
-        else if (upperLine.includes('194S') || upperLine.includes('VIRTUAL DIGITAL ASSET') || upperLine.includes('CRYPTO')) {
-            data.vdaTransactions.push({
-                saleValue: amount,
-                tokenName: 'Crypto/VDA'
-            });
-        }
-        else if (upperLine.includes('MUTUAL FUND') || upperLine.includes('UNITS OF MF')) {
-            data.mutualFundTransactions.push({
-                amount: amount,
-                fundName: 'Mutual Fund'
-            });
-        }
-        else if (upperLine.includes('SALE OF SECURITIES') || upperLine.includes('OFF MARKET SALE')) {
-            data.sftShares.push({
-                saleValue: amount,
-                stockName: 'Share Transaction'
-            });
+        // Precise Mapping based on Column Context + Row Content
+        if (fullRowText.includes('192') || (fullRowText.includes('SALARY') && columns.length > 3)) {
+            data.tdsSalary.push({ grossSalary: amount, deductorName: 'Employer', tdsAmount: 0 });
+        } else if (fullRowText.includes('194A') || fullRowText.includes('INTEREST FROM SAVINGS')) {
+            data.tdsInterest.push({ grossAmount: amount, deductorName: 'Bank' });
+        } else if (fullRowText.includes('194') && fullRowText.includes('DIVIDEND')) {
+            data.tdsDividend.push({ income: amount, companyName: 'Company' });
+        } else if (fullRowText.includes('194S') || fullRowText.includes('VIRTUAL DIGITAL ASSET')) {
+            data.vdaTransactions.push({ saleValue: amount, tokenName: 'Crypto/VDA' });
+        } else if (fullRowText.includes('MUTUAL FUND') || fullRowText.includes('UNITS OF MF')) {
+            data.mutualFundTransactions.push({ amount: amount, fundName: 'Mutual Fund' });
+        } else if (fullRowText.includes('SFT-017') || fullRowText.includes('SFT-018') || fullRowText.includes('SALE OF SECURITIES')) {
+            data.sftShares.push({ saleValue: amount, stockName: 'Share Transaction' });
         }
     }
 
