@@ -540,20 +540,21 @@ function extractAISFromPDFText(text: string): Record<string, any> {
         const cleanLine = line.trim();
         if (cleanLine.length < 10) continue;
 
-        // Highly flexible regex for amounts: ₹5,39,123 or 5, 39, 123 or 539123.00
-        // We look for numbers with at least 3 digits (to avoid serial numbers/counts) 
-        // that appear within the line.
-        const allAmounts = cleanLine.match(/([\d\s,]+)(\.\d{2})?/g);
-        if (!allAmounts) continue;
+        // Strict boundary-aware regex to avoid merging adjacent numbers (like Year + Amount)
+        const matches = cleanLine.match(/\b[\d,]{3,}\b/g);
+        if (!matches) continue;
 
-        // Pick the largest number found in the line (usually the amount, as counts/serial numbers are smaller)
         let maxAmount = 0;
-        for (const match of allAmounts) {
-            const val = parseFloat(match.replace(/[\s,₹]/g, ''));
+        for (const match of matches) {
+            const val = parseFloat(match.replace(/,/g, ''));
+
+            // Ignore common tax years (2020-2030) to prevent miscalculation
+            if (val >= 2020 && val <= 2030) continue;
+
             if (!isNaN(val) && val > maxAmount) maxAmount = val;
         }
 
-        if (maxAmount < 100) continue; // Still skip tiny noise
+        if (maxAmount < 100) continue;
         const amount = maxAmount;
 
         const upperLine = cleanLine.toUpperCase();
