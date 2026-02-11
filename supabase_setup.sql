@@ -2,7 +2,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. UPDATING PROFILES (Authentication & User Details)
--- Adding columns for Plan Guards, KYC, and Address
 ALTER TABLE public.profiles 
 ADD COLUMN IF NOT EXISTS current_plan text default 'free',
 ADD COLUMN IF NOT EXISTS plan_valid_until timestamp with time zone,
@@ -81,15 +80,45 @@ CREATE TABLE IF NOT EXISTS public.filing_steps_state (
     updated_at timestamp with time zone default now()
 );
 
--- 7. ENABLE ROW LEVEL SECURITY (RLS)
+-- 7. ADDITIONAL TABLES (GST & Crypto)
+CREATE TABLE IF NOT EXISTS public.gst_invoices (
+    id uuid default uuid_generate_v4() primary key,
+    user_id uuid references auth.users not null,
+    gstin text,
+    invoice_number text,
+    invoice_date date,
+    taxable_value numeric,
+    igst numeric,
+    cgst numeric,
+    sgst numeric,
+    status text, -- uploaded, filed
+    created_at timestamp with time zone default now()
+);
+
+CREATE TABLE IF NOT EXISTS public.crypto_trades (
+    id uuid default uuid_generate_v4() primary key,
+    user_id uuid references auth.users not null,
+    exchange text,
+    trade_type text, -- buy/sell
+    symbol text,
+    quantity numeric,
+    price numeric,
+    trade_date timestamp with time zone,
+    img_url text, -- optional for uploaded proof
+    created_at timestamp with time zone default now()
+);
+
+-- 8. ENABLE ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.itr_filings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.income_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deductions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bank_details ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.filing_steps_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gst_invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crypto_trades ENABLE ROW LEVEL SECURITY;
 
--- 8. CREATE POLICIES (Allow users to manage THEIR OWN data)
+-- 9. CREATE POLICIES (Allow users to manage THEIR OWN data)
 DO $$ 
 BEGIN
     -- ITR Filings
@@ -115,5 +144,15 @@ BEGIN
     -- Filing State
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'filing_steps_state' AND policyname = 'Users can manage own filing state') THEN
         CREATE POLICY "Users can manage own filing state" ON public.filing_steps_state FOR ALL USING (auth.uid() = user_id);
+    END IF;
+
+    -- GST Invoices
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gst_invoices' AND policyname = 'Users can manage own GST invoices') THEN
+        CREATE POLICY "Users can manage own GST invoices" ON public.gst_invoices FOR ALL USING (auth.uid() = user_id);
+    END IF;
+
+    -- Crypto Trades
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'crypto_trades' AND policyname = 'Users can manage own crypto trades') THEN
+        CREATE POLICY "Users can manage own crypto trades" ON public.crypto_trades FOR ALL USING (auth.uid() = user_id);
     END IF;
 END $$;
