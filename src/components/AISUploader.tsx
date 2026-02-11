@@ -61,7 +61,18 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
                 // JSON file from IT portal
                 setUploadType('json');
                 const text = await file.text();
-                const jsonData = JSON.parse(text);
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(text);
+                } catch (e) {
+                    throw new Error('This file appears to be encrypted or invalid. Please download the standard "Annual Information Statement (JSON)" from the AIS portal, not the utility JSON.');
+                }
+
+                // Handle potential wrapper structures found in some downloads
+                if (!jsonData.pan && jsonData.AnnualInformationStatement) {
+                    jsonData = jsonData.AnnualInformationStatement;
+                }
+
                 parsedAIS = parseAISJson(jsonData);
             } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
                 // PDF file — extract and attempt to parse
