@@ -4,10 +4,10 @@
  * Used for Form 16, AIS, and other tax document parsing
  */
 
-import * as pdfjsLib from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
 
 // Configure the worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs`;
+GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs`;
 
 export interface PDFExtractionResult {
     text: string;
@@ -44,9 +44,9 @@ export async function extractTextFromPDF(file: File): Promise<PDFExtractionResul
         const arrayBuffer = await file.arrayBuffer();
 
         // Try loading PDF (handle password-protected files)
-        let pdf: pdfjsLib.PDFDocumentProxy;
+        let pdf: PDFDocumentProxy;
         try {
-            pdf = await pdfjsLib.getDocument({
+            pdf = await getDocument({
                 data: arrayBuffer,
                 useSystemFonts: true
             }).promise;
