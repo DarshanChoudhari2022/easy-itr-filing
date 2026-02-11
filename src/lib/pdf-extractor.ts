@@ -198,8 +198,8 @@ export function isLikelyAIS(text: string): boolean {
  * Detect the type of tax document from PDF content
  */
 export function detectDocumentType(text: string): 'form16' | 'ais' | '26as' | 'unknown' {
-    if (isLikelyForm16(text)) return 'form16';
     if (isLikelyAIS(text)) return 'ais';
+    if (isLikelyForm16(text)) return 'form16';
 
     const lowerText = text.toLowerCase();
     if (lowerText.includes('form 26as') || lowerText.includes('tax credit statement') ||
