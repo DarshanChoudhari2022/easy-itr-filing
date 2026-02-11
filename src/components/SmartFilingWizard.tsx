@@ -21,7 +21,7 @@ import {
     Upload, FileText, CheckCircle, AlertCircle, ArrowRight, ArrowLeft,
     Download, Loader2, Briefcase, Building2, Bitcoin, TrendingUp,
     Wallet, Home, Gift, Landmark, HelpCircle, Info, Calculator,
-    IndianRupee, PiggyBank, Users, Globe, Sparkles, Check
+    IndianRupee, PiggyBank, Users, Globe, Sparkles, Check, ShieldCheck, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -656,869 +656,973 @@ export function SmartFilingWizard() {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             {/* Header */}
-            <div className="text-center mb-8">
-                <h1 className="text-2xl font-bold text-slate-900">ITR Filing Wizard — AY 2026-27</h1>
-                <p className="text-slate-500 mt-1">Complete your Income Tax Return step-by-step. We'll guide you through everything.</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+                <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-3">
+                        <Sparkles className="h-8 w-8 text-primary animate-pulse" />
+                        Guided ITR Filing <Badge className="bg-gradient-to-r from-primary to-accent text-[10px] uppercase tracking-wider">AY 2026-27</Badge>
+                    </h1>
+                    <p className="text-muted-foreground font-medium mt-1">
+                        Professional assistance for accurate & maximized tax returns.
+                    </p>
+                </div>
+                <div className="hidden md:flex items-center gap-2 text-xs font-semibold text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border">
+                    <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+                    Secure SSL Encrypted filing
+                </div>
             </div>
 
-            {/* Progress */}
-            <div className="flex items-center justify-between mb-8 overflow-x-auto">
-                {[
-                    { num: 1, label: 'Get Data' },
-                    { num: 2, label: 'Income Sources' },
-                    { num: 3, label: 'Enter Details' },
-                    { num: 4, label: 'Deductions' },
-                    { num: 5, label: 'Review' },
-                    { num: 6, label: 'Download JSON' },
-                    { num: 7, label: 'Upload to ITD' }
-                ].map((s, i) => (
-                    <div key={s.num} className="flex items-center flex-shrink-0">
-                        <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${step >= s.num ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
-                            }`}>
-                            {step > s.num ? <Check className="h-4 w-4" /> : s.num}
+            {/* Progress Stepper */}
+            <div className="bg-white p-6 rounded-2xl border shadow-sm mb-8">
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Filing Roadmap</h3>
+                    <span className="text-xs font-bold text-primary">Step {step} of 7</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                    {[
+                        { num: 1, label: 'Get Data', icon: <Download className="h-3 w-3" /> },
+                        { num: 2, label: 'Income Sources', icon: <Briefcase className="h-3 w-3" /> },
+                        { num: 3, label: 'Income Details', icon: <IndianRupee className="h-3 w-3" /> },
+                        { num: 4, label: 'Deductions', icon: <PiggyBank className="h-3 w-3" /> },
+                        { num: 5, label: 'Review', icon: <Calculator className="h-3 w-3" /> },
+                        { num: 6, label: 'Download', icon: <FileText className="h-3 w-3" /> },
+                        { num: 7, label: 'Upload', icon: <Upload className="h-3 w-3" /> }
+                    ].map((s, i) => (
+                        <div key={s.num} className="flex items-center flex-shrink-0">
+                            <div
+                                className={`flex flex-col items-center gap-1.5 min-w-[60px] cursor-pointer transition-all ${step === s.num ? 'opacity-100' : 'opacity-40 hover:opacity-60'
+                                    }`}
+                                onClick={() => step > s.num && setStep(s.num)}
+                            >
+                                <div className={`flex items-center justify-center w-8 h-8 rounded-xl shadow-sm transition-all ${step >= s.num ? 'bg-primary text-white scale-110' : 'bg-slate-100 text-slate-400'
+                                    }`}>
+                                    {step > s.num ? <Check className="h-4 w-4" /> : s.icon}
+                                </div>
+                                <span className="text-[10px] font-bold text-center leading-tight">{s.label}</span>
+                            </div>
+                            {i < 6 && (
+                                <div className={`w-8 h-0.5 mx-2 rounded-full ${step > s.num ? 'bg-primary' : 'bg-slate-100'
+                                    }`} />
+                            )}
                         </div>
-                        <span className={`ml-1 text-xs hidden md:inline ${step >= s.num ? 'text-indigo-600 font-medium' : 'text-slate-400'}`}>
-                            {s.label}
-                        </span>
-                        {i < 6 && <div className={`w-4 sm:w-8 h-0.5 mx-1 ${step > s.num ? 'bg-indigo-600' : 'bg-slate-200'}`} />}
-                    </div>
-                ))}
+                    ))}
+                </div>
+                <Progress value={(step / 7) * 100} className="h-1 mt-4" />
             </div>
 
-            {/* Step 1: Get Your Data from ITD Portal */}
-            {step === 1 && (
-                <Card className="border-2 border-blue-200">
-                    <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
-                        <CardTitle className="flex items-center gap-2 text-blue-800">
-                            <Download className="h-5 w-5" /> Step 1: Get Your Data from Income Tax Portal
-                        </CardTitle>
-                        <CardDescription className="text-blue-600">
-                            Before filling your ITR, download your data from the Income Tax Department portal.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-6 space-y-6">
-                        {/* AIS Download */}
-                        <div className="p-5 rounded-xl border-2 border-blue-100 bg-blue-50/50 space-y-3">
-                            <h3 className="font-bold text-lg flex items-center gap-2">
-                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
-                                Download AIS (Annual Information Statement)
-                            </h3>
-                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                <li className="flex gap-2"><span className="font-bold text-blue-600">a.</span> Go to <a href="https://www.incometax.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-medium">incometax.gov.in</a> and login with your PAN & password</li>
-                                <li className="flex gap-2"><span className="font-bold text-blue-600">b.</span> Click <strong>"AIS"</strong> in the top navigation menu</li>
-                                <li className="flex gap-2"><span className="font-bold text-blue-600">c.</span> Select <strong>Financial Year 2025-26</strong></li>
-                                <li className="flex gap-2"><span className="font-bold text-blue-600">d.</span> Click <strong>"Download"</strong> → Choose <strong>PDF</strong> format</li>
-                                <li className="flex gap-2"><span className="font-bold text-blue-600">e.</span> Save the file to your computer</li>
-                            </ol>
-                            <Button variant="outline" className="ml-9 border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => navigate('/ais')}>
-                                <Upload className="h-4 w-4 mr-2" /> Upload AIS to TaxMitra
-                            </Button>
-                        </div>
+            <div className="transition-all duration-500 animate-in fade-in slide-in-from-bottom-8">
 
-                        {/* Pre-filled JSON Download */}
-                        <div className="p-5 rounded-xl border-2 border-indigo-100 bg-indigo-50/50 space-y-3">
-                            <h3 className="font-bold text-lg flex items-center gap-2">
-                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold">2</span>
-                                Download Pre-filled JSON (Optional but Recommended)
-                            </h3>
-                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                <li className="flex gap-2"><span className="font-bold text-indigo-600">a.</span> On the ITD portal, go to <strong>e-File → Income Tax Returns → File Income Tax Return</strong></li>
-                                <li className="flex gap-2"><span className="font-bold text-indigo-600">b.</span> Select <strong>AY 2026-27</strong> and click <strong>"Continue"</strong></li>
-                                <li className="flex gap-2"><span className="font-bold text-indigo-600">c.</span> On the filing page, look for <strong>"Download pre-filled data"</strong> link</li>
-                                <li className="flex gap-2"><span className="font-bold text-indigo-600">d.</span> This JSON contains your salary, TDS, and interest data auto-filled by ITD</li>
-                            </ol>
-                        </div>
-
-                        {/* Crypto Data */}
-                        <div className="p-5 rounded-xl border-2 border-amber-100 bg-amber-50/50 space-y-3">
-                            <h3 className="font-bold text-lg flex items-center gap-2">
-                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white text-sm font-bold">3</span>
-                                Get Your Crypto Transaction File
-                            </h3>
-                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                <li className="flex gap-2"><span className="font-bold text-amber-600">a.</span> Login to your crypto exchange (WazirX, CoinDCX, Binance, etc.)</li>
-                                <li className="flex gap-2"><span className="font-bold text-amber-600">b.</span> Go to <strong>Reports → Tax Report / Transaction History</strong></li>
-                                <li className="flex gap-2"><span className="font-bold text-amber-600">c.</span> Download <strong>CSV</strong> for FY 2025-26 (April 2025 - March 2026)</li>
-                                <li className="flex gap-2"><span className="font-bold text-amber-600">d.</span> Upload it in our <strong>Crypto Tax Calculator</strong></li>
-                            </ol>
-                            <Button variant="outline" className="ml-9 border-amber-300 text-amber-700 hover:bg-amber-100" onClick={() => navigate('/crypto')}>
-                                <Bitcoin className="h-4 w-4 mr-2" /> Go to Crypto Tax Calculator
-                            </Button>
-                        </div>
-
-                        <Alert className="border-green-200 bg-green-50">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <AlertTitle className="text-green-800">Already have your data?</AlertTitle>
-                            <AlertDescription className="text-green-700">
-                                If you already have your AIS, Form 26AS, or know your income details, click "Next" to proceed.
-                            </AlertDescription>
-                        </Alert>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Step 2: Select Income Sources */}
-            {step === 2 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>What are your income sources?</CardTitle>
-                        <CardDescription>Select all that apply. We'll suggest the right ITR form.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-3">
-                            {INCOME_SOURCES.map(source => (
-                                <div
-                                    key={source.id}
-                                    className={`flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all ${income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]
-                                        ? 'border-indigo-500 bg-indigo-50'
-                                        : 'border-slate-200 hover:border-slate-300'
-                                        }`}
-                                    onClick={() => {
-                                        const key = `has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome;
-                                        toggleIncomeSource(source.id, !income[key]);
-                                    }}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]
-                                            ? 'bg-indigo-100 text-indigo-600'
-                                            : 'bg-slate-100 text-slate-500'
-                                            }`}>
-                                            {source.icon}
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-slate-900">{source.name}</p>
-                                            <p className="text-sm text-slate-500">{source.description}</p>
-                                        </div>
+                {/* Step 1: Get Your Data from ITD Portal */}
+                {step === 1 && (
+                    <Card className="border-none shadow-xl bg-slate-50 overflow-hidden">
+                        <CardHeader className="bg-gradient-to-r from-primary to-indigo-900 text-white pb-8">
+                            <CardTitle className="flex items-center gap-3 text-2xl font-black">
+                                <Download className="h-7 w-7 text-accent" />
+                                Step 1: Securely Fetch Your Financial Data
+                            </CardTitle>
+                            <CardDescription className="text-indigo-100 text-base max-w-2xl">
+                                TaxMitra works best when you provide official data from the Income Tax Department.
+                                This ensures zero errors and captures every tax credit you're entitled to.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-8 space-y-6">
+                            <div className="grid md:grid-cols-2 gap-6">
+                                {/* AIS Download */}
+                                <div className="p-6 rounded-2xl border-2 border-white bg-white shadow-sm hover:shadow-md transition-all group">
+                                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-white transition-all">
+                                        <FileText className="h-5 w-5" />
                                     </div>
-                                    <Checkbox
-                                        checked={!!income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]}
-                                        className="pointer-events-none"
-                                    />
+                                    <h3 className="font-black text-lg mb-2">Annual Information Statement (AIS)</h3>
+                                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+                                        Link your salary, interest, and stock market trades reported by banks and companies.
+                                    </p>
+                                    <ol className="space-y-3 text-[11px] text-slate-600 mb-6">
+                                        <li className="flex gap-2">
+                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">1</Badge>
+                                            <span>Login at <a href="https://www.incometax.gov.in" target="_blank" rel="noopener noreferrer" className="text-primary underline font-bold">incometax.gov.in</a></span>
+                                        </li>
+                                        <li className="flex gap-2">
+                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">2</Badge>
+                                            <span>Click <strong>'AIS'</strong> under Services Menu</span>
+                                        </li>
+                                        <li className="flex gap-2">
+                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">3</Badge>
+                                            <span>Download the <strong>PDF</strong> for FY 2025-26</span>
+                                        </li>
+                                    </ol>
+                                    <Button className="w-full bg-primary/5 text-primary hover:bg-primary hover:text-white font-bold h-10 border-primary/20" variant="outline" onClick={() => navigate('/ais')}>
+                                        <Upload className="h-4 w-4 mr-2" /> Upload AIS to TaxMitra
+                                    </Button>
                                 </div>
-                            ))}
-                        </div>
 
-                        {/* Recommended Form */}
-                        <Alert className="mt-6 border-indigo-200 bg-indigo-50">
-                            <Sparkles className="h-4 w-4 text-indigo-600" />
-                            <AlertTitle className="text-indigo-800">Recommended: {ITR_FORMS[recommendedForm as keyof typeof ITR_FORMS]?.name}</AlertTitle>
-                            <AlertDescription className="text-indigo-700">
-                                {ITR_FORMS[recommendedForm as keyof typeof ITR_FORMS]?.description}
-                            </AlertDescription>
-                        </Alert>
-                    </CardContent>
-                </Card>
-            )}
+                                {/* Crypto Data */}
+                                <div className="p-6 rounded-2xl border-2 border-white bg-white shadow-sm hover:shadow-md transition-all group">
+                                    <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center mb-4 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                                        <Bitcoin className="h-5 w-5" />
+                                    </div>
+                                    <h3 className="font-black text-lg mb-2">Crypto Transaction Reports</h3>
+                                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+                                        Section 115BBH requires detailed reporting of every VDA transfer.
+                                    </p>
+                                    <ol className="space-y-3 text-[11px] text-slate-600 mb-6">
+                                        <li className="flex gap-2">
+                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-amber-500 text-amber-600 font-bold">1</Badge>
+                                            <span>Download CSV from WazirX, CoinDCX, or Binance</span>
+                                        </li>
+                                        <li className="flex gap-2">
+                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-amber-500 text-amber-600 font-bold">2</Badge>
+                                            <span>Ensure date range is April 2025 - March 2026</span>
+                                        </li>
+                                    </ol>
+                                    <Button className="w-full bg-amber-500/5 text-amber-700 hover:bg-amber-600 hover:text-white font-bold h-10 border-amber-500/20" variant="outline" onClick={() => navigate('/crypto')}>
+                                        <Bitcoin className="h-4 w-4 mr-2" /> Go to Crypto Calculator
+                                    </Button>
+                                </div>
+                            </div>
 
-            {/* Step 3: Enter Income Details */}
-            {step === 3 && (
-                <div className="space-y-6">
-                    {income.hasSalary && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Briefcase className="h-5 w-5" /> Salary Income
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
+                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex gap-4 items-start">
+                                <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                                </div>
                                 <div>
-                                    <Label>Gross Salary (Annual) *</Label>
-                                    <Input
-                                        type="number"
-                                        placeholder="e.g. 1200000"
-                                        value={income.salaryGross || ''}
-                                        onChange={e => updateIncomeField('salaryGross', e.target.value)}
-                                    />
+                                    <h4 className="text-sm font-bold text-emerald-900">Your data is safe & encrypted</h4>
+                                    <p className="text-xs text-emerald-800/70 mt-0.5">We only use this data to pre-fill your forms. No data is shared with 3rd parties without your explicit consent.</p>
                                 </div>
-                                <div>
-                                    <Label>TDS Deducted</Label>
-                                    <Input
-                                        type="number"
-                                        placeholder="From Form 16"
-                                        value={income.salaryTDS || ''}
-                                        onChange={e => updateIncomeField('salaryTDS', e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
-                    {income.hasFreelance && (
-                        <Card>
+                {/* Step 2: Select Income Sources */}
+                {step === 2 && (
+                    <div className="grid lg:grid-cols-3 gap-6">
+                        <Card className="lg:col-span-2 border-none shadow-xl">
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Wallet className="h-5 w-5" /> Freelance / Business Income
-                                </CardTitle>
+                                <CardTitle className="text-2xl font-black">Which income sources apply to you?</CardTitle>
+                                <CardDescription className="text-base">We use this to customize the filing forms and ensure you're using the correct ITR version.</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div>
-                                    <Label>Income Type</Label>
-                                    <Select
-                                        value={income.freelanceSection}
-                                        onValueChange={v => updateIncomeField('freelanceSection', v)}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="44ADA">Presumptive (44ADA) - Professionals</SelectItem>
-                                            <SelectItem value="44AD">Presumptive (44AD) - Business</SelectItem>
-                                            <SelectItem value="Regular">Regular (Maintain Books)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        44ADA: Declare 50% of receipts as profit (no books needed)
-                                    </p>
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <Label>Total Receipts/Turnover *</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.freelanceTurnover || ''}
-                                            onChange={e => {
-                                                const val = Number(e.target.value);
-                                                updateIncomeField('freelanceTurnover', val);
-                                                if (income.freelanceSection === '44ADA') {
-                                                    updateIncomeField('freelanceGross', val * 0.5);
-                                                }
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                    {INCOME_SOURCES.map(source => (
+                                        <div
+                                            key={source.id}
+                                            className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all h-full ${income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]
+                                                ? 'border-primary bg-primary/5 shadow-inner'
+                                                : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                            onClick={() => {
+                                                const key = `has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome;
+                                                toggleIncomeSource(source.id, !income[key]);
                                             }}
-                                        />
+                                        >
+                                            <div className={`p-2 rounded-xl shrink-0 ${income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]
+                                                ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                                                : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                {source.icon}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <p className="font-bold text-slate-900 leading-none">{source.name}</p>
+                                                    <Checkbox
+                                                        checked={!!income[`has${source.id.charAt(0).toUpperCase() + source.id.slice(1)}` as keyof UserIncome]}
+                                                        className="pointer-events-none rounded-full"
+                                                    />
+                                                </div>
+                                                <p className="text-[10px] text-muted-foreground leading-tight">{source.description}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <div className="space-y-6">
+                            <Card className="bg-primary text-white border-none shadow-xl overflow-hidden relative">
+                                <div className="absolute -right-4 -top-4 opacity-10">
+                                    <Sparkles className="h-24 w-24" />
+                                </div>
+                                <CardHeader>
+                                    <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                                        <Info className="h-4 w-4" /> Recommendation
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="p-3 bg-white/10 rounded-xl backdrop-blur-sm border border-white/10">
+                                        <p className="text-xs font-bold mb-1 opacity-80 uppercase tracking-tighter">Recommended Form</p>
+                                        <h4 className="text-xl font-black">{ITR_FORMS[recommendedForm as keyof typeof ITR_FORMS]?.name}</h4>
                                     </div>
-                                    {income.freelanceSection === 'Regular' && (
+                                    <p className="text-xs text-indigo-100 leading-relaxed italic">
+                                        "{ITR_FORMS[recommendedForm as keyof typeof ITR_FORMS]?.description}"
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100">
+                                <h4 className="font-black text-indigo-900 text-xs uppercase mb-3 flex items-center gap-2">
+                                    <ShieldCheck className="h-3.5 w-3.5" /> Pro Tip
+                                </h4>
+                                <p className="text-xs text-indigo-800/70 leading-relaxed font-medium">
+                                    Reporting all income sources (even small dividends) link to your PAN is crucial to avoid <strong>automated notices</strong> from the ITD matching engine.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 3: Enter Income Details */}
+                {step === 3 && (
+                    <div className="space-y-6">
+                        {income.hasSalary && (
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
+                                        <Briefcase className="h-5 w-5" /> Salary Income details
+                                    </CardTitle>
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-1/2/3/4</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <div className="grid gap-6 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Gross Salary (Annual) *</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50 focus:bg-white"
+                                                    placeholder="e.g. 1200000"
+                                                    value={income.salaryGross || ''}
+                                                    onChange={e => updateIncomeField('salaryGross', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">Total of Basic, HRA, and Special Allowances from Form 16</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">TDS Deducted (Employer)</Label>
+                                            <div className="relative">
+                                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-accent" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50 focus:bg-white"
+                                                    placeholder="As per Form 16"
+                                                    value={income.salaryTDS || ''}
+                                                    onChange={e => updateIncomeField('salaryTDS', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">Check Part A of your Form 16 (TRACES report)</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-xl bg-primary shadow-2xl shadow-primary/20 text-white flex gap-4 items-center">
+                                        <Sparkles className="h-10 w-10 text-accent shrink-0 animate-pulse" />
                                         <div>
-                                            <Label>Business Expenses</Label>
+                                            <h4 className="text-sm font-bold">Standard Deduction of ₹75,000</h4>
+                                            <p className="text-xs opacity-70">We've automatically applied this for you in the {selectedRegime} regime calculation.</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {income.hasFreelance && (
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
+                                        <Wallet className="h-5 w-5" /> Business / Professional Income
+                                    </CardTitle>
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-3/4</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <div className="p-4 rounded-xl bg-slate-50 border space-y-3">
+                                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select Taxation Scheme</Label>
+                                        <Select
+                                            value={income.freelanceSection}
+                                            onValueChange={v => updateIncomeField('freelanceSection', v)}
+                                        >
+                                            <SelectTrigger className="h-12 border-slate-200">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="44ADA">Presumptive (44ADA) - Professionals (IT, Medical, CA, etc.)</SelectItem>
+                                                <SelectItem value="44AD">Presumptive (44AD) - Small Business Owners</SelectItem>
+                                                <SelectItem value="Regular">Regular - Maintain Detailed Books of Accounts</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-[10px] text-muted-foreground flex gap-2">
+                                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                                            <span>Under Presumptive scheme, you declare 50% (ADA) or 6-8% (AD) of receipts as profit. No need to maintain bills or audits if turnover is under limits.</span>
+                                        </p>
+                                    </div>
+
+                                    <div className="grid gap-6 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Total Receipts / Turnover *</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50"
+                                                    value={income.freelanceTurnover || ''}
+                                                    onChange={e => {
+                                                        const val = Number(e.target.value);
+                                                        updateIncomeField('freelanceTurnover', val);
+                                                        if (income.freelanceSection === '44ADA') {
+                                                            updateIncomeField('freelanceGross', val * 0.5);
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                        {income.freelanceSection === 'Regular' ? (
+                                            <div className="space-y-2">
+                                                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Total Business Expenses</Label>
+                                                <div className="relative">
+                                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 flex items-center justify-center font-bold text-[8px]">EXP</div>
+                                                    <Input
+                                                        type="number"
+                                                        className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50"
+                                                        value={income.freelanceExpenses || ''}
+                                                        onChange={e => updateIncomeField('freelanceExpenses', e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-emerald-600">Calculated Net Profit</Label>
+                                                <div className="h-12 flex items-center px-4 bg-emerald-50 border border-emerald-100 rounded-lg text-lg font-black text-emerald-700">
+                                                    ₹{(income.freelanceGross || 0).toLocaleString('en-IN')}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {income.hasCrypto && (
+                            <Card className="border-none shadow-lg overflow-hidden relative">
+                                <div className="absolute right-0 top-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+                                <div className="bg-amber-500/10 p-4 border-b flex items-center justify-between relative z-10">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-amber-700">
+                                        <Bitcoin className="h-5 w-5" /> Virtual Digital Assets (VDA / Crypto)
+                                    </CardTitle>
+                                    <div className="flex gap-2">
+                                        <Badge className="bg-amber-600 text-white border-none">Sec 115BBH</Badge>
+                                        <Button variant="ghost" size="sm" onClick={fetchCryptoData} className="text-amber-700 border border-amber-200 h-7 text-[10px] font-bold uppercase tracking-widest">
+                                            <Loader2 className="h-3 w-3 mr-1" /> Re-Sync Trades
+                                        </Button>
+                                    </div>
+                                </div>
+                                <CardContent className="pt-6 space-y-6 relative z-10">
+                                    <Alert className="bg-amber-50 border-amber-200">
+                                        <Info className="h-4 w-4 text-amber-600" />
+                                        <AlertDescription className="text-amber-800 font-medium">
+                                            VDA gains are taxed at <strong>30% flat rate</strong>. No deduction (except cost of acquisition) or set-off of losses is allowed against any other income.
+                                        </AlertDescription>
+                                    </Alert>
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div>
+                                            <Label>Net Crypto Gains (₹)</Label>
                                             <Input
                                                 type="number"
-                                                value={income.freelanceExpenses || ''}
-                                                onChange={e => updateIncomeField('freelanceExpenses', e.target.value)}
+                                                value={income.cryptoGains || ''}
+                                                onChange={e => updateIncomeField('cryptoGains', e.target.value)}
+                                                className="text-lg font-semibold"
                                             />
+                                            <p className="text-xs text-slate-500 mt-1">Taxable gains from Schedule VDA</p>
+                                        </div>
+                                        <div>
+                                            <Label>TDS Deducted (1% u/s 194S)</Label>
+                                            <Input
+                                                type="number"
+                                                value={income.cryptoTDS || ''}
+                                                onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
+                                                className="text-lg font-semibold"
+                                            />
+                                            <p className="text-xs text-slate-500 mt-1">1% TDS on sale consideration</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Tax Computation Preview */}
+                                    {income.cryptoGains > 0 && (
+                                        <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
+                                            <h4 className="font-bold text-indigo-800 mb-3 flex items-center gap-2 text-sm">
+                                                <Calculator className="h-4 w-4" /> Your Crypto Tax Computation
+                                            </h4>
+                                            <div className="grid gap-2 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-600">Taxable Capital Gains</span>
+                                                    <span className="font-medium">₹{income.cryptoGains.toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-600">Tax @ 30%</span>
+                                                    <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30).toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-600">Health & Education Cess @ 4%</span>
+                                                    <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30 * 0.04).toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between border-t border-indigo-200 pt-2">
+                                                    <span className="font-medium text-slate-700">Total Tax Liability</span>
+                                                    <span className="font-bold">₹{Math.round(income.cryptoGains * 0.30 * 1.04).toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between text-emerald-700">
+                                                    <span>Less: TDS Already Paid</span>
+                                                    <span className="font-medium">- ₹{(income.cryptoTDS || 0).toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between border-t border-indigo-300 pt-2 text-base font-bold">
+                                                    <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                                                        {Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'Net Tax Payable' : 'Refund Due'}
+                                                    </span>
+                                                    <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                                                        ₹{Math.abs(Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0)).toLocaleString('en-IN')}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
 
-                    {income.hasCrypto && (
-                        <Card className="border-2 border-amber-200">
-                            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50">
-                                <CardTitle className="flex items-center justify-between">
-                                    <span className="flex items-center gap-2"><Bitcoin className="h-5 w-5 text-amber-600" /> Crypto / VDA Income (Section 115BBH)</span>
-                                    <Button variant="outline" size="sm" onClick={fetchCryptoData} className="border-amber-300 text-amber-700">
-                                        <Loader2 className="h-4 w-4 mr-2" /> Auto-Fetch from Crypto Page
-                                    </Button>
-                                </CardTitle>
-                                <CardDescription className="text-amber-700">
-                                    VDA gains are taxed at 30% flat rate. No set-off of losses allowed.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4 pt-4">
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <Label>Net Crypto Gains (₹)</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.cryptoGains || ''}
-                                            onChange={e => updateIncomeField('cryptoGains', e.target.value)}
-                                            className="text-lg font-semibold"
-                                        />
-                                        <p className="text-xs text-slate-500 mt-1">Taxable gains from Schedule VDA</p>
+                                    <div className="flex items-center gap-3">
+                                        <Button variant="link" className="p-0 h-auto text-indigo-600" onClick={() => navigate('/crypto')}>
+                                            Go to Crypto Tax Calculator & Reports →
+                                        </Button>
+                                        <Badge variant="outline" className="text-xs">KoinX-style report available</Badge>
                                     </div>
-                                    <div>
-                                        <Label>TDS Deducted (1% u/s 194S)</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.cryptoTDS || ''}
-                                            onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
-                                            className="text-lg font-semibold"
-                                        />
-                                        <p className="text-xs text-slate-500 mt-1">1% TDS on sale consideration</p>
-                                    </div>
-                                </div>
+                                </CardContent>
+                            </Card>
+                        )}
 
-                                {/* Tax Computation Preview */}
-                                {income.cryptoGains > 0 && (
-                                    <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
-                                        <h4 className="font-bold text-indigo-800 mb-3 flex items-center gap-2 text-sm">
-                                            <Calculator className="h-4 w-4" /> Your Crypto Tax Computation
-                                        </h4>
-                                        <div className="grid gap-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600">Taxable Capital Gains</span>
-                                                <span className="font-medium">₹{income.cryptoGains.toLocaleString('en-IN')}</span>
+                        {income.hasShares && (
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
+                                        <TrendingUp className="h-5 w-5" /> Stocks & Mutual Funds (Capital Gains)
+                                    </CardTitle>
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-2/3</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <div className="grid gap-6 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Short Term Gains (STCG)</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold"
+                                                    value={income.stcgEquity || ''}
+                                                    onChange={e => updateIncomeField('stcgEquity', e.target.value)}
+                                                />
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600">Tax @ 30%</span>
-                                                <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30).toLocaleString('en-IN')}</span>
+                                            <p className="text-[10px] text-muted-foreground flex items-center gap-1"><Info className="h-3 w-3" /> Equity held &lt; 1 yr. Taxed at 15%</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-emerald-600">Long Term Gains (LTCG)</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-emerald-100 bg-emerald-50/20"
+                                                    value={income.ltcgEquity || ''}
+                                                    onChange={e => updateIncomeField('ltcgEquity', e.target.value)}
+                                                />
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-600">Health & Education Cess @ 4%</span>
-                                                <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30 * 0.04).toLocaleString('en-IN')}</span>
-                                            </div>
-                                            <div className="flex justify-between border-t border-indigo-200 pt-2">
-                                                <span className="font-medium text-slate-700">Total Tax Liability</span>
-                                                <span className="font-bold">₹{Math.round(income.cryptoGains * 0.30 * 1.04).toLocaleString('en-IN')}</span>
-                                            </div>
-                                            <div className="flex justify-between text-emerald-700">
-                                                <span>Less: TDS Already Paid</span>
-                                                <span className="font-medium">- ₹{(income.cryptoTDS || 0).toLocaleString('en-IN')}</span>
-                                            </div>
-                                            <div className="flex justify-between border-t border-indigo-300 pt-2 text-base font-bold">
-                                                <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
-                                                    {Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'Net Tax Payable' : 'Refund Due'}
-                                                </span>
-                                                <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
-                                                    ₹{Math.abs(Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0)).toLocaleString('en-IN')}
-                                                </span>
-                                            </div>
+                                            <p className="text-[10px] text-muted-foreground flex items-center gap-1"><Sparkles className="h-3 w-3 text-emerald-500" /> Equity held &gt; 1 yr. Tax-free up to ₹1 Lakh!</p>
                                         </div>
                                     </div>
-                                )}
+                                </CardContent>
+                            </Card>
+                        )}
 
-                                <div className="flex items-center gap-3">
-                                    <Button variant="link" className="p-0 h-auto text-indigo-600" onClick={() => navigate('/crypto')}>
-                                        Go to Crypto Tax Calculator & Reports →
+                        {income.hasRental && (
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
+                                        <Home className="h-5 w-5" /> House Property (Rental)
+                                    </CardTitle>
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-1/2/3/4</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <div className="grid gap-6 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Annual Rent Received</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold"
+                                                    value={income.rentalIncome || ''}
+                                                    onChange={e => updateIncomeField('rentalIncome', e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Interest on Home Loan</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold"
+                                                    value={income.homeLoanInterest || ''}
+                                                    onChange={e => updateIncomeField('homeLoanInterest', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground leading-tight italic">Claim up to ₹2 Lakhs for Self-Occupied property u/s 24(b).</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {income.hasInterest && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Landmark className="h-5 w-5" /> Interest Income
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="grid gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <Label>Savings Account Interest</Label>
+                                        <Input
+                                            type="number"
+                                            value={income.savingsInterest || ''}
+                                            onChange={e => updateIncomeField('savingsInterest', e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>FD/RD Interest</Label>
+                                        <Input
+                                            type="number"
+                                            value={income.fdInterest || ''}
+                                            onChange={e => updateIncomeField('fdInterest', e.target.value)}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {income.hasDividends && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <PiggyBank className="h-5 w-5" /> Dividend Income
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div>
+                                        <Label>Total Dividends Received</Label>
+                                        <Input
+                                            type="number"
+                                            value={income.dividendIncome || ''}
+                                            onChange={e => updateIncomeField('dividendIncome', e.target.value)}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                )}
+
+                {/* Step 4: Deductions */}
+                {step === 4 && (
+                    <div className="space-y-6">
+                        <Card className="border-none shadow-xl overflow-hidden">
+                            <div className="bg-primary p-6 text-white">
+                                <CardTitle className="text-xl font-black flex items-center gap-3">
+                                    <Zap className="h-6 w-6 text-accent" /> Choose Your Tax Strategy
+                                </CardTitle>
+                                <CardDescription className="text-indigo-100 mt-1">
+                                    India has two tax systems. We'll help you pick the one that saves you the most money.
+                                </CardDescription>
+                            </div>
+                            <CardContent className="pt-6">
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <div
+                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'NEW' ? 'border-primary bg-primary/5 shadow-inner' : 'border-slate-100 hover:bg-slate-50'}`}
+                                        onClick={() => setSelectedRegime('NEW')}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <p className="font-black text-lg text-primary">New Regime (Default)</p>
+                                            {selectedRegime === 'NEW' && <CheckCircle className="h-5 w-5 text-accent" />}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground leading-relaxed mb-4">Lower tax rates for most people. No need to track complicated investments or house rent. <strong>Recommended for simplicity.</strong></p>
+                                        <Badge className="bg-emerald-100 text-emerald-700 border-none">Std. Deduction: ₹75,000</Badge>
+                                    </div>
+                                    <div
+                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'OLD' ? 'border-primary bg-primary/5 shadow-inner' : 'border-slate-100 hover:bg-slate-50'}`}
+                                        onClick={() => setSelectedRegime('OLD')}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <p className="font-black text-lg text-primary">Old Regime</p>
+                                            {selectedRegime === 'OLD' && <CheckCircle className="h-5 w-5 text-accent" />}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground leading-relaxed mb-4">Better if you have high LIC, PPF, Home Loan Interest, or HRA. Requires proofs for every deduction claimed.</p>
+                                        <Badge className="bg-blue-100 text-blue-700 border-none">Std. Deduction: ₹50,000</Badge>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {selectedRegime === 'OLD' ? (
+                            <Card className="border-none shadow-xl">
+                                <CardHeader className="border-b bg-slate-50/50">
+                                    <CardTitle className="text-lg font-black flex items-center gap-2">
+                                        <PiggyBank className="h-5 w-5 text-primary" /> Tax Saving Deductions (Chapter VI-A)
+                                    </CardTitle>
+                                    <CardDescription>Enter your investments for FY 2025-26</CardDescription>
+                                </CardHeader>
+                                <CardContent className="pt-6 grid gap-6 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label className="text-xs font-bold uppercase tracking-wider">ELSS, PPF, LIC (80C)</Label>
+                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹1.5L</span>
+                                        </div>
+                                        <Input
+                                            type="number"
+                                            placeholder="Max ₹1,50,000"
+                                            className="h-11 font-bold"
+                                            value={deductions.section80C || ''}
+                                            onChange={e => updateDeductionField('section80C', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label className="text-xs font-bold uppercase tracking-wider">Health Insurance (80D)</Label>
+                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹75k</span>
+                                        </div>
+                                        <Input
+                                            type="number"
+                                            placeholder="Self + Parents"
+                                            className="h-11 font-bold"
+                                            value={deductions.section80D || ''}
+                                            onChange={e => updateDeductionField('section80D', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label className="text-xs font-bold uppercase tracking-wider">NPS - Addl. (80CCD1B)</Label>
+                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹50k</span>
+                                        </div>
+                                        <Input
+                                            type="number"
+                                            placeholder="Exclusive NPS deduction"
+                                            className="h-11 font-bold"
+                                            value={deductions.section80CCD1B || ''}
+                                            onChange={e => updateDeductionField('section80CCD1B', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase tracking-wider">Edu. Loan Interest (80E)</Label>
+                                        <Input
+                                            type="number"
+                                            className="h-11 font-bold"
+                                            value={deductions.section80E || ''}
+                                            onChange={e => updateDeductionField('section80E', e.target.value)}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <div className="p-6 rounded-2xl bg-indigo-50 border border-indigo-100 flex gap-4 items-center">
+                                <Info className="h-8 w-8 text-primary shrink-0" />
+                                <div>
+                                    <h4 className="font-bold text-primary">Deductions are disabled in New Regime</h4>
+                                    <p className="text-xs text-indigo-800/70">The New Tax Regime trades off these deductions for significantly lower tax slab rates across all income levels.</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Step 5: Review & Personal Details */}
+                {step === 5 && (
+                    <div className="grid lg:grid-cols-5 gap-6">
+                        <div className="lg:col-span-3 space-y-6">
+                            <Card className="border-none shadow-xl">
+                                <CardHeader className="bg-slate-50/50 border-b">
+                                    <CardTitle className="text-lg font-black flex items-center gap-2 uppercase tracking-tight">
+                                        <Users className="h-5 w-5 text-primary" /> Personal Identification
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6 grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">PAN Number *</Label>
+                                        <Input
+                                            className="font-mono font-bold tracking-widest uppercase"
+                                            placeholder="ABCDE1234F"
+                                            value={personalInfo.pan}
+                                            onChange={e => setPersonalInfo(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
+                                            maxLength={10}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Birth Date *</Label>
+                                        <Input
+                                            type="date"
+                                            className="font-bold"
+                                            value={personalInfo.dob}
+                                            onChange={e => setPersonalInfo(prev => ({ ...prev, dob: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Legal First Name *</Label>
+                                        <Input
+                                            className="font-bold"
+                                            value={personalInfo.firstName}
+                                            onChange={e => setPersonalInfo(prev => ({ ...prev, firstName: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Legal Last Name *</Label>
+                                        <Input
+                                            className="font-bold"
+                                            value={personalInfo.lastName}
+                                            onChange={e => setPersonalInfo(prev => ({ ...prev, lastName: e.target.value }))}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="border-none shadow-xl">
+                                <CardHeader className="bg-slate-50/50 border-b">
+                                    <CardTitle className="text-lg font-black flex items-center gap-2 uppercase tracking-tight">
+                                        <Landmark className="h-5 w-5 text-primary" /> Bank for Refund
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6 grid gap-4 sm:grid-cols-2 text-xs">
+                                    <div className="space-y-2 sm:col-span-2">
+                                        <Label className="font-bold uppercase tracking-widest text-muted-foreground">Account Number</Label>
+                                        <Input
+                                            className="font-mono font-bold"
+                                            value={bankDetails.accountNumber}
+                                            onChange={e => setBankDetails(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="font-bold uppercase tracking-widest text-muted-foreground">IFSC Code</Label>
+                                        <Input
+                                            className="font-mono font-bold uppercase"
+                                            value={bankDetails.ifsc}
+                                            onChange={e => setBankDetails(prev => ({ ...prev, ifsc: e.target.value.toUpperCase() }))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="font-bold uppercase tracking-widest text-muted-foreground">Bank Name</Label>
+                                        <Input
+                                            className="font-bold"
+                                            value={bankDetails.bankName}
+                                            onChange={e => setBankDetails(prev => ({ ...prev, bankName: e.target.value }))}
+                                        />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="lg:col-span-2 space-y-6">
+                            <Card className="border-none shadow-2xl bg-slate-900 text-white overflow-hidden relative">
+                                {/* Decorative Background */}
+                                <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none"></div>
+
+                                <CardHeader className="relative z-10 border-b border-white/10 pb-4">
+                                    <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                                        <Calculator className="h-4 w-4 text-accent" /> Tax Computation
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="relative z-10 pt-6 space-y-6">
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between text-xs opacity-60 font-bold uppercase tracking-tighter">
+                                            <span>Income Head</span>
+                                            <span>Amount</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm py-1 border-b border-white/5">
+                                            <span className="opacity-80">Gross Total Income</span>
+                                            <span className="font-black">{formatCurrency(taxCalculation.totalIncome)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm py-1 border-b border-white/5">
+                                            <span className="opacity-80">Less: Deductions</span>
+                                            <span className="font-black text-emerald-400">- {formatCurrency(taxCalculation.totalIncome - taxCalculation.taxableIncome)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm py-1 border-b border-white/10">
+                                            <span className="font-black">Net Taxable Income</span>
+                                            <span className="font-black">{formatCurrency(taxCalculation.taxableIncome)}</span>
+                                        </div>
+                                    </div>
+
+                                    <Separator className="bg-white/10" />
+
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between text-sm py-1">
+                                            <span className="opacity-80">Income Tax + Cess</span>
+                                            <span className="font-bold">{formatCurrency(taxCalculation.totalTax)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm py-1 text-emerald-400">
+                                            <span className="font-bold">Total TDS Paid</span>
+                                            <span className="font-bold">- {formatCurrency(taxCalculation.tdsPaid)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className={`p-5 rounded-2xl border-2 ${taxCalculation.refund > 0 ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-rose-500/20 border-rose-500/30'} flex flex-col items-center text-center gap-1`}>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">
+                                            {taxCalculation.refund > 0 ? 'Tax Refund Estimated' : 'Balance Tax Payable'}
+                                        </p>
+                                        <h4 className={`text-3xl font-black ${taxCalculation.refund > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {formatCurrency(taxCalculation.refund > 0 ? taxCalculation.refund : taxCalculation.netPayable)}
+                                        </h4>
+                                        <p className="text-[9px] mt-2 opacity-50 max-w-[180px]">Final amount will be calculated by ITD CPC based on matched TDS records.</p>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
+                                        <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                                            <Zap className="h-4 w-4 text-accent" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-[9px] font-black uppercase text-accent leading-none">AI Insight</p>
+                                            <p className="text-[10px] mt-1 line-clamp-2 italic opacity-70">
+                                                {selectedRegime === 'NEW' ? 'New Regime is best for you.' : 'Deductions help you save ₹42k.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 6: Download ITR JSON */}
+                {step === 6 && (
+                    <div className="space-y-6">
+                        <Card className="border-none shadow-2xl bg-slate-50 overflow-hidden">
+                            <CardHeader className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white pb-8">
+                                <CardTitle className="text-2xl font-black flex items-center gap-3">
+                                    <CheckCircle className="h-7 w-7 text-emerald-300" />
+                                    Review & Generate Your ITR File
+                                </CardTitle>
+                                <CardDescription className="text-emerald-50 text-base">
+                                    Everything is ready! We've prepared your <strong>{recommendedForm}</strong> JSON file based on your inputs.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="pt-8 space-y-8">
+                                {/* Final Tax Recap Card */}
+                                <div className="p-6 rounded-2xl bg-white border-2 border-slate-100 shadow-sm grid md:grid-cols-3 gap-6 relative">
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">Total Income</p>
+                                        <p className="text-xl font-black text-primary">{formatCurrency(taxCalculation.totalIncome)}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">Net Tax Liability</p>
+                                        <p className="text-xl font-black text-primary">{formatCurrency(taxCalculation.totalTax)}</p>
+                                    </div>
+                                    <div className={`p-3 rounded-xl ${taxCalculation.refund > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                                        <p className="text-[10px] font-black uppercase tracking-widest leading-none opacity-70">
+                                            {taxCalculation.refund > 0 ? 'Refund Estimated' : 'Tax Balance Payable'}
+                                        </p>
+                                        <p className="text-xl font-black">{formatCurrency(taxCalculation.refund > 0 ? taxCalculation.refund : taxCalculation.netPayable)}</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <Button
+                                        variant="outline"
+                                        size="lg"
+                                        className="h-16 border-2 border-primary/20 text-primary hover:bg-primary/5 font-black text-lg gap-3 rounded-2xl"
+                                        onClick={generateComputationReport}
+                                    >
+                                        <FileText className="h-6 w-6" />
+                                        Computation Report (PDF)
                                     </Button>
-                                    <Badge variant="outline" className="text-xs">KoinX-style report available</Badge>
+                                    <Button
+                                        size="lg"
+                                        className="h-16 bg-primary hover:bg-primary/90 text-white font-black text-lg gap-3 rounded-2xl shadow-xl shadow-primary/20"
+                                        onClick={handleGenerateITR}
+                                    >
+                                        <Download className="h-6 w-6 text-accent" />
+                                        Download {recommendedForm} JSON
+                                    </Button>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
 
-                    {income.hasShares && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <TrendingUp className="h-5 w-5" /> Capital Gains (Stocks/MF)
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label>Short Term Gains (Equity)</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.stcgEquity || ''}
-                                        onChange={e => updateIncomeField('stcgEquity', e.target.value)}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Taxed at 15%</p>
-                                </div>
-                                <div>
-                                    <Label>Long Term Gains (Equity)</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.ltcgEquity || ''}
-                                        onChange={e => updateIncomeField('ltcgEquity', e.target.value)}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Taxed at 10% above ₹1L</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {income.hasRental && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Home className="h-5 w-5" /> Rental Income
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label>Annual Rent Received</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.rentalIncome || ''}
-                                        onChange={e => updateIncomeField('rentalIncome', e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Home Loan Interest</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.homeLoanInterest || ''}
-                                        onChange={e => updateIncomeField('homeLoanInterest', e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {income.hasInterest && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Landmark className="h-5 w-5" /> Interest Income
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label>Savings Account Interest</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.savingsInterest || ''}
-                                        onChange={e => updateIncomeField('savingsInterest', e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>FD/RD Interest</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.fdInterest || ''}
-                                        onChange={e => updateIncomeField('fdInterest', e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {income.hasDividends && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <PiggyBank className="h-5 w-5" /> Dividend Income
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div>
-                                    <Label>Total Dividends Received</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.dividendIncome || ''}
-                                        onChange={e => updateIncomeField('dividendIncome', e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-                </div>
-            )}
-
-            {/* Step 3: Deductions */}
-            {step === 4 && (
-                <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Choose Tax Regime</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid sm:grid-cols-2 gap-4">
-                                <div
-                                    className={`p-4 rounded-lg border-2 cursor-pointer ${selectedRegime === 'NEW' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}
-                                    onClick={() => setSelectedRegime('NEW')}
-                                >
-                                    <p className="font-semibold">New Regime</p>
-                                    <p className="text-sm text-slate-500">Lower tax rates, no deductions</p>
-                                    <p className="text-sm text-slate-500">Standard Deduction: ₹75,000</p>
-                                </div>
-                                <div
-                                    className={`p-4 rounded-lg border-2 cursor-pointer ${selectedRegime === 'OLD' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}
-                                    onClick={() => setSelectedRegime('OLD')}
-                                >
-                                    <p className="font-semibold">Old Regime</p>
-                                    <p className="text-sm text-slate-500">Higher rates, but deductions allowed</p>
-                                    <p className="text-sm text-slate-500">Standard Deduction: ₹50,000</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {selectedRegime === 'OLD' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Deductions (Chapter VI-A)</CardTitle>
-                                <CardDescription>Only applicable under Old Regime</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label>80C (PPF, ELSS, LIC, etc.)</Label>
-                                    <Input
-                                        type="number"
-                                        placeholder="Max ₹1,50,000"
-                                        value={deductions.section80C || ''}
-                                        onChange={e => updateDeductionField('section80C', e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>80D (Health Insurance)</Label>
-                                    <Input
-                                        type="number"
-                                        placeholder="Max ₹75,000"
-                                        value={deductions.section80D || ''}
-                                        onChange={e => updateDeductionField('section80D', e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>80CCD(1B) (NPS)</Label>
-                                    <Input
-                                        type="number"
-                                        placeholder="Max ₹50,000"
-                                        value={deductions.section80CCD1B || ''}
-                                        onChange={e => updateDeductionField('section80CCD1B', e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label>80E (Education Loan Interest)</Label>
-                                    <Input
-                                        type="number"
-                                        value={deductions.section80E || ''}
-                                        onChange={e => updateDeductionField('section80E', e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-                </div>
-            )}
-
-            {/* Step 5: Review Personal Info */}
-            {step === 5 && (
-                <div className="space-y-6">
-                    {/* Tax Summary */}
-                    <Card className="border-2 border-indigo-200">
-                        <CardHeader className="bg-indigo-50">
-                            <CardTitle className="flex items-center gap-2">
-                                <Calculator className="h-5 w-5" /> Tax Calculation Summary
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <div className="grid gap-3">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Total Income</span>
-                                    <span className="font-medium">{formatCurrency(taxCalculation.totalIncome)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Taxable Income</span>
-                                    <span className="font-medium">{formatCurrency(taxCalculation.taxableIncome)}</span>
-                                </div>
-                                <Separator />
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Total Tax (incl. Cess)</span>
-                                    <span className="font-medium">{formatCurrency(taxCalculation.totalTax)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">TDS Already Paid</span>
-                                    <span className="font-medium text-green-600">- {formatCurrency(taxCalculation.tdsPaid)}</span>
-                                </div>
-                                <Separator />
-                                {taxCalculation.refund > 0 ? (
-                                    <div className="flex justify-between text-lg">
-                                        <span className="font-semibold text-green-600">Refund Due</span>
-                                        <span className="font-bold text-green-600">{formatCurrency(taxCalculation.refund)}</span>
+                                <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex gap-4">
+                                    <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center shrink-0">
+                                        <Info className="h-6 w-6 text-white" />
                                     </div>
-                                ) : (
-                                    <div className="flex justify-between text-lg">
-                                        <span className="font-semibold">Net Tax Payable</span>
-                                        <span className="font-bold text-red-600">{formatCurrency(taxCalculation.netPayable)}</span>
+                                    <div className="space-y-1">
+                                        <h4 className="font-black text-primary uppercase text-xs tracking-widest leading-none">Why do I need a JSON file?</h4>
+                                        <p className="text-xs text-indigo-900/70 leading-relaxed">
+                                            The Income Tax Department portal only accepts returns in a specific <strong>JSON format</strong>. We've formatted all your details perfectly according to their technical schema.
+                                        </p>
                                     </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
 
-                    {/* Personal Info Review */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Personal Information</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 sm:grid-cols-2">
-                            <div>
-                                <Label>PAN *</Label>
-                                <Input
-                                    placeholder="ABCDE1234F"
-                                    value={personalInfo.pan}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
-                                    maxLength={10}
-                                />
-                            </div>
-                            <div>
-                                <Label>Date of Birth *</Label>
-                                <Input
-                                    type="date"
-                                    value={personalInfo.dob}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, dob: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>First Name *</Label>
-                                <Input
-                                    value={personalInfo.firstName}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, firstName: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>Last Name *</Label>
-                                <Input
-                                    value={personalInfo.lastName}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, lastName: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>Mobile</Label>
-                                <Input
-                                    value={personalInfo.mobile}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, mobile: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>Email</Label>
-                                <Input
-                                    type="email"
-                                    value={personalInfo.email}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, email: e.target.value }))}
-                                />
-                            </div>
-                            <div className="col-span-2">
-                                <Label>Address</Label>
-                                <Input
-                                    value={personalInfo.address}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, address: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>City</Label>
-                                <Input
-                                    value={personalInfo.city}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, city: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>Pincode</Label>
-                                <Input
-                                    value={personalInfo.pincode}
-                                    onChange={e => setPersonalInfo(prev => ({ ...prev, pincode: e.target.value }))}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                {/* Step 7: Upload instructions */}
+                {step === 7 && (
+                    <div className="space-y-6">
+                        <Card className="border-none shadow-2xl overflow-hidden">
+                            <CardHeader className="bg-primary text-white p-8">
+                                <CardTitle className="text-2xl font-black flex items-center gap-3">
+                                    <Globe className="h-8 w-8 text-accent animate-pulse" />
+                                    Final Step: Upload to Income Tax Dept
+                                </CardTitle>
+                                <CardDescription className="text-indigo-100 text-base mt-2">
+                                    You have your JSON. Now let's finalize the filing on the official government portal.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="pt-8 space-y-8">
+                                <div className="grid md:grid-cols-3 gap-6">
+                                    {[
+                                        { step: 1, title: 'Visit Portal', desc: 'Go to incometax.gov.in and login with your PAN.' },
+                                        { step: 2, title: 'Choose Upload', desc: 'E-File > IT Returns > File IT Return. Pick AY 2026-27.' },
+                                        { step: 3, title: 'Select JSON', desc: 'Choose "Offline" mode and upload the JSON file you just downloaded.' }
+                                    ].map((s) => (
+                                        <div key={s.step} className="p-5 rounded-2xl bg-slate-50 border-2 border-white shadow-sm relative pt-10">
+                                            <div className="absolute top-[-15px] left-5 h-10 w-10 rounded-xl bg-primary text-white flex items-center justify-center font-black shadow-lg">
+                                                {s.step}
+                                            </div>
+                                            <h4 className="font-black text-sm mb-1 uppercase tracking-tight">{s.title}</h4>
+                                            <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">{s.desc}</p>
+                                        </div>
+                                    ))}
+                                </div>
 
-                    {/* Bank Details */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Bank Account (for Refund)</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 sm:grid-cols-2">
-                            <div className="col-span-2 sm:col-span-1">
-                                <Label>Account Number</Label>
-                                <Input
-                                    value={bankDetails.accountNumber}
-                                    onChange={e => setBankDetails(prev => ({ ...prev, accountNumber: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <Label>IFSC Code</Label>
-                                <Input
-                                    value={bankDetails.ifsc}
-                                    onChange={e => setBankDetails(prev => ({ ...prev, ifsc: e.target.value.toUpperCase() }))}
-                                />
-                            </div>
-                            <div className="col-span-2 sm:col-span-1">
-                                <Label>Bank Name</Label>
-                                <Input
-                                    value={bankDetails.bankName}
-                                    onChange={e => setBankDetails(prev => ({ ...prev, bankName: e.target.value }))}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                </div>
-            )}
-
-            {/* Step 6: Download ITR JSON */}
-            {step === 6 && (
-                <div className="space-y-6">
-                    <Card className="border-2 border-green-200">
-                        <CardHeader className="bg-green-50">
-                            <CardTitle className="flex items-center gap-2 text-green-800">
-                                <Download className="h-5 w-5" /> Step 6: Download Your ITR JSON File
-                            </CardTitle>
-                            <CardDescription className="text-green-600">
-                                This is the file you will upload to the Income Tax Portal.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-6 space-y-6">
-                            {/* Tax Summary Recap */}
-                            <div className="grid gap-3 p-4 bg-slate-50 rounded-xl">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Recommended Form</span>
-                                    <Badge className="bg-indigo-100 text-indigo-700">{recommendedForm}</Badge>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Assessment Year</span>
-                                    <span className="font-medium">2026-27</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Tax Regime</span>
-                                    <Badge variant="outline">{selectedRegime === 'NEW' ? 'New Regime' : 'Old Regime'}</Badge>
-                                </div>
-                                <Separator />
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Total Income</span>
-                                    <span className="font-bold">{formatCurrency(taxCalculation.totalIncome)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">Total Tax</span>
-                                    <span className="font-bold">{formatCurrency(taxCalculation.totalTax)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-600">TDS Paid</span>
-                                    <span className="font-bold text-green-600">- {formatCurrency(taxCalculation.tdsPaid)}</span>
-                                </div>
-                                {taxCalculation.refund > 0 ? (
-                                    <div className="flex justify-between text-lg font-bold text-green-600">
-                                        <span>Refund Due</span>
-                                        <span>{formatCurrency(taxCalculation.refund)}</span>
+                                <div className="p-6 rounded-2xl border-2 border-accent/20 bg-accent/5 flex flex-col md:flex-row gap-6 items-center justify-between">
+                                    <div className="space-y-1">
+                                        <h4 className="font-black text-accent uppercase text-sm tracking-widest">E-Verify to Finish</h4>
+                                        <p className="text-xs text-emerald-900/60 leading-relaxed font-medium">Your filing is NOT complete until you E-Verify using Aadhaar OTP or Net Banking.</p>
                                     </div>
-                                ) : (
-                                    <div className="flex justify-between text-lg font-bold text-red-600">
-                                        <span>Tax Payable</span>
-                                        <span>{formatCurrency(taxCalculation.netPayable)}</span>
+                                    <a
+                                        href="https://www.incometax.gov.in"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-8 py-4 bg-accent hover:bg-accent/90 text-white rounded-xl font-black text-sm transition-all shadow-xl shadow-accent/20 flex items-center gap-2"
+                                    >
+                                        Open Tax Portal <ArrowRight className="h-4 w-4" />
+                                    </a>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <h4 className="text-xs font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
+                                        <HelpCircle className="h-4 w-4" /> Need help with the portal?
+                                    </h4>
+                                    <div className="grid gap-2 text-[11px] font-medium text-slate-600">
+                                        <div className="flex gap-2 items-start"><Check className="h-3 w-3 text-accent mt-0.5" /> Select "Offline" mode when asked how you want to file.</div>
+                                        <div className="flex gap-2 items-start"><Check className="h-3 w-3 text-accent mt-0.5" /> If the portal asks for a form, it means you chose "Online" by mistake.</div>
+                                        <div className="flex gap-2 items-start"><Check className="h-3 w-3 text-accent mt-0.5" /> Check your bank account validation on "Profile" before filing.</div>
                                     </div>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 h-14"
-                                    onClick={generateComputationReport}
-                                >
-                                    <FileText className="h-5 w-5 mr-2" />
-                                    Computation Report (PDF)
-                                </Button>
-                                <Button
-                                    size="lg"
-                                    className="bg-green-600 hover:bg-green-700 h-14 text-lg font-bold"
-                                    onClick={handleGenerateITR}
-                                >
-                                    <Download className="h-5 w-5 mr-2" />
-                                    Download {recommendedForm} JSON
-                                </Button>
-                            </div>
-
-                            <Alert className="border-amber-200 bg-amber-50">
-                                <AlertCircle className="h-4 w-4 text-amber-600" />
-                                <AlertTitle className="text-amber-800">Save this file!</AlertTitle>
-                                <AlertDescription className="text-amber-700">
-                                    After downloading, keep this JSON file safe. You'll upload it to the Income Tax Portal in the next step.
-                                </AlertDescription>
-                            </Alert>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
-
-            {/* Step 7: Upload to ITD Portal */}
-            {step === 7 && (
-                <div className="space-y-6">
-                    <Card className="border-2 border-emerald-200">
-                        <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50">
-                            <CardTitle className="flex items-center gap-2 text-emerald-800">
-                                <Upload className="h-5 w-5" /> Step 7: Upload to Income Tax Portal & E-Verify
-                            </CardTitle>
-                            <CardDescription className="text-emerald-600">
-                                Follow these exact steps to complete your ITR filing on the government portal.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-6 space-y-6">
-                            {/* Step-by-step upload instructions */}
-                            <div className="space-y-4">
-                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
-                                    <h3 className="font-bold flex items-center gap-2 mb-3">
-                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">1</span>
-                                        Login to Income Tax Portal
-                                    </h3>
-                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                        <li>Go to <a href="https://eportal.incometax.gov.in/iec/foservices/#/e-file/itr/e-file-itr" target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline font-medium">eportal.incometax.gov.in</a></li>
-                                        <li>Login with your <strong>PAN</strong> and <strong>password</strong></li>
-                                    </ol>
                                 </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
 
-                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
-                                    <h3 className="font-bold flex items-center gap-2 mb-3">
-                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">2</span>
-                                        Navigate to File ITR
-                                    </h3>
-                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                        <li>Click <strong>e-File → Income Tax Returns → File Income Tax Return</strong></li>
-                                        <li>Select <strong>Assessment Year: 2026-27</strong></li>
-                                        <li>Select <strong>Filing Type: Original / Revised (139)</strong></li>
-                                        <li>Select <strong>"Upload XML/JSON"</strong> as the preparation method</li>
-                                    </ol>
-                                </div>
+            </div>
 
-                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
-                                    <h3 className="font-bold flex items-center gap-2 mb-3">
-                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">3</span>
-                                        Upload the JSON File
-                                    </h3>
-                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                        <li>Click <strong>"Attach File"</strong> button</li>
-                                        <li>Select the <strong>{recommendedForm} JSON file</strong> you downloaded from TaxMitra</li>
-                                        <li>Wait for validation — the portal will check for errors</li>
-                                        <li>If there are any issues, come back here and fix them</li>
-                                    </ol>
-                                </div>
-
-                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
-                                    <h3 className="font-bold flex items-center gap-2 mb-3">
-                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">4</span>
-                                        E-Verify Your Return
-                                    </h3>
-                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                        <li>After successful upload, click <strong>"Proceed to Verification"</strong></li>
-                                        <li>Choose verification method:</li>
-                                        <li className="ml-4">✅ <strong>Aadhaar OTP</strong> (Recommended — instant)</li>
-                                        <li className="ml-4">📱 Net Banking</li>
-                                        <li className="ml-4">📝 DSC (Digital Signature Certificate)</li>
-                                        <li>Complete the OTP verification to e-verify your return</li>
-                                    </ol>
-                                </div>
-
-                                <div className="p-4 rounded-xl border-2 border-blue-100 bg-blue-50/50">
-                                    <h3 className="font-bold flex items-center gap-2 mb-3">
-                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">5</span>
-                                        Save Your Acknowledgement
-                                    </h3>
-                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
-                                        <li>After e-verification, download the <strong>ITR-V / Acknowledgement</strong></li>
-                                        <li>Save the <strong>Acknowledgement Number</strong> for your records</li>
-                                        <li>You will receive a confirmation email from CPC Bengaluru</li>
-                                        <li>🎉 <strong>Congratulations! Your ITR is filed!</strong></li>
-                                    </ol>
-                                </div>
-                            </div>
-
-                            {/* Quick action: didn't download yet */}
-                            <Alert className="border-amber-200 bg-amber-50">
-                                <AlertCircle className="h-4 w-4 text-amber-600" />
-                                <AlertTitle className="text-amber-800">Haven't downloaded the JSON yet?</AlertTitle>
-                                <AlertDescription className="text-amber-700">
-                                    Go back to Step 6 and click "Download {recommendedForm} JSON" first.
-                                </AlertDescription>
-                            </Alert>
-
-                            <div className="text-center">
-                                <Button
-                                    size="lg"
-                                    className="bg-emerald-600 hover:bg-emerald-700 h-14 px-8 text-lg font-bold"
-                                    onClick={() => window.open('https://eportal.incometax.gov.in/iec/foservices/#/e-file/itr/e-file-itr', '_blank')}
-                                >
-                                    <Upload className="h-5 w-5 mr-2" />
-                                    Open Income Tax Portal →
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
-
-            {/* Navigation */}
-            <div className="flex justify-between pt-6 border-t mt-4">
+            {/* Navigation Buttons */}
+            <div className="flex items-center justify-between pt-8 mt-12 border-t border-slate-100">
                 <Button
-                    variant="outline"
+                    variant="ghost"
+                    size="lg"
+                    className="gap-2 font-bold text-muted-foreground hover:text-primary transition-colors"
                     onClick={() => {
                         const nextStep = Math.max(1, step - 1);
                         setStep(nextStep);
@@ -1526,17 +1630,31 @@ export function SmartFilingWizard() {
                     }}
                     disabled={step === 1}
                 >
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Previous
+                    <ArrowLeft className="h-5 w-5" /> Previous Step
                 </Button>
+
                 {step < 7 ? (
-                    <Button onClick={() => {
-                        const nextStep = step + 1;
-                        setStep(nextStep);
-                        saveProgress(nextStep, income, deductions, personalInfo, bankDetails);
-                    }}>
-                        {step === 1 ? "I Have My Data" : step === 6 ? "How to Upload" : "Next"} <ArrowRight className="h-4 w-4 ml-2" />
+                    <Button
+                        size="lg"
+                        className="bg-primary hover:bg-primary/90 text-white px-8 h-12 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95 gap-2"
+                        onClick={() => {
+                            const nextStep = step + 1;
+                            setStep(nextStep);
+                            saveProgress(nextStep, income, deductions, personalInfo, bankDetails);
+                        }}
+                    >
+                        {step === 1 ? "Start Filing" : step === 6 ? "View Upload Steps" : "Save & Continue"}
+                        <ArrowRight className="h-5 w-5" />
                     </Button>
-                ) : null}
+                ) : (
+                    <Button
+                        size="lg"
+                        className="bg-accent hover:bg-accent/90 text-white px-8 h-12 rounded-xl font-bold shadow-lg shadow-accent/20 transition-all active:scale-95 gap-2"
+                        onClick={() => navigate('/dashboard')}
+                    >
+                        <CheckCircle className="h-5 w-5" /> Return to Dashboard
+                    </Button>
+                )}
             </div>
         </div>
     );
