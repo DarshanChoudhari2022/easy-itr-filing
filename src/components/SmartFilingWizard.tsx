@@ -307,16 +307,57 @@ export function SmartFilingWizard() {
         accountNumber: '', ifsc: '', bankName: '', accountType: 'SB' as const
     });
 
-    // Load user data
+    // Load user data from Supabase profile
     useEffect(() => {
-        if (user) {
+        const loadProfile = async () => {
+            if (!user) return;
             setPersonalInfo(prev => ({
                 ...prev,
                 email: user.email || '',
-                firstName: user.user_metadata?.full_name?.split(' ')[0] || '',
-                lastName: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
             }));
-        }
+            try {
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
+                if (profile) {
+                    const fullName = (profile as any).full_name || '';
+                    const parts = fullName.split(' ');
+                    setPersonalInfo(prev => ({
+                        ...prev,
+                        pan: (profile as any).pan_number || '',
+                        firstName: parts[0] || '',
+                        lastName: parts.slice(1).join(' ') || '',
+                        dob: (profile as any).date_of_birth || '',
+                        mobile: (profile as any).mobile || '',
+                        email: user.email || '',
+                        address: [(profile as any).flat_no, (profile as any).building, (profile as any).street].filter(Boolean).join(', '),
+                        city: (profile as any).city || '',
+                        state: (profile as any).state || '',
+                        pincode: (profile as any).pincode || '',
+                    }));
+                }
+                const { data: banks } = await supabase
+                    .from('bank_details')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .eq('is_primary', true)
+                    .limit(1);
+                if (banks && banks.length > 0) {
+                    const bank = banks[0] as any;
+                    setBankDetails({
+                        accountNumber: bank.account_number || '',
+                        ifsc: bank.ifsc_code || '',
+                        bankName: bank.bank_name || '',
+                        accountType: bank.account_type === 'savings' ? 'SB' : 'CA'
+                    });
+                }
+            } catch (e) {
+                console.error('Error loading profile:', e);
+            }
+        };
+        loadProfile();
     }, [user]);
 
     // Fetch crypto data from database
@@ -348,7 +389,7 @@ export function SmartFilingWizard() {
 
                 const settings: any = {
                     accountingMethod: 'FIFO',
-                    assessmentYear: '2025-26',
+                    assessmentYear: '2026-27',
                     treatAirdropsAsIncome: true,
                     baseCurrency: 'INR'
                 };
@@ -466,7 +507,7 @@ export function SmartFilingWizard() {
 
         const itrData: ITRFilingData = {
             formType: recommendedForm as any,
-            assessmentYear: '2025-26',
+            assessmentYear: '2026-27',
             filingType: 'ORIGINAL',
             regime: selectedRegime,
             personalInfo: {
@@ -556,33 +597,108 @@ export function SmartFilingWizard() {
         <div className="max-w-4xl mx-auto space-y-6">
             {/* Header */}
             <div className="text-center mb-8">
-                <h1 className="text-2xl font-bold text-slate-900">ITR Filing Wizard</h1>
-                <p className="text-slate-500 mt-1">Complete your Income Tax Return in 4 simple steps</p>
+                <h1 className="text-2xl font-bold text-slate-900">ITR Filing Wizard — AY 2026-27</h1>
+                <p className="text-slate-500 mt-1">Complete your Income Tax Return step-by-step. We'll guide you through everything.</p>
             </div>
 
             {/* Progress */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-8 overflow-x-auto">
                 {[
-                    { num: 1, label: 'Select Income' },
-                    { num: 2, label: 'Enter Details' },
-                    { num: 3, label: 'Deductions' },
-                    { num: 4, label: 'Review & File' }
+                    { num: 1, label: 'Get Data' },
+                    { num: 2, label: 'Income Sources' },
+                    { num: 3, label: 'Enter Details' },
+                    { num: 4, label: 'Deductions' },
+                    { num: 5, label: 'Review' },
+                    { num: 6, label: 'Download JSON' },
+                    { num: 7, label: 'Upload to ITD' }
                 ].map((s, i) => (
-                    <div key={s.num} className="flex items-center">
+                    <div key={s.num} className="flex items-center flex-shrink-0">
                         <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${step >= s.num ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
                             }`}>
                             {step > s.num ? <Check className="h-4 w-4" /> : s.num}
                         </div>
-                        <span className={`ml-2 text-sm hidden sm:inline ${step >= s.num ? 'text-indigo-600 font-medium' : 'text-slate-400'}`}>
+                        <span className={`ml-1 text-xs hidden md:inline ${step >= s.num ? 'text-indigo-600 font-medium' : 'text-slate-400'}`}>
                             {s.label}
                         </span>
-                        {i < 3 && <div className={`w-12 sm:w-24 h-0.5 mx-2 ${step > s.num ? 'bg-indigo-600' : 'bg-slate-200'}`} />}
+                        {i < 6 && <div className={`w-4 sm:w-8 h-0.5 mx-1 ${step > s.num ? 'bg-indigo-600' : 'bg-slate-200'}`} />}
                     </div>
                 ))}
             </div>
 
-            {/* Step 1: Select Income Sources */}
+            {/* Step 1: Get Your Data from ITD Portal */}
             {step === 1 && (
+                <Card className="border-2 border-blue-200">
+                    <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+                        <CardTitle className="flex items-center gap-2 text-blue-800">
+                            <Download className="h-5 w-5" /> Step 1: Get Your Data from Income Tax Portal
+                        </CardTitle>
+                        <CardDescription className="text-blue-600">
+                            Before filling your ITR, download your data from the Income Tax Department portal.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-6">
+                        {/* AIS Download */}
+                        <div className="p-5 rounded-xl border-2 border-blue-100 bg-blue-50/50 space-y-3">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
+                                Download AIS (Annual Information Statement)
+                            </h3>
+                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                <li className="flex gap-2"><span className="font-bold text-blue-600">a.</span> Go to <a href="https://www.incometax.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-medium">incometax.gov.in</a> and login with your PAN & password</li>
+                                <li className="flex gap-2"><span className="font-bold text-blue-600">b.</span> Click <strong>"AIS"</strong> in the top navigation menu</li>
+                                <li className="flex gap-2"><span className="font-bold text-blue-600">c.</span> Select <strong>Financial Year 2025-26</strong></li>
+                                <li className="flex gap-2"><span className="font-bold text-blue-600">d.</span> Click <strong>"Download"</strong> → Choose <strong>PDF</strong> format</li>
+                                <li className="flex gap-2"><span className="font-bold text-blue-600">e.</span> Save the file to your computer</li>
+                            </ol>
+                            <Button variant="outline" className="ml-9 border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => navigate('/ais')}>
+                                <Upload className="h-4 w-4 mr-2" /> Upload AIS to TaxMitra
+                            </Button>
+                        </div>
+
+                        {/* Pre-filled JSON Download */}
+                        <div className="p-5 rounded-xl border-2 border-indigo-100 bg-indigo-50/50 space-y-3">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-sm font-bold">2</span>
+                                Download Pre-filled JSON (Optional but Recommended)
+                            </h3>
+                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                <li className="flex gap-2"><span className="font-bold text-indigo-600">a.</span> On the ITD portal, go to <strong>e-File → Income Tax Returns → File Income Tax Return</strong></li>
+                                <li className="flex gap-2"><span className="font-bold text-indigo-600">b.</span> Select <strong>AY 2026-27</strong> and click <strong>"Continue"</strong></li>
+                                <li className="flex gap-2"><span className="font-bold text-indigo-600">c.</span> On the filing page, look for <strong>"Download pre-filled data"</strong> link</li>
+                                <li className="flex gap-2"><span className="font-bold text-indigo-600">d.</span> This JSON contains your salary, TDS, and interest data auto-filled by ITD</li>
+                            </ol>
+                        </div>
+
+                        {/* Crypto Data */}
+                        <div className="p-5 rounded-xl border-2 border-amber-100 bg-amber-50/50 space-y-3">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white text-sm font-bold">3</span>
+                                Get Your Crypto Transaction File
+                            </h3>
+                            <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                <li className="flex gap-2"><span className="font-bold text-amber-600">a.</span> Login to your crypto exchange (WazirX, CoinDCX, Binance, etc.)</li>
+                                <li className="flex gap-2"><span className="font-bold text-amber-600">b.</span> Go to <strong>Reports → Tax Report / Transaction History</strong></li>
+                                <li className="flex gap-2"><span className="font-bold text-amber-600">c.</span> Download <strong>CSV</strong> for FY 2025-26 (April 2025 - March 2026)</li>
+                                <li className="flex gap-2"><span className="font-bold text-amber-600">d.</span> Upload it in our <strong>Crypto Tax Calculator</strong></li>
+                            </ol>
+                            <Button variant="outline" className="ml-9 border-amber-300 text-amber-700 hover:bg-amber-100" onClick={() => navigate('/crypto')}>
+                                <Bitcoin className="h-4 w-4 mr-2" /> Go to Crypto Tax Calculator
+                            </Button>
+                        </div>
+
+                        <Alert className="border-green-200 bg-green-50">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <AlertTitle className="text-green-800">Already have your data?</AlertTitle>
+                            <AlertDescription className="text-green-700">
+                                If you already have your AIS, Form 26AS, or know your income details, click "Next" to proceed.
+                            </AlertDescription>
+                        </Alert>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Step 2: Select Income Sources */}
+            {step === 2 && (
                 <Card>
                     <CardHeader>
                         <CardTitle>What are your income sources?</CardTitle>
@@ -634,8 +750,8 @@ export function SmartFilingWizard() {
                 </Card>
             )}
 
-            {/* Step 2: Enter Income Details */}
-            {step === 2 && (
+            {/* Step 3: Enter Income Details */}
+            {step === 3 && (
                 <div className="space-y-6">
                     {income.hasSalary && (
                         <Card>
@@ -870,7 +986,7 @@ export function SmartFilingWizard() {
             )}
 
             {/* Step 3: Deductions */}
-            {step === 3 && (
+            {step === 4 && (
                 <div className="space-y-6">
                     <Card>
                         <CardHeader>
@@ -946,8 +1062,8 @@ export function SmartFilingWizard() {
                 </div>
             )}
 
-            {/* Step 4: Review & Generate */}
-            {step === 4 && (
+            {/* Step 5: Review Personal Info */}
+            {step === 5 && (
                 <div className="space-y-6">
                     {/* Tax Summary */}
                     <Card className="border-2 border-indigo-200">
@@ -1097,30 +1213,196 @@ export function SmartFilingWizard() {
                         </CardContent>
                     </Card>
 
-                    {/* Generate and Computation Buttons */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            className="border-indigo-600 text-indigo-600 hover:bg-indigo-50"
-                            onClick={generateComputationReport}
-                        >
-                            <FileText className="h-5 w-5 mr-2" />
-                            Computation Report (PDF)
-                        </Button>
-                        <Button
-                            size="lg"
-                            className="bg-indigo-600 hover:bg-indigo-700"
-                            onClick={handleGenerateITR}
-                        >
-                            <Download className="h-5 w-5 mr-2" />
-                            Download {recommendedForm} JSON
-                        </Button>
-                    </div>
+                </div>
+            )}
 
-                    <p className="text-center text-sm text-slate-500">
-                        Upload this JSON file to the Income Tax Portal to complete your filing
-                    </p>
+            {/* Step 6: Download ITR JSON */}
+            {step === 6 && (
+                <div className="space-y-6">
+                    <Card className="border-2 border-green-200">
+                        <CardHeader className="bg-green-50">
+                            <CardTitle className="flex items-center gap-2 text-green-800">
+                                <Download className="h-5 w-5" /> Step 6: Download Your ITR JSON File
+                            </CardTitle>
+                            <CardDescription className="text-green-600">
+                                This is the file you will upload to the Income Tax Portal.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-6">
+                            {/* Tax Summary Recap */}
+                            <div className="grid gap-3 p-4 bg-slate-50 rounded-xl">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">Recommended Form</span>
+                                    <Badge className="bg-indigo-100 text-indigo-700">{recommendedForm}</Badge>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">Assessment Year</span>
+                                    <span className="font-medium">2026-27</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">Tax Regime</span>
+                                    <Badge variant="outline">{selectedRegime === 'NEW' ? 'New Regime' : 'Old Regime'}</Badge>
+                                </div>
+                                <Separator />
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">Total Income</span>
+                                    <span className="font-bold">{formatCurrency(taxCalculation.totalIncome)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">Total Tax</span>
+                                    <span className="font-bold">{formatCurrency(taxCalculation.totalTax)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-600">TDS Paid</span>
+                                    <span className="font-bold text-green-600">- {formatCurrency(taxCalculation.tdsPaid)}</span>
+                                </div>
+                                {taxCalculation.refund > 0 ? (
+                                    <div className="flex justify-between text-lg font-bold text-green-600">
+                                        <span>Refund Due</span>
+                                        <span>{formatCurrency(taxCalculation.refund)}</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-between text-lg font-bold text-red-600">
+                                        <span>Tax Payable</span>
+                                        <span>{formatCurrency(taxCalculation.netPayable)}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <Button
+                                    variant="outline"
+                                    size="lg"
+                                    className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 h-14"
+                                    onClick={generateComputationReport}
+                                >
+                                    <FileText className="h-5 w-5 mr-2" />
+                                    Computation Report (PDF)
+                                </Button>
+                                <Button
+                                    size="lg"
+                                    className="bg-green-600 hover:bg-green-700 h-14 text-lg font-bold"
+                                    onClick={handleGenerateITR}
+                                >
+                                    <Download className="h-5 w-5 mr-2" />
+                                    Download {recommendedForm} JSON
+                                </Button>
+                            </div>
+
+                            <Alert className="border-amber-200 bg-amber-50">
+                                <AlertCircle className="h-4 w-4 text-amber-600" />
+                                <AlertTitle className="text-amber-800">Save this file!</AlertTitle>
+                                <AlertDescription className="text-amber-700">
+                                    After downloading, keep this JSON file safe. You'll upload it to the Income Tax Portal in the next step.
+                                </AlertDescription>
+                            </Alert>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {/* Step 7: Upload to ITD Portal */}
+            {step === 7 && (
+                <div className="space-y-6">
+                    <Card className="border-2 border-emerald-200">
+                        <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50">
+                            <CardTitle className="flex items-center gap-2 text-emerald-800">
+                                <Upload className="h-5 w-5" /> Step 7: Upload to Income Tax Portal & E-Verify
+                            </CardTitle>
+                            <CardDescription className="text-emerald-600">
+                                Follow these exact steps to complete your ITR filing on the government portal.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-6">
+                            {/* Step-by-step upload instructions */}
+                            <div className="space-y-4">
+                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
+                                    <h3 className="font-bold flex items-center gap-2 mb-3">
+                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">1</span>
+                                        Login to Income Tax Portal
+                                    </h3>
+                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                        <li>Go to <a href="https://eportal.incometax.gov.in/iec/foservices/#/e-file/itr/e-file-itr" target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline font-medium">eportal.incometax.gov.in</a></li>
+                                        <li>Login with your <strong>PAN</strong> and <strong>password</strong></li>
+                                    </ol>
+                                </div>
+
+                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
+                                    <h3 className="font-bold flex items-center gap-2 mb-3">
+                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">2</span>
+                                        Navigate to File ITR
+                                    </h3>
+                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                        <li>Click <strong>e-File → Income Tax Returns → File Income Tax Return</strong></li>
+                                        <li>Select <strong>Assessment Year: 2026-27</strong></li>
+                                        <li>Select <strong>Filing Type: Original / Revised (139)</strong></li>
+                                        <li>Select <strong>"Upload XML/JSON"</strong> as the preparation method</li>
+                                    </ol>
+                                </div>
+
+                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
+                                    <h3 className="font-bold flex items-center gap-2 mb-3">
+                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">3</span>
+                                        Upload the JSON File
+                                    </h3>
+                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                        <li>Click <strong>"Attach File"</strong> button</li>
+                                        <li>Select the <strong>{recommendedForm} JSON file</strong> you downloaded from TaxMitra</li>
+                                        <li>Wait for validation — the portal will check for errors</li>
+                                        <li>If there are any issues, come back here and fix them</li>
+                                    </ol>
+                                </div>
+
+                                <div className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/50">
+                                    <h3 className="font-bold flex items-center gap-2 mb-3">
+                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white text-sm font-bold">4</span>
+                                        E-Verify Your Return
+                                    </h3>
+                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                        <li>After successful upload, click <strong>"Proceed to Verification"</strong></li>
+                                        <li>Choose verification method:</li>
+                                        <li className="ml-4">✅ <strong>Aadhaar OTP</strong> (Recommended — instant)</li>
+                                        <li className="ml-4">📱 Net Banking</li>
+                                        <li className="ml-4">📝 DSC (Digital Signature Certificate)</li>
+                                        <li>Complete the OTP verification to e-verify your return</li>
+                                    </ol>
+                                </div>
+
+                                <div className="p-4 rounded-xl border-2 border-blue-100 bg-blue-50/50">
+                                    <h3 className="font-bold flex items-center gap-2 mb-3">
+                                        <span className="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">5</span>
+                                        Save Your Acknowledgement
+                                    </h3>
+                                    <ol className="space-y-2 text-sm text-slate-700 ml-9">
+                                        <li>After e-verification, download the <strong>ITR-V / Acknowledgement</strong></li>
+                                        <li>Save the <strong>Acknowledgement Number</strong> for your records</li>
+                                        <li>You will receive a confirmation email from CPC Bengaluru</li>
+                                        <li>🎉 <strong>Congratulations! Your ITR is filed!</strong></li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                            {/* Quick action: didn't download yet */}
+                            <Alert className="border-amber-200 bg-amber-50">
+                                <AlertCircle className="h-4 w-4 text-amber-600" />
+                                <AlertTitle className="text-amber-800">Haven't downloaded the JSON yet?</AlertTitle>
+                                <AlertDescription className="text-amber-700">
+                                    Go back to Step 6 and click "Download {recommendedForm} JSON" first.
+                                </AlertDescription>
+                            </Alert>
+
+                            <div className="text-center">
+                                <Button
+                                    size="lg"
+                                    className="bg-emerald-600 hover:bg-emerald-700 h-14 px-8 text-lg font-bold"
+                                    onClick={() => window.open('https://eportal.incometax.gov.in/iec/foservices/#/e-file/itr/e-file-itr', '_blank')}
+                                >
+                                    <Upload className="h-5 w-5 mr-2" />
+                                    Open Income Tax Portal →
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
             )}
 
@@ -1133,9 +1415,9 @@ export function SmartFilingWizard() {
                 >
                     <ArrowLeft className="h-4 w-4 mr-2" /> Previous
                 </Button>
-                {step < 4 ? (
+                {step < 7 ? (
                     <Button onClick={() => setStep(step + 1)}>
-                        Next <ArrowRight className="h-4 w-4 ml-2" />
+                        {step === 1 ? "I Have My Data" : step === 6 ? "How to Upload" : "Next"} <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                 ) : null}
             </div>
