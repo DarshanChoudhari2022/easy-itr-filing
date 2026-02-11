@@ -67,20 +67,38 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
         let totalCharCount = 0;
         const pageTexts: string[] = [];
 
-        // Extract text from each page
+        // Extract text from each page - EXPERIMENTAL: Attempt to preserve rows based on Y-coordinate
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
 
-            const pageText = content.items
-                .map((item: any) => {
-                    // Handle text items with positioning
-                    if (item.str !== undefined) {
-                        return item.str;
-                    }
-                    return '';
-                })
-                .join(' ');
+            let pageText = '';
+            let lastY = -1;
+
+            // Sort items by Y (descending for top-to-bottom) then X (ascending) to ensure reading order
+            // PDF coordinates: (0,0) is usually bottom-left
+            const items = (content.items as any[])
+                .filter(item => item.str !== undefined && item.transform)
+                .map(item => ({
+                    str: item.str,
+                    x: item.transform[4],
+                    y: item.transform[5],
+                    h: item.height,
+                    w: item.width
+                })).sort((a, b) => {
+                    if (Math.abs(b.y - a.y) > 5) return b.y - a.y; // Significant Y difference -> sort by Y
+                    return a.x - b.x; // Same line -> sort by X
+                });
+
+            for (const item of items) {
+                if (lastY !== -1 && Math.abs(item.y - lastY) > 5) {
+                    pageText += '\n';
+                } else if (pageText.length > 0 && !pageText.endsWith('\n')) {
+                    pageText += ' '; // Add space between words on same line
+                }
+                pageText += item.str;
+                lastY = item.y;
+            }
 
             pageTexts.push(pageText);
             totalCharCount += pageText.replace(/\s/g, '').length;
