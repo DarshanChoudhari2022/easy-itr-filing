@@ -2,13 +2,15 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PlanGate } from "@/hooks/usePlanGuard";
 import AISUploader from "@/components/AISUploader";
-import { getITRFilings, ITRFilingData } from "@/lib/supabase-data-service";
+import { getITRFilings, ITRFilingData, saveIncomeSources, updateProfileKYC, IncomeSourcesData } from "@/lib/supabase-data-service";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AISReconciler() {
     const { user } = useAuth();
+    const { toast } = useToast();
     const [itrData, setItrData] = useState<any>(null);
 
     useEffect(() => {
@@ -56,10 +58,53 @@ export default function AISReconciler() {
 
                     <AISUploader
                         itrData={itrData}
-                        onAutoFill={(suggestions) => {
-                            console.log("Auto-fill suggestions:", suggestions);
-                            // In a full implementation, we would redirect to ITR form with these values
-                            // For now, AISUploader handles the toast notification
+                        onAutoFill={async (suggestions) => {
+                            try {
+                                console.log("Auto-filling data:", suggestions);
+
+                                // 1. Update Profile PAN if available
+                                if (suggestions.pan) {
+                                    await updateProfileKYC({ pan_number: suggestions.pan });
+                                }
+
+                                // 2. Map suggestions to Income Sources structure
+                                const incomeData: IncomeSourcesData = {
+                                    assessment_year: '2025-26',
+
+                                    // Salary
+                                    has_salary: (suggestions.salary || 0) > 0,
+                                    salary_gross: suggestions.salary || 0,
+                                    salary_tds: suggestions.salaryTDS || 0,
+
+                                    // Other Sources
+                                    has_other_sources: (suggestions.interestIncome || 0) > 0 || (suggestions.dividendIncome || 0) > 0,
+                                    savings_interest: suggestions.interestIncome || 0,
+                                    dividend_income: suggestions.dividendIncome || 0,
+
+                                    // Capital Gains
+                                    has_capital_gains: (suggestions.capitalGains || 0) > 0,
+                                    ltcg_equity: suggestions.capitalGains || 0, // Using LTCG as placeholder default
+
+                                    // Crypto
+                                    has_crypto: suggestions.hasCryptoTransactions || false,
+                                };
+
+                                // 3. Save to Supabase
+                                await saveIncomeSources(incomeData);
+
+                                toast({
+                                    title: "Synced with Database",
+                                    description: "Income details from AIS have been saved to your tax profile."
+                                });
+
+                            } catch (error) {
+                                console.error("Failed to save auto-fill data", error);
+                                toast({
+                                    variant: "destructive",
+                                    title: "Sync Failed",
+                                    description: "Could not save AIS data to database."
+                                });
+                            }
                         }}
                     />
 

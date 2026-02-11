@@ -392,6 +392,7 @@ export function generateAISFeedback(record: AISRecord, feedbackType: 'accept' | 
  */
 export function getAutoFillSuggestions(aisData: AISData) {
     return {
+        pan: aisData.pan,
         salary: aisData.incomeDetails.salary,
         salaryTDS: aisData.tdsDetails.salary,
         interestIncome: aisData.incomeDetails.interest,
