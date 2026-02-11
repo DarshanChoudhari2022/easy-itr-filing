@@ -27,7 +27,7 @@ export interface PDFExtractionResult {
  * @param file - The PDF File object from input[type=file]
  * @returns Extracted text, page count, and metadata
  */
-export async function extractTextFromPDF(file: File): Promise<PDFExtractionResult> {
+export async function extractTextFromPDF(file: File, password?: string): Promise<PDFExtractionResult> {
     const warnings: string[] = [];
 
     try {
@@ -36,23 +36,29 @@ export async function extractTextFromPDF(file: File): Promise<PDFExtractionResul
             throw new Error('Invalid file type. Please upload a PDF file.');
         }
 
-        // Validate file size (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            throw new Error('File size exceeds 10MB limit. Please upload a smaller file.');
+        // Validate file size (max 20MB)
+        if (file.size > 20 * 1024 * 1024) {
+            throw new Error('File size exceeds 20MB limit. Please upload a smaller file.');
         }
 
         const arrayBuffer = await file.arrayBuffer();
 
         // Try loading PDF (handle password-protected files)
+        const loadingTask = getDocument({
+            data: arrayBuffer,
+            useSystemFonts: true,
+            password: password,
+        });
+
         let pdf: PDFDocumentProxy;
         try {
-            pdf = await getDocument({
-                data: arrayBuffer,
-                useSystemFonts: true
-            }).promise;
+            pdf = await loadingTask.promise;
         } catch (loadError: any) {
             if (loadError?.name === 'PasswordException') {
-                throw new Error('This PDF is password-protected. Please remove the password and try again.');
+                if (password) {
+                    throw new Error('Incorrect password. Please try again.');
+                }
+                throw new Error('PASSWORD_REQUIRED');
             }
             throw new Error('Unable to read this PDF file. It may be corrupted.');
         }

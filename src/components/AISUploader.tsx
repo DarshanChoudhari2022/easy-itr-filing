@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
     Upload, FileText, CheckCircle2, AlertTriangle, Loader2,
-    RefreshCw, XCircle, ArrowRight, FileCheck, Shield, Eye
+    RefreshCw, XCircle, ArrowRight, FileCheck, Shield, Eye, Lock, Globe
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -44,6 +44,11 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
     const [dragOver, setDragOver] = useState(false);
     const [uploadType, setUploadType] = useState<'json' | 'pdf'>('json');
 
+    // Password Handling State
+    const [passwordRequired, setPasswordRequired] = useState(false);
+    const [pdfPassword, setPdfPassword] = useState('');
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
+
     const handleFile = useCallback(async (file: File) => {
         setError(null);
         setStatus('processing');
@@ -60,7 +65,11 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
             } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
                 // PDF file — extract and attempt to parse
                 setUploadType('pdf');
-                const pdfResult = await extractTextFromPDF(file);
+
+                // If password was already provided (retry), use it
+                const currentPassword = (file === pendingFile) ? pdfPassword : undefined;
+
+                const pdfResult = await extractTextFromPDF(file, currentPassword);
                 const docType = detectDocumentType(pdfResult.text);
 
                 if (docType === 'form16') {
@@ -98,10 +107,29 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
             });
 
         } catch (err: any) {
+            if (err.message === 'PASSWORD_REQUIRED') {
+                setPasswordRequired(true);
+                setPendingFile(file);
+                setStatus('idle'); // Keep UI interactive but show password prompt
+                return;
+            }
+
             setStatus('error');
             setError(err.message || 'Failed to parse AIS data.');
+
+            // Clear password state on error
+            setPasswordRequired(false);
+            setPdfPassword('');
+            setPendingFile(null);
         }
-    }, [itrData, toast]);
+    }, [itrData, toast, pendingFile, pdfPassword]);
+
+    const handlePasswordSubmit = () => {
+        if (pendingFile && pdfPassword) {
+            setPasswordRequired(false);
+            handleFile(pendingFile);
+        }
+    };
 
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -134,6 +162,9 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
         setError(null);
         setAisData(null);
         setReconciliation([]);
+        setPasswordRequired(false);
+        setPdfPassword('');
+        setPendingFile(null);
     };
 
     return (
@@ -151,25 +182,30 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
 
                 <CardContent className="space-y-4">
                     {/* Upload Area */}
-                    {status === 'idle' && (
+                    {status === 'idle' && !passwordRequired && (
                         <>
-                            <div className="grid grid-cols-2 gap-3 text-center text-xs text-gray-500 mb-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-center text-xs text-gray-500 mb-3">
                                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                                     <FileText className="h-5 w-5 text-blue-600 mx-auto mb-1" />
                                     <p className="font-medium text-blue-700">JSON (Recommended)</p>
                                     <p>Download from e-Filing portal → AIS tab</p>
                                 </div>
+                                <div className="p-3 bg-purple-50 rounded-lg border border-purple-100 cursor-pointer hover:bg-purple-100 transition-colors" onClick={() => window.open('https://eportal.incometax.gov.in/iec/foservices/#/login', '_blank')}>
+                                    <Globe className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+                                    <p className="font-medium text-purple-700">Live Fetch (Portal)</p>
+                                    <p>Login to IT Portal to auto-download</p>
+                                </div>
                                 <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                                     <FileText className="h-5 w-5 text-gray-400 mx-auto mb-1" />
                                     <p className="font-medium text-gray-700">PDF</p>
-                                    <p>AIS or 26AS PDF document</p>
+                                    <p>Password-protected AIS or 26AS</p>
                                 </div>
                             </div>
 
                             <div
                                 className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${dragOver
-                                        ? 'border-blue-400 bg-blue-50'
-                                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                                    ? 'border-blue-400 bg-blue-50'
+                                    : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                                     }`}
                                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                                 onDragLeave={() => setDragOver(false)}
@@ -188,6 +224,39 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
                                 />
                             </div>
                         </>
+                    )}
+
+                    {/* Password Prompt */}
+                    {passwordRequired && (
+                        <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 space-y-4 text-center animate-in fade-in zoom-in duration-300">
+                            <div className="h-12 w-12 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                <Lock className="h-6 w-6 text-indigo-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-semibold text-slate-900">Password Required</h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    The uploaded PDF is password protected. <br />
+                                    Usually, passing is your PAN (lowercase) + DOB (DDMMYYYY).
+                                </p>
+                            </div>
+                            <div className="flex gap-2 max-w-xs mx-auto">
+                                <input
+                                    type="password"
+                                    placeholder="Enter PDF Password"
+                                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    value={pdfPassword}
+                                    onChange={(e) => setPdfPassword(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+                                    autoFocus
+                                />
+                                <Button onClick={handlePasswordSubmit} disabled={!pdfPassword}>
+                                    Unlock
+                                </Button>
+                            </div>
+                            <Button variant="link" size="sm" onClick={reset} className="text-slate-500">
+                                Cancel Upload
+                            </Button>
+                        </div>
                     )}
 
                     {/* Processing */}
