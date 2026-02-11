@@ -525,7 +525,7 @@ function extractAISFromPDFText(text: string): Record<string, any> {
     };
 
     // Try to find PAN
-    const panMatch = text.match(/PAN\s*[:\-]\s*([A-Z]{5}\d{4}[A-Z])/i);
+    const panMatch = text.match(/PAN.*?\b([A-Z]{5}\d{4}[A-Z])\b/i);
     if (panMatch) data.pan = panMatch[1];
 
     // Try to find Assessment Year

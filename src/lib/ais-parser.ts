@@ -277,6 +277,7 @@ export function parseAISJson(jsonData: any): AISData {
             const items = jsonData.vdaTransactions || jsonData.cryptoTransactions || [];
             items.forEach((item: any, index: number) => {
                 const amount = parseFloat(item.saleValue || item.amount || 0);
+                incomeDetails.capitalGains += amount;
 
                 records.push({
                     id: `VDA_${index}`,
