@@ -514,37 +514,82 @@ function ReconciliationRow({ item }: { item: ReconciliationResult }) {
  * Handles the tabular format of AIS PDFs from the Income Tax portal
  */
 function extractAISFromPDFText(text: string): Record<string, any> {
-    const data: Record<string, any> = {};
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const data: Record<string, any> = {
+        tdsSalary: [],
+        tdsInterest: [],
+        tdsDividend: [],
+        vdaTransactions: [],
+        mutualFundTransactions: [],
+        sftShares: [],
+        propertyTransactions: []
+    };
 
     // Try to find PAN
     const panMatch = text.match(/PAN\s*[:\-]\s*([A-Z]{5}\d{4}[A-Z])/i);
     if (panMatch) data.pan = panMatch[1];
 
-    // Try to find AY
-    const ayMatch = text.match(/Assessment\s+Year\s*[:\-]\s*(\d{4}-\d{2,4})/i);
+    // Try to find Assessment Year
+    const ayMatch = text.match(/Assessment\s+Year\s*[:\-]\s*(\d{4}-\d{2,4})/i) || text.match(/A\.Y\.?\s*[:\-]?\s*(\d{4}-\d{2,4})/i);
     if (ayMatch) data.assessmentYear = ayMatch[1];
 
-    // Try to find FY
-    const fyMatch = text.match(/Financial\s+Year\s*[:\-]\s*(\d{4}-\d{2,4})/i);
-    if (fyMatch) data.financialYear = fyMatch[1];
+    // Scan lines for transaction data
+    // We look for lines that contain keywords AND amounts
+    const lines = text.split('\n');
 
-    // Extract TDS on Salary
-    const salaryMatch = text.match(/TDS.*?(?:Salary|192).*?(?:Rs\.?|₹)?\s*([\d,]+)/is);
-    if (salaryMatch) {
-        data.tdsSalary = [{
-            tdsAmount: salaryMatch[1].replace(/,/g, ''),
-            deductorName: 'Employer'
-        }];
-    }
+    for (const line of lines) {
+        const cleanLine = line.trim();
+        if (cleanLine.length < 10) continue;
 
-    // Extract Interest income
-    const interestMatch = text.match(/(?:Interest|194A).*?(?:Rs\.?|₹)?\s*([\d,]+)/is);
-    if (interestMatch) {
-        data.tdsInterest = [{
-            grossAmount: interestMatch[1].replace(/,/g, ''),
-            deductorName: 'Bank'
-        }];
+        // Find the last number in the line which is usually the Amount or Count
+        // We look for amounts > 100 to avoid capturing serial numbers or counts
+        // Regex for amount: 1,23,456 or 123456
+        const amountMatches = cleanLine.match(/([\d,]+)(\.\d{2})?$/); // End of line amount
+        if (!amountMatches) continue;
+
+        const amountStr = amountMatches[1].replace(/,/g, '');
+        const amount = parseFloat(amountStr);
+        if (isNaN(amount) || amount < 100) continue;
+
+        const upperLine = cleanLine.toUpperCase();
+
+        // Categorize based on keywords
+        if (upperLine.includes('192') || upperLine.includes('SALARY')) {
+            data.tdsSalary.push({
+                grossSalary: amount,
+                deductorName: 'Employer (Auto-extracted)',
+                tdsAmount: 0 // Cannot reliably distinguish TDS vs Income in single line heuristics without column detection
+            });
+        }
+        else if (upperLine.includes('194A') || upperLine.includes('INTEREST FROM SAVINGS') || upperLine.includes('INTEREST FROM DEPOSIT')) {
+            data.tdsInterest.push({
+                grossAmount: amount,
+                deductorName: 'Bank (Auto-extracted)'
+            });
+        }
+        else if (upperLine.includes('194') && upperLine.includes('DIVIDEND')) {
+            data.tdsDividend.push({
+                income: amount,
+                companyName: 'Company (Auto-extracted)'
+            });
+        }
+        else if (upperLine.includes('194S') || upperLine.includes('VIRTUAL DIGITAL ASSET') || upperLine.includes('CRYPTO')) {
+            data.vdaTransactions.push({
+                saleValue: amount,
+                tokenName: 'Crypto/VDA'
+            });
+        }
+        else if (upperLine.includes('MUTUAL FUND') || upperLine.includes('UNITS OF MF')) {
+            data.mutualFundTransactions.push({
+                amount: amount,
+                fundName: 'Mutual Fund'
+            });
+        }
+        else if (upperLine.includes('SALE OF SECURITIES') || upperLine.includes('OFF MARKET SALE')) {
+            data.sftShares.push({
+                saleValue: amount,
+                stockName: 'Share Transaction'
+            });
+        }
     }
 
     return data;
