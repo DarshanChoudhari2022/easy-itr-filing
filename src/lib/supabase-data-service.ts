@@ -480,7 +480,8 @@ export async function getUserPlan(): Promise<{ plan: string; validUntil: string 
     }
 
     return {
-        plan: data.current_plan || 'free',
-        validUntil: data.plan_valid_until,
+        plan: (data as any).current_plan || 'free',
+        validUntil: (data as any).plan_valid_until,
     };
 }
+
