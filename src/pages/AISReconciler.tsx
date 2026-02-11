@@ -102,7 +102,7 @@ export default function AISReconciler() {
                                 toast({
                                     variant: "destructive",
                                     title: "Sync Failed",
-                                    description: "Could not save AIS data to database."
+                                    description: error instanceof Error ? error.message : "Could not save AIS data to database."
                                 });
                             }
                         }}

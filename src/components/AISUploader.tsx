@@ -540,15 +540,21 @@ function extractAISFromPDFText(text: string): Record<string, any> {
         const cleanLine = line.trim();
         if (cleanLine.length < 10) continue;
 
-        // Find the last number in the line which is usually the Amount or Count
-        // We look for amounts > 100 to avoid capturing serial numbers or counts
-        // Regex for amount: 1,23,456 or 123456
-        const amountMatches = cleanLine.match(/([\d,]+)(\.\d{2})?$/); // End of line amount
-        if (!amountMatches) continue;
+        // Highly flexible regex for amounts: ₹5,39,123 or 5, 39, 123 or 539123.00
+        // We look for numbers with at least 3 digits (to avoid serial numbers/counts) 
+        // that appear within the line.
+        const allAmounts = cleanLine.match(/([\d\s,]+)(\.\d{2})?/g);
+        if (!allAmounts) continue;
 
-        const amountStr = amountMatches[1].replace(/,/g, '');
-        const amount = parseFloat(amountStr);
-        if (isNaN(amount) || amount < 100) continue;
+        // Pick the largest number found in the line (usually the amount, as counts/serial numbers are smaller)
+        let maxAmount = 0;
+        for (const match of allAmounts) {
+            const val = parseFloat(match.replace(/[\s,₹]/g, ''));
+            if (!isNaN(val) && val > maxAmount) maxAmount = val;
+        }
+
+        if (maxAmount < 100) continue; // Still skip tiny noise
+        const amount = maxAmount;
 
         const upperLine = cleanLine.toUpperCase();
 
