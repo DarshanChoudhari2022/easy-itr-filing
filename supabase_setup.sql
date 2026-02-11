@@ -2,21 +2,27 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. UPDATING PROFILES (Authentication & User Details)
+-- Note: Columns match keys in ProfileKYCData interface
 ALTER TABLE public.profiles 
 ADD COLUMN IF NOT EXISTS current_plan text default 'free',
 ADD COLUMN IF NOT EXISTS plan_valid_until timestamp with time zone,
 ADD COLUMN IF NOT EXISTS pan_number text,
-ADD COLUMN IF NOT EXISTS aadhaar_number text,
-ADD COLUMN IF NOT EXISTS phone_number text,
 ADD COLUMN IF NOT EXISTS date_of_birth date,
-ADD COLUMN IF NOT EXISTS father_name text,
 ADD COLUMN IF NOT EXISTS gender text,
-ADD COLUMN IF NOT EXISTS address_flat text,
-ADD COLUMN IF NOT EXISTS address_premises text,
-ADD COLUMN IF NOT EXISTS address_street text,
-ADD COLUMN IF NOT EXISTS address_city text,
-ADD COLUMN IF NOT EXISTS address_state text,
-ADD COLUMN IF NOT EXISTS address_pincode text;
+ADD COLUMN IF NOT EXISTS father_name text,
+ADD COLUMN IF NOT EXISTS mobile text,
+ADD COLUMN IF NOT EXISTS aadhaar_last4 text,
+ADD COLUMN IF NOT EXISTS flat_no text,
+ADD COLUMN IF NOT EXISTS building text,
+ADD COLUMN IF NOT EXISTS street text,
+ADD COLUMN IF NOT EXISTS locality text,
+ADD COLUMN IF NOT EXISTS city text,
+ADD COLUMN IF NOT EXISTS state text,
+ADD COLUMN IF NOT EXISTS pincode text,
+ADD COLUMN IF NOT EXISTS country text default 'India',
+ADD COLUMN IF NOT EXISTS resident_status text,
+ADD COLUMN IF NOT EXISTS filing_status_type text,
+ADD COLUMN IF NOT EXISTS onboarding_completed boolean default false;
 
 -- 2. ITR FILINGS (Tracking Tax Returns)
 CREATE TABLE IF NOT EXISTS public.itr_filings (
