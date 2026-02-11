@@ -1074,5 +1074,5 @@ export const DEFAULT_TAX_SETTINGS: TaxSettings = {
     treatMiningAsIncome: true,
     baseCurrency: 'INR',
     country: 'India',
-    assessmentYear: '2025-26'
+    assessmentYear: '2026-27'
 };

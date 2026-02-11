@@ -841,37 +841,86 @@ export function SmartFilingWizard() {
                     )}
 
                     {income.hasCrypto && (
-                        <Card>
-                            <CardHeader>
+                        <Card className="border-2 border-amber-200">
+                            <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50">
                                 <CardTitle className="flex items-center justify-between">
-                                    <span className="flex items-center gap-2"><Bitcoin className="h-5 w-5" /> Crypto / VDA Income</span>
-                                    <Button variant="outline" size="sm" onClick={fetchCryptoData}>
-                                        <Loader2 className="h-4 w-4 mr-2" /> Fetch from Crypto Page
+                                    <span className="flex items-center gap-2"><Bitcoin className="h-5 w-5 text-amber-600" /> Crypto / VDA Income (Section 115BBH)</span>
+                                    <Button variant="outline" size="sm" onClick={fetchCryptoData} className="border-amber-300 text-amber-700">
+                                        <Loader2 className="h-4 w-4 mr-2" /> Auto-Fetch from Crypto Page
                                     </Button>
                                 </CardTitle>
+                                <CardDescription className="text-amber-700">
+                                    VDA gains are taxed at 30% flat rate. No set-off of losses allowed.
+                                </CardDescription>
                             </CardHeader>
-                            <CardContent className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <Label>Net Crypto Gains</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.cryptoGains || ''}
-                                        onChange={e => updateIncomeField('cryptoGains', e.target.value)}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Taxed at 30% flat rate</p>
+                            <CardContent className="space-y-4 pt-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <Label>Net Crypto Gains (₹)</Label>
+                                        <Input
+                                            type="number"
+                                            value={income.cryptoGains || ''}
+                                            onChange={e => updateIncomeField('cryptoGains', e.target.value)}
+                                            className="text-lg font-semibold"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">Taxable gains from Schedule VDA</p>
+                                    </div>
+                                    <div>
+                                        <Label>TDS Deducted (1% u/s 194S)</Label>
+                                        <Input
+                                            type="number"
+                                            value={income.cryptoTDS || ''}
+                                            onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
+                                            className="text-lg font-semibold"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">1% TDS on sale consideration</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <Label>TDS Deducted (1%)</Label>
-                                    <Input
-                                        type="number"
-                                        value={income.cryptoTDS || ''}
-                                        onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
-                                    />
-                                </div>
-                                <div className="col-span-2">
+
+                                {/* Tax Computation Preview */}
+                                {income.cryptoGains > 0 && (
+                                    <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
+                                        <h4 className="font-bold text-indigo-800 mb-3 flex items-center gap-2 text-sm">
+                                            <Calculator className="h-4 w-4" /> Your Crypto Tax Computation
+                                        </h4>
+                                        <div className="grid gap-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-600">Taxable Capital Gains</span>
+                                                <span className="font-medium">₹{income.cryptoGains.toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-600">Tax @ 30%</span>
+                                                <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30).toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-600">Health & Education Cess @ 4%</span>
+                                                <span className="font-medium">₹{Math.round(income.cryptoGains * 0.30 * 0.04).toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className="flex justify-between border-t border-indigo-200 pt-2">
+                                                <span className="font-medium text-slate-700">Total Tax Liability</span>
+                                                <span className="font-bold">₹{Math.round(income.cryptoGains * 0.30 * 1.04).toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className="flex justify-between text-emerald-700">
+                                                <span>Less: TDS Already Paid</span>
+                                                <span className="font-medium">- ₹{(income.cryptoTDS || 0).toLocaleString('en-IN')}</span>
+                                            </div>
+                                            <div className="flex justify-between border-t border-indigo-300 pt-2 text-base font-bold">
+                                                <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                                                    {Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'Net Tax Payable' : 'Refund Due'}
+                                                </span>
+                                                <span className={Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                                                    ₹{Math.abs(Math.round(income.cryptoGains * 0.30 * 1.04) - (income.cryptoTDS || 0)).toLocaleString('en-IN')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-3">
                                     <Button variant="link" className="p-0 h-auto text-indigo-600" onClick={() => navigate('/crypto')}>
-                                        Go to Crypto Tax Calculator →
+                                        Go to Crypto Tax Calculator & Reports →
                                     </Button>
+                                    <Badge variant="outline" className="text-xs">KoinX-style report available</Badge>
                                 </div>
                             </CardContent>
                         </Card>

@@ -38,6 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
+import { generateKoinXReport, buildKoinXReportData } from "@/lib/koinx-report-generator";
 import { PlanGate } from "@/hooks/usePlanGuard";
 
 // Types
@@ -64,7 +65,7 @@ const DEFAULT_TAX_SETTINGS: TaxSettings = {
   treatMiningAsIncome: true,
   baseCurrency: 'INR',
   country: 'India',
-  assessmentYear: '2025-26'
+  assessmentYear: '2026-27'
 };
 
 // Chart colors
@@ -104,7 +105,7 @@ export default function CryptoTaxPage() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Financial Year state and helper
-  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+  const [selectedFY, setSelectedFY] = useState<string>('2025-26');
 
   // Available Financial Years
   const FINANCIAL_YEARS = [
@@ -1146,33 +1147,83 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
   formatCurrency: (v: number) => string;
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  // Fetch user profile for PAN
+  const [userProfile, setUserProfile] = useState<any>(null);
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user) return;
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserProfile(profile);
+      } catch { /* ignore */ }
+    };
+    loadProfile();
+  }, [user]);
+
+  const settings: TaxSettings = {
+    accountingMethod: 'FIFO',
+    treatAirdropsAsIncome: true,
+    treatRewardsAsIncome: true,
+    treatStakingAsIncome: true,
+    treatInterestAsIncome: true,
+    treatMiningAsIncome: true,
+    baseCurrency: 'INR',
+    country: 'India',
+    assessmentYear: '2026-27'
+  };
+
+  const handleGenerateKoinXReport = async () => {
+    if (trades.length === 0) {
+      toast.error('No trades to generate report');
+      return;
+    }
+    setGenerating('koinx');
+    try {
+      const reportData = buildKoinXReportData(
+        portfolio,
+        trades,
+        {
+          name: (userProfile as any)?.full_name || user?.user_metadata?.full_name || 'Taxpayer',
+          pan: (userProfile as any)?.pan_number || user?.user_metadata?.pan || 'XXXXX0000X',
+          email: user?.email || ''
+        },
+        settings,
+        '2025-26',
+        '2026-27'
+      );
+      generateKoinXReport(reportData);
+      toast.success('KoinX-style Comprehensive Tax Report downloaded!');
+    } catch (error) {
+      console.error('Report generation error:', error);
+      toast.error('Failed to generate report');
+    } finally {
+      setGenerating(null);
+    }
+  };
 
   const handleGenerateReport = async (type: 'complete' | 'vda') => {
     if (trades.length === 0) {
       toast.error('No trades to generate report');
       return;
     }
-
     setGenerating(type);
-
     try {
-      // Flatten matched lots from all tokens to create the Schedule VDA
-      // This uses the actual FIFO/LIFO/HIFO calculation results
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const allMatchedLots = portfolio?.breakdown?.flatMap((res: any) => res.matchedLots) || [];
-
-      // Sort by sell date
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       allMatchedLots.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
-
       const reportData: TaxReportData = {
         user: {
-          name: user?.user_metadata?.full_name || 'Taxpayer',
-          pan: user?.user_metadata?.pan || 'XXXXX0000X',
+          name: (userProfile as any)?.full_name || user?.user_metadata?.full_name || 'Taxpayer',
+          pan: (userProfile as any)?.pan_number || user?.user_metadata?.pan || 'XXXXX0000X',
           email: user?.email || ''
         },
-        financialYear: '2024-25',
-        assessmentYear: '2025-26',
+        financialYear: '2025-26',
+        assessmentYear: '2026-27',
         generatedAt: new Date(),
         summary: {
           totalBuyValue: trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0),
@@ -1187,16 +1238,10 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           otherIncome: portfolio?.totalOtherIncome || 0
         },
         transactions: trades.map(t => ({
-          date: t.trade_date,
-          type: t.trade_type,
-          token: t.token_symbol,
-          quantity: t.quantity,
-          pricePerUnit: t.buy_price,
-          totalValue: t.quantity * t.buy_price,
-          exchange: t.exchange || 'Unknown'
+          date: t.trade_date, type: t.trade_type, token: t.token_symbol,
+          quantity: t.quantity, pricePerUnit: t.buy_price,
+          totalValue: t.quantity * t.buy_price, exchange: t.exchange || 'Unknown'
         })),
-        // Use actual calculated lots for the report
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         scheduleVDA: allMatchedLots.map((lot: any, i: number) => ({
           slNo: i + 1,
           dateOfTransfer: new Date(lot.sellDate).toLocaleDateString('en-IN'),
@@ -1206,24 +1251,14 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           costOfAcquisition: lot.buyPrice * lot.quantity,
           gainLoss: lot.gainLoss
         })),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tokenWiseSummary: portfolio?.tokenWise?.map((t: any) => ({
-          token: t.name,
-          totalBought: 0, // Simplified in summary view, detailed in breakdown
-          totalSold: 0,
-          avgBuyPrice: 0,
-          realizedGain: t.gain - t.loss,
-          currentHolding: t.holding
+          token: t.name, totalBought: 0, totalSold: 0, avgBuyPrice: 0,
+          realizedGain: t.gain - t.loss, currentHolding: t.holding
         })) || [],
-        exchangeWiseTDS: [] // To be implemented if exchange data is granular enough
+        exchangeWiseTDS: []
       };
-
-      if (type === 'complete') {
-        generateCompleteTaxReport(reportData);
-      } else {
-        generateScheduleVDAPDF(reportData);
-      }
-
+      if (type === 'complete') { generateCompleteTaxReport(reportData); }
+      else { generateScheduleVDAPDF(reportData); }
       toast.success(`${type === 'complete' ? 'Complete Tax Report' : 'Schedule VDA'} downloaded!`);
     } catch (error) {
       console.error('Report generation error:', error);
@@ -1233,21 +1268,197 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
     }
   };
 
+  // Compute in-page summary
+  const buyVolume = trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+  const sellVolume = trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+  const sellCount = trades.filter(t => t.trade_type === 'sell').length;
+  const taxableGains = Math.max(0, portfolio?.totalTaxableGains || 0);
+  const totalLosses = portfolio?.totalLosses || 0;
+  const taxAt30 = portfolio?.totalTaxAt30 || 0;
+  const tdsPaid = portfolio?.totalTDSPaid || 0;
+  const netTax = Math.max(0, taxAt30 - tdsPaid);
+  const cess = taxAt30 * 0.04;
+  const totalTax = taxAt30 + cess;
+
+  const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
     <div className="space-y-6">
+      {/* Header Banner */}
       <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
         <CardContent className="p-6">
-          <div className="flex items-center gap-3">
-            <FileSpreadsheet className="h-6 w-6" />
-            <div>
-              <h3 className="text-lg font-semibold">ITR Tax Reports</h3>
-              <p className="text-indigo-200 text-sm">Download Schedule VDA and complete tax calculation reports</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <FileSpreadsheet className="h-6 w-6" />
+              <div>
+                <h3 className="text-lg font-semibold">Crypto Tax Reports — AY 2026-27</h3>
+                <p className="text-indigo-200 text-sm">KoinX-style comprehensive report with Schedule VDA, Asset P&L, FIFO audit trail</p>
+              </div>
             </div>
+            <Badge className="bg-white/20 text-white border-white/30">{trades.length} trades</Badge>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      {/* In-Page Tax Summary Preview */}
+      {portfolio && showPreview && (
+        <Card className="border-2 border-indigo-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Target className="h-5 w-5 text-indigo-600" />
+                Capital Gains Summary — FY 2025-26
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
+                <EyeOff className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription>This is exactly what goes into your ITR under Schedule VDA</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="p-3 rounded-xl bg-slate-50 border">
+                <p className="text-xs text-slate-500 mb-1">Transfers</p>
+                <p className="text-xl font-bold text-slate-900">{sellCount}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+                <p className="text-xs text-blue-600 mb-1">Sale Consideration</p>
+                <p className="text-lg font-bold text-blue-800">{formatCurrency(sellVolume)}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border">
+                <p className="text-xs text-slate-500 mb-1">Cost of Acquisition</p>
+                <p className="text-lg font-bold text-slate-900">{formatCurrency(buyVolume)}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                <p className="text-xs text-emerald-600 mb-1">Taxable Gains</p>
+                <p className="text-lg font-bold text-emerald-700">{formatCurrency(taxableGains)}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+                <p className="text-xs text-red-600 mb-1">Losses (non-deductible)</p>
+                <p className="text-lg font-bold text-red-700">{formatCurrency(totalLosses)}</p>
+              </div>
+            </div>
+
+            {/* Tax Computation */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
+              <h4 className="font-bold text-indigo-800 mb-3 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4" /> Tax Computation (Section 115BBH)
+              </h4>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Tax @ 30% on Gains</span>
+                  <span className="font-medium">{fmtINR(taxAt30)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Health & Education Cess @ 4%</span>
+                  <span className="font-medium">{fmtINR(cess)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2">
+                  <span className="text-slate-700 font-medium">Total Tax Liability</span>
+                  <span className="font-bold">{fmtINR(totalTax)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-700">
+                  <span>TDS Already Paid (1%)</span>
+                  <span className="font-medium">- {fmtINR(tdsPaid)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2 text-lg font-bold">
+                  <span className={netTax > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                    {netTax > 0 ? 'Net Tax Payable' : 'Refund Due'}
+                  </span>
+                  <span className={netTax > 0 ? 'text-red-700' : 'text-emerald-700'}>
+                    {fmtINR(Math.abs(totalTax - tdsPaid))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Asset-wise P&L Preview */}
+            {portfolio?.tokenWise && portfolio.tokenWise.length > 0 && (
+              <div>
+                <h4 className="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" /> Asset-Wise P&L
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-indigo-50">
+                        <th className="text-left p-2 font-medium text-indigo-800 border">Asset</th>
+                        <th className="text-right p-2 font-medium text-indigo-800 border">Gross Profit</th>
+                        <th className="text-right p-2 font-medium text-indigo-800 border">Gross Loss</th>
+                        <th className="text-right p-2 font-medium text-indigo-800 border">Net Gains</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolio.tokenWise.slice(0, 10).map((t: any, i: number) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                          <td className="p-2 font-medium border">{t.name}</td>
+                          <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.gain)}</td>
+                          <td className="p-2 text-right text-red-600 border">{t.loss > 0 ? formatCurrency(t.loss) : '₹0'}</td>
+                          <td className={`p-2 text-right font-bold border ${(t.gain - t.loss) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {formatCurrency(t.gain - t.loss)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Self Filing Tips */}
+            <Alert className="border-amber-200 bg-amber-50">
+              <Info className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-800">Self Filing Tips</AlertTitle>
+              <AlertDescription className="text-amber-700 text-xs space-y-1">
+                <p>1. No set-off of any loss is allowed (Even within same coin/pair).</p>
+                <p>2. Tax on capital gains is 30% plus surcharge and 4% cess.</p>
+                <p>3. Losses cannot be carried forward to future years.</p>
+                <p>4. TDS can be claimed in the Income Tax Return.</p>
+                <p>5. Capital Gains from VDAs must be disclosed in Schedule VDA of ITR.</p>
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
+
+      {!showPreview && portfolio && (
+        <Button variant="outline" size="sm" onClick={() => setShowPreview(true)}>
+          <Eye className="h-4 w-4 mr-2" /> Show Tax Summary
+        </Button>
+      )}
+
+      {/* Download Buttons */}
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* KoinX-style Report (MAIN) */}
+        <Card className="border-2 border-indigo-300 shadow-md">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-900">KoinX-Style Report</h3>
+                <p className="text-sm text-slate-503 mt-1">
+                  Full multi-page report: Transaction Preferences, Capital Gains, Asset P&L, TDS, Schedule VDA, Tax Computation
+                </p>
+                <Button
+                  className="mt-4 bg-indigo-600 hover:bg-indigo-700 w-full"
+                  disabled={generating !== null || trades.length === 0}
+                  onClick={handleGenerateKoinXReport}
+                >
+                  {generating === 'koinx' ? (
+                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
+                  ) : (
+                    <><Download className="h-4 w-4 mr-2" /> Download Full Report</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Complete Tax Report */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
@@ -1255,12 +1466,13 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                 <ShieldCheck className="h-6 w-6 text-indigo-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">Complete Tax Report</h3>
+                <h3 className="font-semibold text-slate-900">Tax Summary</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  Comprehensive analysis with FIFO calculations, audit trail, and tax summary
+                  FIFO calculations + audit trail
                 </p>
                 <Button
-                  className="mt-4 bg-indigo-600 hover:bg-indigo-700"
+                  variant="outline"
+                  className="mt-4 w-full"
                   disabled={generating !== null || trades.length === 0}
                   onClick={() => handleGenerateReport('complete')}
                 >
@@ -1275,6 +1487,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           </CardContent>
         </Card>
 
+        {/* Schedule VDA */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
@@ -1284,11 +1497,11 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
               <div className="flex-1">
                 <h3 className="font-semibold text-slate-900">Schedule VDA</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  ITR-ready format as per Section 115BBH for e-filing portal
+                  ITR-ready Section 115BBH format
                 </p>
                 <Button
                   variant="outline"
-                  className="mt-4"
+                  className="mt-4 w-full"
                   disabled={generating !== null || trades.length === 0}
                   onClick={() => handleGenerateReport('vda')}
                 >
@@ -1309,7 +1522,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
           <AlertTriangle className="h-4 w-4 text-amber-600" />
           <AlertTitle className="text-amber-800">No Trades Available</AlertTitle>
           <AlertDescription className="text-amber-700">
-            Import your crypto trades first to generate tax reports.
+            Import your crypto trades first to generate tax reports. Go to the Import tab to upload your exchange CSV.
           </AlertDescription>
         </Alert>
       )}
