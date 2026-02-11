@@ -36,6 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface Profile {
   full_name?: string;
+  pan_number?: string;
   user_id: string;
 }
 
@@ -341,39 +342,47 @@ export default function Dashboard() {
             <Card className="bg-rose-50/20 border-rose-100 shadow-sm overflow-hidden">
               <CardHeader className="pb-3 border-b border-rose-100/50 bg-rose-50/30">
                 <CardTitle className="text-sm font-black text-rose-900 flex items-center gap-2 uppercase tracking-widest">
-                  <Users className="h-4 w-4" /> Family Quick Switch
+                  <Briefcase className="h-4 w-4" /> My Profile
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-4 space-y-3">
-                <FamilyMember name="Rahul Sharma" role="Self" active />
-                <FamilyMember name="Priya Sharma" role="Spouse" />
-                <FamilyMember name="Om Prakash" role="Parent" />
-                <Button variant="ghost" className="w-full text-xs h-10 text-rose-600 hover:bg-rose-100/50 mt-1 font-bold">
-                  Manage Family Group
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-rose-200 bg-white/50">
+                  <div className="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-lg border-2 border-white shadow-sm">
+                    {profile?.full_name?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-900 truncate">
+                      {profile?.full_name || 'User'}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs border-rose-200 text-rose-700 bg-rose-50">
+                    Self
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <p className="text-slate-400 font-medium mb-0.5">PAN</p>
+                    <p className="font-mono font-bold text-slate-700 tracking-wide">
+                      {profile?.pan_number || '----------'}
+                    </p>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <p className="text-slate-400 font-medium mb-0.5">Status</p>
+                    <p className="font-bold text-emerald-600 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Active
+                    </p>
+                  </div>
+                </div>
+
+                <Button asChild variant="ghost" className="w-full text-xs h-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 mt-1 font-bold">
+                  <Link to="/settings">Manage Profile & Settings</Link>
                 </Button>
               </CardContent>
             </Card>
 
-            <Card className="bg-amber-50/20 border-amber-100 shadow-sm overflow-hidden">
-              <CardHeader className="pb-3 border-b border-amber-100/50 bg-amber-50/30">
-                <CardTitle className="text-sm font-black text-amber-900 flex items-center gap-2 uppercase tracking-widest">
-                  <Briefcase className="h-4 w-4" /> Advisor Hub
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">Pending Reviews</span>
-                  <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none">4 Clients</Badge>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">DSC Expiry (30d)</span>
-                  <Badge variant="outline" className="text-rose-600 border-rose-100 italic">2 Alerts</Badge>
-                </div>
-                <Button variant="ghost" className="w-full text-xs h-10 text-amber-700 hover:bg-amber-100/50 mt-1 font-bold">
-                  Advisor Tools Dashboard
-                </Button>
-              </CardContent>
-            </Card>
+
 
             <Card className="bg-slate-900 text-white shadow-2xl border-none">
               <CardHeader className="pb-3">
@@ -483,30 +492,7 @@ const Installment = ({ status, date, installment }: InstallmentProps) => (
   </div>
 );
 
-interface FamilyMemberProps {
-  name: string;
-  role: string;
-  active?: boolean;
-}
 
-const FamilyMember = ({ name, role, active }: FamilyMemberProps) => (
-  <div className={`flex items-center justify-between p-3 rounded-xl border transition-all ${active
-    ? 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-100'
-    : 'hover:bg-rose-50 border-transparent text-slate-700'
-    }`}>
-    <div className="flex items-center gap-3">
-      <div className={`h-8 w-8 rounded-xl flex items-center justify-center font-black ${active ? 'bg-white/20' : 'bg-rose-100 text-rose-700'
-        }`}>
-        {name[0]}
-      </div>
-      <div>
-        <p className="font-bold text-sm tracking-tight">{name}</p>
-        <p className={`text-[10px] font-medium ${active ? 'text-white/70' : 'text-slate-400'}`}>{role}</p>
-      </div>
-    </div>
-    {active && <Badge className="h-5 text-[9px] bg-white text-rose-600 font-black tracking-tighter">ACTIVE</Badge>}
-  </div>
-);
 
 interface FooterStatProps {
   label: string;
