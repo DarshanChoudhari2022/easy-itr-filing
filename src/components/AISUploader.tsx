@@ -65,7 +65,7 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
                 try {
                     jsonData = JSON.parse(text);
                 } catch (e) {
-                    throw new Error('This file appears to be encrypted or invalid. Please download the standard "Annual Information Statement (JSON)" from the AIS portal, not the utility JSON.');
+                    throw new Error('This JSON file is encrypted for the Income Tax Utility. Please download and upload the "AIS PDF" or "TIS PDF" instead—I have updated my tool to read those formats accurately.');
                 }
 
                 // Handle potential wrapper structures found in some downloads
