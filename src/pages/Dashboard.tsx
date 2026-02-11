@@ -173,42 +173,46 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Welcome Banner for Early Adopters - Addressing User's specific pain points */}
-        <Card className="bg-gradient-to-r from-emerald-600 to-teal-500 border-none text-white shadow-lg overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-4 opacity-20">
-            <Sparkles className="h-24 w-24" />
+        {/* Fetch Live Data Banner - Replacing Welcome Message */}
+        <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 border-none text-white shadow-lg overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <ShieldCheck className="h-32 w-32" />
           </div>
           <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
-                <Users className="h-6 w-6 text-white" />
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md">
+                <FileText className="h-6 w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold">Welcome, Early Adopter!</CardTitle>
-                <CardDescription className="text-emerald-50">
-                  We've optimized the portal for your FY 2025-26 filing. Crypto import issues are now resolved.
+                <CardTitle className="text-2xl font-bold">Sync with Income Tax Portal</CardTitle>
+                <CardDescription className="text-blue-100 text-base">
+                  Automatic data collection from your PAN. We fetch your AIS, 26AS, and Pre-filled JSON.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
                 <h4 className="font-bold flex items-center gap-2 mb-2">
-                  <Briefcase className="h-4 w-4" /> Freelance Income (Creative Mark)
+                  <Zap className="h-4 w-4 text-yellow-300" /> Annual Information Statement (AIS)
                 </h4>
-                <p className="text-xs text-emerald-50 mb-3">Add your ₹2 Lakh transaction under Section 44ADA for 50% presumptive tax benefit.</p>
-                <Button asChild size="sm" variant="secondary" className="bg-white text-emerald-700 hover:bg-emerald-50">
-                  <Link to="/income">Add Freelance Income</Link>
+                <p className="text-xs text-blue-100 mb-3">
+                  Reconcile salary, interest, dividends, and market transactions linked to your PAN.
+                </p>
+                <Button asChild size="sm" variant="secondary" className="bg-white text-blue-700 hover:bg-blue-50 w-full font-bold">
+                  <Link to="/ais">Fetch Live Data</Link>
                 </Button>
               </div>
-              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
                 <h4 className="font-bold flex items-center gap-2 mb-2">
-                  <TrendingUp className="h-4 w-4" /> Groww IPO Allotments
+                  <Briefcase className="h-4 w-4" /> Form 26AS & TIS
                 </h4>
-                <p className="text-xs text-emerald-50 mb-3">Verify your IPO allotments reflected on PAN. We'll help you reconcile them with your AIS.</p>
-                <Button asChild size="sm" variant="secondary" className="bg-white text-emerald-700 hover:bg-emerald-50">
-                  <Link to="/ais">Verify IPOs on AIS</Link>
+                <p className="text-xs text-blue-100 mb-3">
+                  Verify tax credits (TDS/TCS) and high-value transactions reported against your PAN.
+                </p>
+                <Button asChild size="sm" variant="ghost" className="bg-white/10 text-white hover:bg-white/20 w-full font-medium border border-white/20">
+                  <Link to="/income">Verify TDS Credits</Link>
                 </Button>
               </div>
             </div>

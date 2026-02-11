@@ -39,11 +39,19 @@ export type Feature =
  */
 const PLAN_FEATURES: Record<Plan, Feature[]> = {
     free: [
-        'itr1',
-        'ais_basic',
+        'itr1', 'itr2', 'itr3', 'itr4',
+        'ais_basic', 'ais_full',
+        'crypto',
+        'gst_center',
+        'foreign_compliance',
         'regime_optimizer',
-        'form16_import',
-        'ai_assistant',
+        'form16_import', 'form16_unlimited',
+        'ai_assistant', 'ai_unlimited',
+        'audit_logs',
+        'family_dashboard',
+        'pdf_reports',
+        'multi_return',
+        'priority_support'
     ],
     pro: [
         'itr1', 'itr2', 'itr3', 'itr4',
