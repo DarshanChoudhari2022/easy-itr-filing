@@ -284,7 +284,20 @@ function DeductionInput({
                             className={`pl-7 h-10 font-bold text-sm ${hasValue ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100'
                                 }`}
                             value={value || ''}
-                            onChange={(e) => onChange(Number(e.target.value) || 0)}
+                            onChange={(e) => {
+                                const raw = e.target.value;
+                                // Allow clearing the field
+                                if (raw === '') {
+                                    onChange(0);
+                                    return;
+                                }
+                                // Parse and validate
+                                const val = parseFloat(raw);
+                                if (!isNaN(val) && val >= 0) {
+                                    onChange(val);
+                                }
+                            }}
+                            min={0}
                         />
                     </div>
 

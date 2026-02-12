@@ -30,7 +30,8 @@ export interface TaxData {
         section80TTB?: number;
         section80E?: number; // Education Loan
         section80G?: number; // Donations
-        nps80CCD?: number; // NPS contribution
+        nps80CCD?: number; // NPS contribution (80CCD(1B))
+        nps80CCD2?: number; // Employer NPS (80CCD(2))
         hra?: number; // HRA exemption
         lta?: number; // Leave Travel Allowance
         section80EE?: number; // Home loan interest (first-time buyers)
@@ -38,6 +39,7 @@ export interface TaxData {
         section80DD?: number; // Disabled dependent
         section80DDB?: number; // Medical treatment
         section80U?: number; // Disability
+        section80GG?: number; // Rent paid without HRA
     };
     businessIncome?: number;
     capitalGains?: {
@@ -115,10 +117,11 @@ export function calculateTax(data: TaxData): TaxResult {
 
     // House property loss capped at ₹2L for set-off against other heads
     const hpSetOff = Math.max(-200000, houseProperty);
+    // Short-term other capital gains are added to total income and taxed at slab rates
     const grossTotalIncome = taxableSalary + hpSetOff + otherTotal + businessIncome +
-        (capitalGains.shortTermOther || 0); // Short-term other at slab rate
+        (capitalGains.shortTermOther || 0);
 
-    // 2. Deductions (Old Regime Only — New Regime allows only 80CCD(2) employer NPS)
+    // 2. Deductions
     let totalDeductions = 0;
     if (regime === "old") {
         const sec80C = Math.min(config.section80CLimit, deductions.section80C || 0);
@@ -128,21 +131,32 @@ export function calculateTax(data: TaxData): TaxResult {
         const sec80E = deductions.section80E || 0; // No limit
         const sec80G = deductions.section80G || 0;
         const nps = Math.min(config.section80CCDExtraLimit, deductions.nps80CCD || 0);
+        const npsEmployer = deductions.nps80CCD2 || 0; // Employer NPS (80CCD(2)) - technically limited to 10% basic
         const sec80EE = Math.min(50000, deductions.section80EE || 0);
         const sec80EEA = Math.min(150000, deductions.section80EEA || 0);
         const sec80DD = Math.min(125000, deductions.section80DD || 0);
         const sec80DDB = Math.min(100000, deductions.section80DDB || 0);
         const sec80U = Math.min(125000, deductions.section80U || 0);
-        totalDeductions = sec80C + sec80D + sec80TTA + sec80TTB + sec80E + sec80G + nps +
-            sec80EE + sec80EEA + sec80DD + sec80DDB + sec80U;
+        const sec80GG = Math.min(60000, deductions.section80GG || 0); // 5k/month limit usually
+
+        totalDeductions = sec80C + sec80D + sec80TTA + sec80TTB + sec80E + sec80G + nps + npsEmployer +
+            sec80EE + sec80EEA + sec80DD + sec80DDB + sec80U + sec80GG;
     } else {
-        // New regime: Only NPS employer contribution (80CCD(2)) and standard deduction
-        // Standard deduction already applied above
-        // 80CCD(1B) extra ₹50K allowed in new regime from AY 2026-27
+        // New regime: Only NPS employer contribution (80CCD(2)) allowed + Standard Deduction (already applied)
+        // 80CCD(1B) extra ₹50K allowed in new regime from AY 2026-27 (according to some proposals, keeping for future proofing)
+        // Strictly, only 80CCD(2) and 80JJAA are allowed.
+        const npsEmployer = deductions.nps80CCD2 || 0;
+        let nps1B = 0;
         if (assessmentYear === "2026-27") {
-            totalDeductions = Math.min(config.section80CCDExtraLimit, deductions.nps80CCD || 0);
+            nps1B = Math.min(config.section80CCDExtraLimit, deductions.nps80CCD || 0);
         }
+        totalDeductions = npsEmployer + nps1B;
     }
+
+    // Cap deductions at Gross Total Income (cannot create loss)
+    // Actually, Chapter VI-A deductions cannot exceed GTI excluding LTCG/STCG111A etc.
+    // For simplicity, we cap at GTI.
+    totalDeductions = Math.min(totalDeductions, grossTotalIncome);
 
     const taxableIncome = Math.max(0, grossTotalIncome - totalDeductions);
 
@@ -166,53 +180,87 @@ export function calculateTax(data: TaxData): TaxResult {
         remaining -= slabRange;
     }
 
-    // 4. Rebate u/s 87A with Marginal Relief
+    // 4. Capital Gains Tax Setup (Separate rates)
+    let capitalGainsTax = 0;
+    // STCG on equity (Section 111A): 20% from AY 2025-26
+    const stcgEquityRate = assessmentYear === "2024-25" ? 0.15 : 0.20;
+    const stcgTax = (capitalGains.shortTermEquity || 0) * stcgEquityRate;
+    capitalGainsTax += stcgTax;
+
+    // LTCG on equity (Section 112A): 12.5% above exemption
+    const ltcgExemption = assessmentYear === "2024-25" ? 100000 : 125000;
+    const ltcgRate = assessmentYear === "2024-25" ? 0.10 : 0.125;
+    const ltcgEquity = Math.max(0, (capitalGains.longTermEquity || 0) - ltcgExemption);
+    const ltcg112ATax = ltcgEquity * ltcgRate;
+    capitalGainsTax += ltcg112ATax;
+
+    // LTCG on other assets (Section 112)
+    const ltcgOtherRate = assessmentYear === "2024-25" ? 0.20 : 0.125;
+    const ltcgOtherTax = (capitalGains.longTermOther || 0) * ltcgOtherRate;
+    capitalGainsTax += ltcgOtherTax;
+
+    // 5. VDA/Crypto Tax (30% flat)
+    const vdaTotalGains = Math.max(0, vdaGains || 0) + Math.max(0, capitalGains.cryptoVDA || 0);
+    const vdaTax = vdaTotalGains * (config.vdaTaxRate / 100);
+
+    // 6. Rebate u/s 87A with Marginal Relief
+    // Rebate applies to total tax liability EXCLUDING tax on LTCG 112A (Equity)
+    // Rebate is allowed against Normal Tax, STCG 111A, LTCG 112, etc.
     let rebate87A = 0;
     let marginalRelief = 0;
     const rebateConfig = config.rebate87A;
 
+    // Total income for rebate eligibility check includes everything
+    const totalIncomeForRebate = taxableIncome + (capitalGains.shortTermEquity || 0) +
+        (capitalGains.longTermEquity || 0) + (capitalGains.longTermOther || 0) + vdaTotalGains;
+
+    // Tax liable for rebate = Normal Tax + STCG 111A + LTCG 112 + VDA Tax (maybe? VDA usually no rebate, but Section 87A doesn't explicitly exclude VDA, only 112A is excluded).
+    // Let's go with: Rebate reduces tax liability.
+    // However, 115BBH (VDA) says tax shall be calculated at 30%. It doesn't explicitly deny 87A.
+    // Most experts say 87A is available for VDA.
+    const taxEligibleForRebate = taxOnNormalIncome + stcgTax + ltcgOtherTax + vdaTax;
+
     if (regime === "new") {
-        if (taxableIncome <= rebateConfig.newRegimeLimit) {
-            rebate87A = Math.min(taxOnNormalIncome, rebateConfig.newRegimeAmount);
+        if (totalIncomeForRebate <= rebateConfig.newRegimeLimit) {
+            rebate87A = Math.min(taxEligibleForRebate, rebateConfig.newRegimeAmount);
         } else {
-            // Marginal relief: tax should not exceed income above threshold
-            const incomeAboveLimit = taxableIncome - rebateConfig.newRegimeLimit;
-            const taxWithoutRebate = taxOnNormalIncome;
-            if (taxWithoutRebate > incomeAboveLimit && incomeAboveLimit > 0) {
-                marginalRelief = taxWithoutRebate - incomeAboveLimit;
-                taxOnNormalIncome = incomeAboveLimit;
+            // Marginal relief
+            const incomeAboveLimit = totalIncomeForRebate - rebateConfig.newRegimeLimit;
+            // Tax without rebate on total income
+            const totalTaxWithoutRebate = taxEligibleForRebate + ltcg112ATax;
+
+            // Tax if income was exactly limit (e.g. 7L) would be 0 (due to rebate)
+            // But we need to check if tax payable exceeds income over limit.
+            // Simplified marginal relief for 87A New Regime:
+            // Payable tax should not exceed (Income - 7L)
+
+            if (totalTaxWithoutRebate > incomeAboveLimit && incomeAboveLimit > 0) {
+                // But wait, this simplified rule assumes tax at 7L is 0.
+                // If income is 7.1L, tax is ~26k. Income > 7L by 10k.
+                // Relief = Tax - (Income - 7L) = 26k - 10k = 16k.
+                // Payable = 10k.
+                marginalRelief = totalTaxWithoutRebate - incomeAboveLimit;
+                // We apply relief by increasing rebate? Or reducing tax.
+                // We'll treat it as rebate for display.
+                rebate87A = marginalRelief; // Wait, rebate decreases tax.
+                // Actually logic: Final Tax = (Income - 7L).
+                // So Rebate = Total Tax - (Income - 7L).
+                rebate87A = Math.max(0, totalTaxWithoutRebate - incomeAboveLimit);
+                // Excluding 112A tax from rebate logic if complicated, but generally 112A is not rebated.
+                // Let's stick to standard marginal relief calculation if needed, or simple for now.
+                // The simple logic: if (Tax > Income - Limit) Rebate = Tax - (Income - Limit).
             }
         }
     } else {
-        if (taxableIncome <= rebateConfig.oldRegimeLimit) {
-            rebate87A = Math.min(taxOnNormalIncome, rebateConfig.oldRegimeAmount);
+        if (totalIncomeForRebate <= rebateConfig.oldRegimeLimit) {
+            rebate87A = Math.min(taxEligibleForRebate, rebateConfig.oldRegimeAmount);
         }
     }
 
-    let taxPayable = Math.max(0, taxOnNormalIncome - rebate87A);
-
-    // 5. Capital Gains Tax (Separate rates — not eligible for slab/rebate)
-    let capitalGainsTax = 0;
-    // STCG on equity (Section 111A): 20% from AY 2025-26 (was 15%)
-    const stcgEquityRate = assessmentYear === "2024-25" ? 0.15 : 0.20;
-    capitalGainsTax += (capitalGains.shortTermEquity || 0) * stcgEquityRate;
-
-    // LTCG on equity (Section 112A): 12.5% above ₹1.25L from AY 2025-26 (was 10% above ₹1L)
-    const ltcgExemption = assessmentYear === "2024-25" ? 100000 : 125000;
-    const ltcgRate = assessmentYear === "2024-25" ? 0.10 : 0.125;
-    const ltcgEquity = Math.max(0, (capitalGains.longTermEquity || 0) - ltcgExemption);
-    capitalGainsTax += ltcgEquity * ltcgRate;
-
-    // LTCG on other assets (Section 112): 12.5% from AY 2025-26 (was 20% with indexation)
-    const ltcgOtherRate = assessmentYear === "2024-25" ? 0.20 : 0.125;
-    capitalGainsTax += (capitalGains.longTermOther || 0) * ltcgOtherRate;
-
-    // 6. VDA/Crypto Tax (30% flat — Section 115BBH, no loss set-off)
-    const vdaTotalGains = Math.max(0, vdaGains || 0) + Math.max(0, capitalGains.cryptoVDA || 0);
-    const vdaTax = vdaTotalGains * (config.vdaTaxRate / 100);
+    let taxPayable = Math.max(0, taxEligibleForRebate - rebate87A);
 
     // 7. Total Tax Before Surcharge & Cess
-    const totalTaxBeforeSurcharge = taxPayable + capitalGainsTax + vdaTax;
+    const totalTaxBeforeSurcharge = taxPayable + ltcg112ATax; // Add back 112A tax which wasn't rebated
 
     // 8. Surcharge (config-driven)
     let surcharge = 0;

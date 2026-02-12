@@ -32,6 +32,7 @@ import { calculateDetailedPortfolio } from '@/lib/crypto-engine';
 import { StepExplainer } from '@/components/filing/StepExplainer';
 import { EnhancedDeductionsStep } from '@/components/filing/EnhancedDeductionsStep';
 import { RegimeComparisonCard } from '@/components/filing/RegimeComparisonCard';
+import AISUploader from '@/components/AISUploader';
 
 // ============= TYPES =============
 interface IncomeSource {
@@ -336,7 +337,7 @@ export function SmartFilingWizard() {
 
         try {
             const { error } = await supabase
-                .from('filing_steps_state')
+                .from('filing_steps_state' as any)
                 .upsert({
                     user_id: user.id,
                     current_step: currentStep,
@@ -390,7 +391,7 @@ export function SmartFilingWizard() {
 
                 // 2. Load primary bank
                 const { data: banks } = await supabase
-                    .from('bank_details')
+                    .from('bank_details' as any)
                     .select('*')
                     .eq('user_id', user.id)
                     .eq('is_primary', true)
@@ -402,7 +403,7 @@ export function SmartFilingWizard() {
                         accountNumber: bank.account_number || '',
                         ifsc: bank.ifsc_code || '',
                         bankName: bank.bank_name || '',
-                        accountType: bank.account_type === 'savings' ? 'SB' : 'CA'
+                        accountType: (bank.account_type === 'savings' ? 'SB' : 'CA') as any
                     });
                 }
 
@@ -414,10 +415,11 @@ export function SmartFilingWizard() {
                     .maybeSingle();
 
                 if (progress) {
-                    const answers = progress.answers || {};
+                    const answers = (progress.answers as any) || {};
                     if (progress.current_step) {
-                        setStep(progress.current_step);
-                        setMaxStepReached(progress.current_step);
+                        const stepNum = Number(progress.current_step);
+                        setStep(stepNum);
+                        setMaxStepReached(stepNum);
                     }
                     if (answers.income) setIncome(answers.income);
                     if (answers.deductions) setDeductions(answers.deductions);
@@ -500,55 +502,62 @@ export function SmartFilingWizard() {
         return 'ITR-2'; // Default fallback
     }, [income]);
 
-    // Calculate tax
+    // Calculate tax using the robust engine
     const taxCalculation = useMemo(() => {
-        const totalIncome = income.salaryGross + income.freelanceGross + income.rentalIncome +
-            income.savingsInterest + income.fdInterest + income.dividendIncome + income.otherIncome;
+        // Prepare House Property Income
+        // Taxable = (Gross - Municipal Taxes) * 70% - Interest
+        // We assume rentalExpenses = Municipal Taxes paid
+        const netAnnualValue = Math.max(0, income.rentalIncome - income.rentalExpenses);
+        const incomeFromHP = (netAnnualValue * 0.7) - income.homeLoanInterest;
 
-        const totalDeductions = selectedRegime === 'OLD' ?
-            (deductions.section80C + deductions.section80D + deductions.section80CCD1B +
-                deductions.section80E + deductions.section80G + Math.min(10000, deductions.section80TTA)) : 0;
+        const taxData: any = {
+            salary: income.salaryGross,
+            houseProperty: incomeFromHP,
+            otherSources: {
+                savingsInterest: income.savingsInterest,
+                fdInterest: income.fdInterest,
+                dividends: income.dividendIncome,
+                misc: income.otherIncome
+            },
+            businessIncome: income.freelanceGross,
+            capitalGains: {
+                shortTermEquity: income.stcgEquity,
+                longTermEquity: income.ltcgEquity,
+                shortTermOther: income.stcgOther,
+                longTermOther: income.ltcgOther,
+                cryptoVDA: income.cryptoGains,
+            },
+            vdaGains: 0, // already included in cryptoVDA usually or generic VDA
+            deductions: {
+                section80C: deductions.section80C,
+                section80D: deductions.section80D,
+                section80TTA: deductions.section80TTA,
+                section80E: deductions.section80E,
+                section80G: deductions.section80G,
+                nps80CCD: deductions.section80CCD1B, // 80CCD(1B)
+                nps80CCD2: deductions['section_80ccd_2'] || deductions.section80CCD2, // Handle key variation
+                section80GG: deductions.section80GG,
+                hra: deductions.hra,
+                lta: deductions.lta,
+                // Add others if present in state
+            },
+            regime: selectedRegime === 'NEW' ? 'new' : 'old',
+            assessmentYear: '2026-27',
+            tdsPaid: income.salaryTDS + income.cryptoTDS,
+            advanceTaxPaid: 0, // Not captured yet
+            selfAssessmentTax: 0
+        };
 
-        const standardDeduction = selectedRegime === 'NEW' ? 75000 : 50000;
-        const taxableIncome = Math.max(0, totalIncome - standardDeduction - totalDeductions);
+        const result = calculateTax(taxData);
 
-        // Simplified tax calculation
-        let tax = 0;
-        if (selectedRegime === 'NEW') {
-            if (taxableIncome <= 300000) tax = 0;
-            else if (taxableIncome <= 700000) tax = (taxableIncome - 300000) * 0.05;
-            else if (taxableIncome <= 1000000) tax = 20000 + (taxableIncome - 700000) * 0.10;
-            else if (taxableIncome <= 1200000) tax = 50000 + (taxableIncome - 1000000) * 0.15;
-            else if (taxableIncome <= 1500000) tax = 80000 + (taxableIncome - 1200000) * 0.20;
-            else tax = 140000 + (taxableIncome - 1500000) * 0.30;
-
-            // 87A Rebate
-            if (taxableIncome <= 700000) tax = 0;
-        } else {
-            if (taxableIncome <= 250000) tax = 0;
-            else if (taxableIncome <= 500000) tax = (taxableIncome - 250000) * 0.05;
-            else if (taxableIncome <= 1000000) tax = 12500 + (taxableIncome - 500000) * 0.20;
-            else tax = 112500 + (taxableIncome - 1000000) * 0.30;
-
-            if (taxableIncome <= 500000) tax = 0;
-        }
-
-        // Crypto tax (30% flat)
-        const cryptoTax = income.cryptoGains > 0 ? income.cryptoGains * 0.30 : 0;
-
-        // Capital gains tax
-        const stcgTax = (income.stcgEquity * 0.15) + (income.stcgOther * 0.30);
-        const ltcgTax = Math.max(0, income.ltcgEquity - 100000) * 0.10 + (income.ltcgOther * 0.20);
-
-        const totalTax = tax + cryptoTax + stcgTax + ltcgTax;
-        const cess = totalTax * 0.04;
-        const finalTax = totalTax + cess;
-
-        const tdsPaid = income.salaryTDS + income.cryptoTDS;
-        const netPayable = Math.max(0, finalTax - tdsPaid);
-        const refund = tdsPaid > finalTax ? tdsPaid - finalTax : 0;
-
-        return { totalIncome, taxableIncome, totalTax: finalTax, tdsPaid, netPayable, refund };
+        return {
+            totalIncome: result.grossTotalIncome,
+            taxableIncome: result.taxableIncome,
+            totalTax: result.netTaxPayable,
+            tdsPaid: result.tdsPaid,
+            netPayable: result.refundOrDue > 0 && !result.isRefund ? result.refundOrDue : 0,
+            refund: result.isRefund ? result.refundOrDue : 0
+        };
     }, [income, deductions, selectedRegime]);
 
     // Auto-save when details change
@@ -777,36 +786,61 @@ export function SmartFilingWizard() {
                                 variant="info"
                                 defaultOpen={false}
                             />
-                            <div className="grid md:grid-cols-2 gap-6">
-                                {/* AIS Download */}
-                                <div className="p-6 rounded-2xl border-2 border-white bg-white shadow-sm hover:shadow-md transition-all group">
-                                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-white transition-all">
-                                        <FileText className="h-5 w-5" />
-                                    </div>
-                                    <h3 className="font-black text-lg mb-2">Annual Information Statement (AIS)</h3>
-                                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-                                        Link your salary, interest, and stock market trades reported by banks and companies.
+                            <div className="bg-white rounded-xl border-2 border-slate-100 overflow-hidden">
+                                <div className="p-4 bg-slate-50 border-b border-slate-100">
+                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                        <Upload className="h-5 w-5 text-primary" /> Upload AIS (Annual Information Statement)
+                                    </h3>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Download the JSON or PDF from the Income Tax Portal and drop it here. We'll auto-read your Salary, Interest, and TDS.
                                     </p>
-                                    <ol className="space-y-3 text-[11px] text-slate-600 mb-6">
-                                        <li className="flex gap-2">
-                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">1</Badge>
-                                            <span>Login at <a href="https://www.incometax.gov.in" target="_blank" rel="noopener noreferrer" className="text-primary underline font-bold">incometax.gov.in</a></span>
-                                        </li>
-                                        <li className="flex gap-2">
-                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">2</Badge>
-                                            <span>Click <strong>'AIS'</strong> under Services Menu</span>
-                                        </li>
-                                        <li className="flex gap-2">
-                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-primary text-primary font-bold">3</Badge>
-                                            <span>Download the <strong>PDF</strong> for FY 2025-26</span>
-                                        </li>
-                                    </ol>
-                                    <Button className="w-full bg-primary/5 text-primary hover:bg-primary hover:text-white font-bold h-10 border-primary/20" variant="outline" onClick={() => navigate('/ais')}>
-                                        <Upload className="h-4 w-4 mr-2" /> Upload AIS to TaxMitra
-                                    </Button>
                                 </div>
+                                <div className="p-6">
+                                    <AISUploader
+                                        onAutoFill={(data) => {
+                                            toast.success("Details auto-filled from AIS!");
+                                            setIncome(prev => ({
+                                                ...prev,
+                                                // Salary
+                                                hasSalary: (data.salary || 0) > 0,
+                                                salaryGross: data.salary || 0,
+                                                salaryTDS: data.salaryTDS || 0,
 
-                                {/* Crypto Data */}
+                                                // Interest
+                                                hasInterest: (data.interestIncome || 0) > 0,
+                                                savingsInterest: data.interestIncome || 0,
+
+                                                // Dividends
+                                                hasDividends: (data.dividendIncome || 0) > 0,
+                                                dividendIncome: data.dividendIncome || 0,
+
+                                                // Capital Gains (Generic mapping, user can refine)
+                                                hasShares: (data.capitalGains || 0) > 0,
+                                                stcgEquity: data.capitalGains || 0,
+
+                                                // Business (Not auto-detected yet)
+                                                // hasFreelance: false, 
+
+                                                // Other TDS (Sum of interest + dividend TDS)
+                                                cryptoTDS: 0,
+                                                // We should probably add interest TDS to FD interest field or similar?
+                                                // For now, let's just use what we have.
+                                            }));
+
+                                            if (data.pan && data.pan !== 'MANUAL_ENTRY') {
+                                                setPersonalInfo(prev => ({ ...prev, pan: data.pan }));
+                                            }
+
+                                            // Move to next step after a short delay to let user see success
+                                            setTimeout(() => setStep(2), 1500);
+                                        }}
+                                        onNext={() => setStep(2)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-6 mt-6">
+                                {/* Crypto Data Link - Keep as external or integrated later */}
                                 <div className="p-6 rounded-2xl border-2 border-white bg-white shadow-sm hover:shadow-md transition-all group">
                                     <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center mb-4 group-hover:bg-amber-500 group-hover:text-white transition-all">
                                         <Bitcoin className="h-5 w-5" />
@@ -815,18 +849,18 @@ export function SmartFilingWizard() {
                                     <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
                                         Section 115BBH requires detailed reporting of every VDA transfer.
                                     </p>
-                                    <ol className="space-y-3 text-[11px] text-slate-600 mb-6">
-                                        <li className="flex gap-2">
-                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-amber-500 text-amber-600 font-bold">1</Badge>
-                                            <span>Download CSV from WazirX, CoinDCX, or Binance</span>
-                                        </li>
-                                        <li className="flex gap-2">
-                                            <Badge variant="outline" className="h-4 w-4 rounded-full p-0 flex items-center justify-center shrink-0 border-amber-500 text-amber-600 font-bold">2</Badge>
-                                            <span>Ensure date range is April 2025 - March 2026</span>
-                                        </li>
-                                    </ol>
                                     <Button className="w-full bg-amber-500/5 text-amber-700 hover:bg-amber-600 hover:text-white font-bold h-10 border-amber-500/20" variant="outline" onClick={() => navigate('/crypto')}>
                                         <Bitcoin className="h-4 w-4 mr-2" /> Go to Crypto Calculator
+                                    </Button>
+                                    <p className="text-[10px] text-center text-muted-foreground mt-2">
+                                        (Calculates P&L and returns you here)
+                                    </p>
+                                </div>
+
+                                <div className="p-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-center">
+                                    <p className="text-sm font-bold text-slate-600 mb-2">Don't have AIS?</p>
+                                    <Button variant="ghost" className="text-primary hover:bg-primary/10" onClick={() => setStep(2)}>
+                                        Skip & Enter Manually <ArrowRight className="h-4 w-4 ml-1" />
                                     </Button>
                                 </div>
                             </div>
@@ -942,7 +976,29 @@ export function SmartFilingWizard() {
                 )}
 
                 {/* Step 3: Enter Income Details */}
-                {step === 3 && (
+                {step === 3 && !(income.hasSalary || income.hasFreelance || income.hasShares || income.hasInterest || income.hasDividends || income.hasRental || income.hasOther || income.hasAgriculture || income.hasForeignIncome) && (
+                    <div className="space-y-6">
+                        <Card className="border-2 border-dashed border-amber-200 bg-amber-50">
+                            <CardContent className="flex flex-col items-center justify-center p-8 text-center pt-12 pb-12">
+                                <AlertCircle className="h-12 w-12 text-amber-500 mb-4" />
+                                <h3 className="font-bold text-xl text-amber-900 mb-2">No Income Sources Selected</h3>
+                                <p className="text-sm text-amber-800/80 mb-6 max-w-md mx-auto leading-relaxed">
+                                    To file an ITR, you must have some income to report! <br /> Please go back to Step 2 and select at least one source (e.g., Salary, Interest, or Business).
+                                </p>
+                                <Button
+                                    variant="default"
+                                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-amber-600/20"
+                                    onClick={() => setStep(2)}
+                                >
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Go Back to Select Income
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
+
+                {step === 3 && (income.hasSalary || income.hasFreelance || income.hasShares || income.hasInterest || income.hasDividends || income.hasRental || income.hasOther || income.hasAgriculture || income.hasForeignIncome) && (
                     <div className="space-y-6">
                         <StepExplainer
                             emoji="📝"
@@ -1155,14 +1211,23 @@ export function SmartFilingWizard() {
                                                     placeholder="Total money received this year"
                                                     value={income.freelanceTurnover || ''}
                                                     onChange={e => {
-                                                        const val = Number(e.target.value);
-                                                        updateIncomeField('freelanceTurnover', val);
-                                                        if (income.freelanceSection === '44ADA') {
-                                                            updateIncomeField('freelanceGross', val * 0.5);
-                                                        } else if (income.freelanceSection === '44AD') {
-                                                            updateIncomeField('freelanceGross', val * 0.06);
+                                                        const rawValue = e.target.value;
+                                                        // Update the field directly first to allow typing
+                                                        updateIncomeField('freelanceTurnover', rawValue);
+
+                                                        // Calculate potential profit only if valid number
+                                                        const val = parseFloat(rawValue);
+                                                        if (!isNaN(val) && val >= 0) {
+                                                            if (income.freelanceSection === '44ADA') {
+                                                                updateIncomeField('freelanceGross', val * 0.5);
+                                                            } else if (income.freelanceSection === '44AD') {
+                                                                updateIncomeField('freelanceGross', val * 0.06); // 6% assumed for digital
+                                                            } else if (income.freelanceSection === 'Regular') {
+                                                                updateIncomeField('freelanceGross', val - (income.freelanceExpenses || 0));
+                                                            }
                                                         }
                                                     }}
+                                                    min={0}
                                                 />
                                             </div>
                                             <p className="text-[10px] text-muted-foreground italic">💡 Total amount you received from clients/customers (before any expenses). Check bank statements for all credit entries from business.</p>
@@ -1177,7 +1242,24 @@ export function SmartFilingWizard() {
                                                         className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50"
                                                         placeholder="Rent, salaries, materials, etc."
                                                         value={income.freelanceExpenses || ''}
-                                                        onChange={e => updateIncomeField('freelanceExpenses', e.target.value)}
+                                                        onChange={e => {
+                                                            const raw = e.target.value;
+                                                            if (raw === '') {
+                                                                updateIncomeField('freelanceExpenses', 0);
+                                                                if (income.freelanceSection === 'Regular') {
+                                                                    updateIncomeField('freelanceGross', (income.freelanceTurnover || 0));
+                                                                }
+                                                                return;
+                                                            }
+                                                            const val = parseFloat(raw);
+                                                            if (!isNaN(val) && val >= 0) {
+                                                                updateIncomeField('freelanceExpenses', val);
+                                                                if (income.freelanceSection === 'Regular') {
+                                                                    updateIncomeField('freelanceGross', (income.freelanceTurnover || 0) - val);
+                                                                }
+                                                            }
+                                                        }}
+                                                        min={0}
                                                     />
                                                 </div>
                                                 <p className="text-[10px] text-muted-foreground italic">💡 All legitimate business costs: office rent, internet, laptop, travel, raw materials, employee salaries, etc.</p>
