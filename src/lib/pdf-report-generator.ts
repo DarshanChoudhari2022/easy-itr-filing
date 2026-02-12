@@ -121,12 +121,12 @@ export function generateCompleteTaxReport(data: TaxReportData): void {
     doc.setFontSize(10);
 
     const summaryData = [
-        ['Total Sale Consideration', `₹${data.summary.totalSellValue.toLocaleString('en-IN')}`],
-        ['Total Cost of Acquisition', `₹${data.summary.totalBuyValue.toLocaleString('en-IN')}`],
-        ['Net Capital Gains', `₹${data.summary.netGainLoss.toLocaleString('en-IN')}`],
-        ['Tax @ 30%', `₹${data.summary.taxAt30Percent.toLocaleString('en-IN')}`],
-        ['TDS Already Paid (1%)', `₹${data.summary.totalTDSPaid.toLocaleString('en-IN')}`],
-        ['Net Tax Payable', `₹${data.summary.netTaxPayable.toLocaleString('en-IN')}`],
+        ['Total Sale Consideration', `INR ${data.summary.totalSellValue.toLocaleString('en-IN')}`],
+        ['Total Cost of Acquisition', `INR ${data.summary.totalBuyValue.toLocaleString('en-IN')}`],
+        ['Net Capital Gains', `INR ${data.summary.netGainLoss.toLocaleString('en-IN')}`],
+        ['Tax @ 30%', `INR ${data.summary.taxAt30Percent.toLocaleString('en-IN')}`],
+        ['TDS Already Paid (1%)', `INR ${data.summary.totalTDSPaid.toLocaleString('en-IN')}`],
+        ['Net Tax Payable', `INR ${data.summary.netTaxPayable.toLocaleString('en-IN')}`],
     ];
 
     let xLeft = 14;
@@ -169,7 +169,7 @@ export function generateCompleteTaxReport(data: TaxReportData): void {
     if (data.scheduleVDA.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Sl.', 'Date of Transfer', 'Head of Income', 'Description', 'Sale Value (₹)', 'Cost (₹)', 'Gain/Loss (₹)']],
+            head: [['Sl.', 'Date of Transfer', 'Head of Income', 'Description', 'Sale Value (INR)', 'Cost (INR)', 'Gain/Loss (INR)']],
             body: data.scheduleVDA.map(row => [
                 row.slNo.toString(),
                 row.dateOfTransfer,
@@ -222,13 +222,13 @@ export function generateCompleteTaxReport(data: TaxReportData): void {
     if (data.tokenWiseSummary.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Token', 'Qty Bought', 'Qty Sold', 'Avg Buy Price', 'Realized Gain/Loss', 'Current Holding']],
+            head: [['Token', 'Qty Bought', 'Qty Sold', 'Avg Buy (INR)', 'Realized (INR)', 'Holding']],
             body: data.tokenWiseSummary.map(row => [
                 row.token,
                 row.totalBought.toFixed(6),
                 row.totalSold.toFixed(6),
-                `₹${row.avgBuyPrice.toLocaleString('en-IN')}`,
-                `₹${row.realizedGain.toLocaleString('en-IN')}`,
+                `${row.avgBuyPrice.toLocaleString('en-IN')}`,
+                `${row.realizedGain.toLocaleString('en-IN')}`,
                 row.currentHolding.toFixed(6)
             ]),
             theme: 'grid',
@@ -268,7 +268,7 @@ export function generateCompleteTaxReport(data: TaxReportData): void {
     if (data.exchangeWiseTDS.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Exchange/Platform', 'Total Sales Value (₹)', 'TDS Deducted @ 1% (₹)']],
+            head: [['Exchange/Platform', 'Total Sales Value (INR)', 'TDS Deducted @ 1% (INR)']],
             body: data.exchangeWiseTDS.map(row => [
                 row.exchange,
                 row.totalSales.toLocaleString('en-IN'),
@@ -359,9 +359,9 @@ export function generateScheduleVDAPDF(data: TaxReportData): void {
                 'Date of Transfer\n(DD/MM/YYYY)',
                 'Head of Income',
                 'Description of VDA\n(with Symbol)',
-                'Sale Consideration\n(₹)',
-                'Cost of Acquisition\n(₹)',
-                'Income from Transfer\n(₹)'
+                'Sale Consideration\n(INR)',
+                'Cost of Acquisition\n(INR)',
+                'Income from Transfer\n(INR)'
             ]],
             body: data.scheduleVDA.map(row => [
                 row.slNo.toString(),
@@ -453,7 +453,7 @@ export function generateFIFOAuditTrailPDF(
     if (fifoMatches.length > 0) {
         autoTable(doc, {
             startY: 45,
-            head: [['Sale Date', 'Token', 'Qty Sold', 'Sale Price (₹)', 'Buy Date (FIFO)', 'Buy Price (₹)', 'Gain/Loss (₹)']],
+            head: [['Sale Date', 'Token', 'Qty Sold', 'Sale Price (INR)', 'Buy Date (FIFO)', 'Buy Price (INR)', 'Gain/Loss (INR)']],
             body: fifoMatches.map(m => [
                 m.sellDate,
                 m.token,

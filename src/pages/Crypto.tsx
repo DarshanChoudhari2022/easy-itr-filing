@@ -38,7 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
-import { generateKoinXReport, buildKoinXReportData } from "@/lib/koinx-report-generator";
+import { generateComprehensiveReport, buildComprehensiveReportData } from "@/lib/comprehensive-report-generator";
 import { PlanGate } from "@/hooks/usePlanGuard";
 
 // Types
@@ -1178,14 +1178,14 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
     assessmentYear: '2026-27'
   };
 
-  const handleGenerateKoinXReport = async () => {
+  const handleGenerateComprehensiveReport = async () => {
     if (trades.length === 0) {
       toast.error('No trades to generate report');
       return;
     }
-    setGenerating('koinx');
+    setGenerating('comprehensive');
     try {
-      const reportData = buildKoinXReportData(
+      const reportData = buildComprehensiveReportData(
         portfolio,
         trades,
         {
@@ -1197,8 +1197,8 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
         '2025-26',
         '2026-27'
       );
-      generateKoinXReport(reportData);
-      toast.success('KoinX-style Comprehensive Tax Report downloaded!');
+      generateComprehensiveReport(reportData);
+      toast.success('Comprehensive Tax Report downloaded!');
     } catch (error) {
       console.error('Report generation error:', error);
       toast.error('Failed to generate report');
@@ -1292,7 +1292,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
               <FileSpreadsheet className="h-6 w-6" />
               <div>
                 <h3 className="text-lg font-semibold">Crypto Tax Reports — AY 2026-27</h3>
-                <p className="text-indigo-200 text-sm">KoinX-style comprehensive report with Schedule VDA, Asset P&L, FIFO audit trail</p>
+                <p className="text-indigo-200 text-sm">Comprehensive report with Schedule VDA, Asset P&L, FIFO audit trail</p>
               </div>
             </div>
             <Badge className="bg-white/20 text-white border-white/30">{trades.length} trades</Badge>
@@ -1430,7 +1430,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
 
       {/* Download Buttons */}
       <div className="grid md:grid-cols-3 gap-4">
-        {/* KoinX-style Report (MAIN) */}
+        {/* Premium Comprehensive Report (MAIN) */}
         <Card className="border-2 border-indigo-300 shadow-md">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
@@ -1438,16 +1438,16 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                 <Sparkles className="h-6 w-6 text-white" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">KoinX-Style Report</h3>
+                <h3 className="font-semibold text-slate-900">TaxMitra Premium Report</h3>
                 <p className="text-sm text-slate-503 mt-1">
                   Full multi-page report: Transaction Preferences, Capital Gains, Asset P&L, TDS, Schedule VDA, Tax Computation
                 </p>
                 <Button
                   className="mt-4 bg-indigo-600 hover:bg-indigo-700 w-full"
                   disabled={generating !== null || trades.length === 0}
-                  onClick={handleGenerateKoinXReport}
+                  onClick={handleGenerateComprehensiveReport}
                 >
-                  {generating === 'koinx' ? (
+                  {generating === 'comprehensive' ? (
                     <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
                   ) : (
                     <><Download className="h-4 w-4 mr-2" /> Download Full Report</>

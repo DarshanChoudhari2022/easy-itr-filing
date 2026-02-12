@@ -1,4 +1,4 @@
-# KoinX-Style "No-CA" Individual Filing Plan
+# Premium "No-CA" Individual Filing Plan
 
 To enable a 100% autonomous, zero-knowledge tax filing experience for individuals (including crypto owners), we will implement the following:
 
@@ -15,8 +15,8 @@ To enable a 100% autonomous, zero-knowledge tax filing experience for individual
     *   Freelancing/Consultancy < 75L = **ITR-4 (Presumptive)**
     *   Freelancing + Capital Gains = **ITR-3**
 
-## 2. Deep Crypto Integration (KoinX Mode)
-*   **Transaction Sync**: Allow pasting CSV/JSON from Binance/CoinDCX/KoinX directly into the wizard.
+## 2. Deep Crypto Integration (Premium Mode)
+*   **Transaction Sync**: Allow pasting CSV/JSON from Binance/CoinDCX directly into the wizard.
 *   **Section 115BBH Enforcement**: Highlighting 30% tax on gains without loss set-off.
 *   **Per-Token Reporting**: Automatically filling the "Schedule VDA" required for the ITR.
 

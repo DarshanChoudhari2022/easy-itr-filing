@@ -1,6 +1,6 @@
 /**
- * KoinX-Style Comprehensive Crypto Tax Report Generator
- * Generates a detailed multi-page PDF matching KoinX report format
+ * TaxMitra Comprehensive Crypto Tax Report Generator
+ * Generates a detailed multi-page PDF for tax filing
  * 
  * Sections:
  * 1. Cover Page with User Info
@@ -22,7 +22,7 @@ import autoTable from 'jspdf-autotable';
 
 // ============= TYPES =============
 
-export interface KoinXReportData {
+export interface ComprehensiveReportData {
     user: {
         name: string;
         pan: string;
@@ -117,31 +117,31 @@ export interface KoinXReportData {
 function formatINR(amount: number, showSign = false): string {
     const abs = Math.abs(amount);
     let str: string;
-    if (abs >= 10000000) str = `₹${(abs / 10000000).toFixed(2)} Cr`;
-    else if (abs >= 100000) str = `₹${(abs / 100000).toFixed(2)} L`;
-    else str = `₹${abs.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    if (abs >= 10000000) str = `INR ${(abs / 10000000).toFixed(2)} Cr`;
+    else if (abs >= 100000) str = `INR ${(abs / 100000).toFixed(2)} L`;
+    else str = `${abs.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
     if (showSign && amount < 0) str = '-' + str;
     return str;
 }
 
 function formatINRExact(amount: number): string {
-    return `₹${Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // ============= MAIN GENERATOR =============
 
-export function generateKoinXReport(data: KoinXReportData): void {
+export function generateComprehensiveReport(data: ComprehensiveReportData): void {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
 
     // Brand Colors
-    const brandPrimary: [number, number, number] = [79, 70, 229]; // Indigo
-    const brandDark: [number, number, number] = [15, 23, 42];
-    const brandGray: [number, number, number] = [100, 116, 139];
-    const brandGreen: [number, number, number] = [16, 185, 129];
-    const brandRed: [number, number, number] = [239, 68, 68];
-    const bgLight: [number, number, number] = [248, 250, 252];
+    const brandPrimary: [number, number, number] = [67, 56, 202]; // Indigo-700
+    const brandDark: [number, number, number] = [17, 24, 39]; // Gray-900
+    const brandGray: [number, number, number] = [75, 85, 99]; // Gray-600
+    const brandGreen: [number, number, number] = [5, 150, 105];
+    const brandRed: [number, number, number] = [185, 28, 28];
+    const bgLight: [number, number, number] = [249, 250, 251];
 
     let yPos = 0;
 
@@ -154,16 +154,16 @@ export function generateKoinXReport(data: KoinXReportData): void {
     doc.rect(0, 0, pageWidth, 50, 'F');
 
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(28);
+    doc.setFontSize(26);
     doc.setFont('helvetica', 'bold');
-    doc.text('CRYPTO TAX REPORT', pageWidth / 2, 22, { align: 'center' });
+    doc.text('PREMIUM CRYPTO TAX REPORT', pageWidth / 2, 22, { align: 'center' });
 
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text('TaxMitra — Your Complete Crypto Tax Solution', pageWidth / 2, 35, { align: 'center' });
+    doc.text('TaxMitra — Precision-Engineered Crypto Tax Compliance', pageWidth / 2, 34, { align: 'center' });
 
-    doc.setFontSize(10);
-    doc.text(`www.taxmitra.app`, pageWidth / 2, 45, { align: 'center' });
+    doc.setFontSize(9);
+    doc.text(`Report ID: ${Math.random().toString(36).substring(2, 10).toUpperCase()}`, pageWidth / 2, 44, { align: 'center' });
 
     yPos = 60;
 
@@ -276,24 +276,32 @@ export function generateKoinXReport(data: KoinXReportData): void {
 
     autoTable(doc, {
         startY: yPos,
-        head: [['', 'Label', 'Description', 'Capital Gains']],
+        head: [['', 'Label', 'Description', 'Amount (INR)']],
         body: cgRows,
         theme: 'grid',
         headStyles: {
-            fillColor: [226, 232, 240],
+            fillColor: [230, 230, 250],
             textColor: brandDark,
             fontStyle: 'bold',
-            fontSize: 9
+            fontSize: 10,
+            halign: 'center'
         },
-        bodyStyles: { fontSize: 8, textColor: brandDark },
+        bodyStyles: { fontSize: 9, textColor: brandDark, cellPadding: 3 },
         columnStyles: {
-            0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+            0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
             1: { cellWidth: 50, fontStyle: 'bold' },
-            2: { cellWidth: 80, textColor: brandGray, fontSize: 7 },
-            3: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
+            2: { cellWidth: 70, textColor: brandGray, fontSize: 8 },
+            3: { cellWidth: 43, halign: 'right', fontStyle: 'bold' }
         },
         margin: { left: 15, right: 15 }
     });
+
+    yPos = (doc as any).lastAutoTable.finalY + 8;
+    doc.setTextColor(...brandRed);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.text('* Note: Tax is calculated on Gross Profits (item d). Losses (item e) cannot be deducted from gains.', 15, yPos);
+    yPos += 15;
 
     yPos = (doc as any).lastAutoTable.finalY + 15;
 
@@ -314,7 +322,7 @@ export function generateKoinXReport(data: KoinXReportData): void {
     if (data.exchangeTDS.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Source name', 'Custom name', 'TDS Deducted']],
+            head: [['Source name', 'Custom name', 'TDS Deducted (INR)']],
             body: data.exchangeTDS.map(e => [e.sourceName, e.customName, formatINRExact(e.tdsDeducted)]),
             theme: 'grid',
             headStyles: { fillColor: brandPrimary, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
@@ -387,14 +395,14 @@ export function generateKoinXReport(data: KoinXReportData): void {
     if (data.otherIncomes.airdropIncome > 0) otherIncomeRows.push(['Airdrop Income', formatINRExact(data.otherIncomes.airdropIncome)]);
 
     if (otherIncomeRows.length === 0) {
-        otherIncomeRows.push(['No other income recorded', '₹0.00']);
+        otherIncomeRows.push(['No other income recorded', '0.00']);
     }
 
     otherIncomeRows.push(['Total', formatINRExact(data.otherIncomes.total)]);
 
     autoTable(doc, {
         startY: yPos,
-        head: [['Summary of Other Incomes', '']],
+        head: [['Summary of Other Incomes', 'Amount (INR)']],
         body: otherIncomeRows,
         theme: 'grid',
         headStyles: { fillColor: brandPrimary, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
@@ -427,7 +435,7 @@ export function generateKoinXReport(data: KoinXReportData): void {
 
     autoTable(doc, {
         startY: yPos,
-        head: [['Summary of Other Expenses, STTs, and Deduction Direct', '']],
+        head: [['Summary of Other Expenses, STTs, and Deduction Direct', 'Amount (INR)']],
         body: [
             ['Brokerage Fee', formatINRExact(data.otherExpenses.brokerageFee)],
             ['Total', formatINRExact(data.otherExpenses.total)],
@@ -468,11 +476,11 @@ export function generateKoinXReport(data: KoinXReportData): void {
     if (data.assetWisePnL.length > 0) {
         autoTable(doc, {
             startY: yPos,
-            head: [['Asset Name', 'Gross Profit', 'Gross Loss', 'Net Gains']],
+            head: [['Asset Name', 'Gross Profit (INR)', 'Gross Loss (INR)', 'Net Gains (INR)']],
             body: data.assetWisePnL.map(a => [
                 a.assetName,
                 formatINRExact(a.grossProfit),
-                a.grossLoss > 0 ? formatINRExact(a.grossLoss) : '₹0',
+                a.grossLoss > 0 ? formatINRExact(a.grossLoss) : '0.00',
                 a.netGains >= 0
                     ? formatINRExact(a.netGains)
                     : `-${formatINRExact(Math.abs(a.netGains))}`
@@ -482,10 +490,10 @@ export function generateKoinXReport(data: KoinXReportData): void {
                 fillColor: brandPrimary,
                 textColor: [255, 255, 255],
                 fontStyle: 'bold',
-                fontSize: 9
+                fontSize: 10
             },
-            bodyStyles: { fontSize: 9, textColor: brandDark },
-            alternateRowStyles: { fillColor: [248, 250, 252] },
+            bodyStyles: { fontSize: 9, textColor: brandDark, cellPadding: 3 },
+            alternateRowStyles: { fillColor: bgLight },
             columnStyles: {
                 0: { cellWidth: 40 },
                 1: { halign: 'right', cellWidth: 40 },
@@ -627,9 +635,9 @@ export function generateKoinXReport(data: KoinXReportData): void {
                 'Date of Transfer\n(DD/MM/YYYY)',
                 'Head of Income',
                 'Description of VDA\n(with Symbol)',
-                'Sale Consideration\n(₹)',
-                'Cost of Acquisition\n(₹)',
-                'Income from Transfer\n(₹)'
+                'Sale Consideration\n(INR)',
+                'Cost of Acquisition\n(INR)',
+                'Income from Transfer\n(INR)'
             ]],
             body: data.scheduleVDA.map(row => [
                 row.slNo.toString(),
@@ -659,10 +667,10 @@ export function generateKoinXReport(data: KoinXReportData): void {
             },
             bodyStyles: { fontSize: 9, textColor: brandDark, valign: 'middle' },
             footStyles: {
-                fillColor: [226, 232, 240],
+                fillColor: [241, 245, 249],
                 textColor: brandDark,
                 fontStyle: 'bold',
-                fontSize: 9
+                fontSize: 10
             },
             columnStyles: {
                 0: { cellWidth: 15, halign: 'center' },
@@ -699,7 +707,7 @@ export function generateKoinXReport(data: KoinXReportData): void {
         ['D', 'Tax @ 30% on Capital Gains', formatINRExact(data.capitalGains.taxableCapitalGains * 0.30)],
         ['E', 'Tax @ 30% on Other Income', formatINRExact(data.otherIncomes.total * 0.30)],
         ['F', 'Total Tax on VDA (D + E)', formatINRExact((data.capitalGains.taxableCapitalGains + data.otherIncomes.total) * 0.30)],
-        ['G', 'Surcharge (if applicable)', '₹0.00'],
+        ['G', 'Surcharge (if applicable)', '0.00'],
         ['H', 'Health & Education Cess @ 4%', formatINRExact((data.capitalGains.taxableCapitalGains + data.otherIncomes.total) * 0.30 * 0.04)],
         ['I', 'Total Tax Liability (F + G + H)', formatINRExact(
             (data.capitalGains.taxableCapitalGains + data.otherIncomes.total) * 0.30 * 1.04
@@ -713,7 +721,7 @@ export function generateKoinXReport(data: KoinXReportData): void {
 
     autoTable(doc, {
         startY: yPos,
-        head: [['', 'Particulars', 'Amount (₹)']],
+        head: [['', 'Particulars', 'Amount (INR)']],
         body: taxRows,
         theme: 'grid',
         headStyles: { fillColor: brandPrimary, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
@@ -789,20 +797,21 @@ export function generateKoinXReport(data: KoinXReportData): void {
     doc.text('Tax calculations are based on available data. TaxMitra is not liable for any discrepancies.', 20, discY + 18);
 
     // ============ SAVE ============
-    doc.save(`TaxMitra_CryptoReport_${data.financialYear.replace('-', '_')}_${data.user.pan}.pdf`);
+    const filename = `TaxMitra_CryptoReport_${data.financialYear.replace('-', '_')}_${data.user.pan}.pdf`;
+    doc.save(filename);
 }
 
 // ============= BUILDER HELPER =============
-// Converts engine portfolio data into KoinXReportData format
+// Converts engine portfolio data into ComprehensiveReportData format
 
-export function buildKoinXReportData(
+export function buildComprehensiveReportData(
     portfolio: any,
     trades: any[],
     user: { name: string; pan: string; email: string },
     settings: any,
     financialYear: string = '2025-26',
     assessmentYear: string = '2026-27'
-): KoinXReportData {
+): ComprehensiveReportData {
     // Flatten all matched lots
     const allMatchedLots = portfolio?.breakdown?.flatMap((res: any) => res.matchedLots || []) || [];
     allMatchedLots.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
@@ -899,7 +908,7 @@ export function buildKoinXReportData(
             purchaseValue: lot.buyPrice * lot.quantity,
             saleValue: lot.sellPrice * lot.quantity,
             gainOrLoss: lot.gainLoss,
-            source: 'coinlex',
+            source: 'taxmitra_engine',
             remarks: lot.holdingPeriod < 365 ? 'short-term' : 'long-term'
         })),
         scheduleVDA: allMatchedLots.map((lot: any, i: number) => ({

@@ -26,7 +26,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { calculateTax, compareRegimes } from '@/lib/tax-calculation';
+import { calculateTaxCompat } from '@/lib/tax-engine';
 import { downloadITRJson, validateITRData, ITRFilingData } from '@/lib/itr-json-generator';
 import { calculateDetailedPortfolio } from '@/lib/crypto-engine';
 import { StepExplainer } from '@/components/filing/StepExplainer';
@@ -502,15 +502,16 @@ export function SmartFilingWizard() {
         return 'ITR-2'; // Default fallback
     }, [income]);
 
-    // Calculate tax using the robust engine
+    // Calculate tax using the robust TaxEngine v2
+    // This properly separates: normal income (slabs) vs crypto (115BBH @ 30%)
+    // vs STCG (111A @ 20%) vs LTCG (112A @ 12.5%) — each taxed independently.
     const taxCalculation = useMemo(() => {
         // Prepare House Property Income
-        // Taxable = (Gross - Municipal Taxes) * 70% - Interest
-        // We assume rentalExpenses = Municipal Taxes paid
+        // HP = (Gross - Municipal Taxes) * 70% - Interest
         const netAnnualValue = Math.max(0, income.rentalIncome - income.rentalExpenses);
         const incomeFromHP = (netAnnualValue * 0.7) - income.homeLoanInterest;
 
-        const taxData: any = {
+        const result = calculateTaxCompat({
             salary: income.salaryGross,
             houseProperty: incomeFromHP,
             otherSources: {
@@ -519,44 +520,70 @@ export function SmartFilingWizard() {
                 dividends: income.dividendIncome,
                 misc: income.otherIncome
             },
+            // Business Income — now correctly uses net profit,
+            // NOT gross turnover (BUG #1 fix)
             businessIncome: income.freelanceGross,
+            businessSection: (income.freelanceSection as '44AD' | '44ADA' | 'Regular') || '44ADA',
+            businessTurnover: income.freelanceTurnover,
+            businessExpenses: income.freelanceExpenses,
             capitalGains: {
                 shortTermEquity: income.stcgEquity,
                 longTermEquity: income.ltcgEquity,
                 shortTermOther: income.stcgOther,
                 longTermOther: income.ltcgOther,
-                cryptoVDA: income.cryptoGains,
+                // Crypto is now handled SEPARATELY via vdaGains (BUG #3 fix)
+                cryptoVDA: 0,
             },
-            vdaGains: 0, // already included in cryptoVDA usually or generic VDA
+            // Crypto/VDA gains — taxed at 30% flat under Sec 115BBH
+            // NOT mixed into capital gains slabs (BUG #5 fix)
+            vdaGains: income.cryptoGains,
             deductions: {
                 section80C: deductions.section80C,
                 section80D: deductions.section80D,
                 section80TTA: deductions.section80TTA,
+                section80TTB: deductions.section80TTB,
                 section80E: deductions.section80E,
                 section80G: deductions.section80G,
-                nps80CCD: deductions.section80CCD1B, // 80CCD(1B)
-                nps80CCD2: deductions['section_80ccd_2'] || deductions.section80CCD2, // Handle key variation
+                nps80CCD: deductions.section80CCD1B,  // 80CCD(1B)
+                nps80CCD2: deductions.section80CCD2,  // 80CCD(2) — Employer NPS
                 section80GG: deductions.section80GG,
+                section80DD: deductions.section80DD,
+                section80DDB: deductions.section80DDB,
+                section80EE: deductions.section80EE,
+                section80EEA: deductions.section80EEA,
+                section80EEB: deductions.section80EEB,
+                section80U: deductions.section80U,
                 hra: deductions.hra,
                 lta: deductions.lta,
-                // Add others if present in state
             },
             regime: selectedRegime === 'NEW' ? 'new' : 'old',
             assessmentYear: '2026-27',
+            // TDS tracked by source for proper reconciliation (BUG #7 fix)
             tdsPaid: income.salaryTDS + income.cryptoTDS,
-            advanceTaxPaid: 0, // Not captured yet
+            advanceTaxPaid: 0,
             selfAssessmentTax: 0
-        };
-
-        const result = calculateTax(taxData);
+        });
 
         return {
+            // Fields consumed by the existing UI:
             totalIncome: result.grossTotalIncome,
             taxableIncome: result.taxableIncome,
-            totalTax: result.netTaxPayable,
+            totalTax: result.finalTax,
             tdsPaid: result.tdsPaid,
             netPayable: result.refundOrDue > 0 && !result.isRefund ? result.refundOrDue : 0,
-            refund: result.isRefund ? result.refundOrDue : 0
+            refund: result.isRefund ? result.refundOrDue : 0,
+            // Enhanced fields from TaxEngine v2:
+            vdaTax: result.vdaTax,
+            capitalGainsTax: result.capitalGainsTax,
+            rebate87A: result.rebate87A,
+            surcharge: result.surcharge,
+            cess: result.cess,
+            incomeBreakdown: result.incomeBreakdown,
+            warnings: result.warnings,
+            recommendedForm: result.recommendedForm,
+            cryptoTaxDetail: result.cryptoTaxDetail,
+            stcgTaxDetail: result.stcgTaxDetail,
+            ltcgTaxDetail: result.ltcgTaxDetail,
         };
     }, [income, deductions, selectedRegime]);
 
@@ -1382,7 +1409,7 @@ export function SmartFilingWizard() {
                                         <Button variant="link" className="p-0 h-auto text-indigo-600" onClick={() => navigate('/crypto')}>
                                             Go to Crypto Tax Calculator & Reports →
                                         </Button>
-                                        <Badge variant="outline" className="text-xs">KoinX-style report available</Badge>
+                                        <Badge variant="outline" className="text-xs">Comprehensive report available</Badge>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -1811,72 +1838,229 @@ export function SmartFilingWizard() {
                             </Card>
                         </div>
 
-                        <div className="lg:col-span-2 space-y-6">
+                        <div className="lg:col-span-2 space-y-4">
+                            {/* ─── Tax Computation Card ─── */}
                             <Card className="border-none shadow-2xl bg-slate-900 text-white overflow-hidden relative">
                                 {/* Decorative Background */}
                                 <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none"></div>
 
-                                <CardHeader className="relative z-10 border-b border-white/10 pb-4">
-                                    <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                                        <Calculator className="h-4 w-4 text-accent" /> Tax Computation
-                                    </CardTitle>
+                                <CardHeader className="relative z-10 border-b border-white/10 pb-3">
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                                            <Calculator className="h-4 w-4 text-accent" /> Tax Computation
+                                        </CardTitle>
+                                        {taxCalculation.recommendedForm && (
+                                            <Badge className="bg-accent/20 text-accent border-accent/30 text-[9px] font-black tracking-wider">
+                                                {taxCalculation.recommendedForm}
+                                            </Badge>
+                                        )}
+                                    </div>
                                 </CardHeader>
-                                <CardContent className="relative z-10 pt-6 space-y-6">
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between text-xs opacity-60 font-bold uppercase tracking-tighter">
-                                            <span>Income Head</span>
-                                            <span>Amount</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm py-1 border-b border-white/5">
-                                            <span className="opacity-80">Gross Total Income</span>
+                                <CardContent className="relative z-10 pt-4 space-y-4">
+                                    {/* ── Income Breakdown by Head ── */}
+                                    <div className="space-y-1.5">
+                                        <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-2">Income Breakdown</p>
+                                        {taxCalculation.incomeBreakdown && taxCalculation.incomeBreakdown.length > 0 ? (
+                                            taxCalculation.incomeBreakdown.map((item: any, i: number) => (
+                                                <div key={i} className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                    <span className="opacity-70 truncate max-w-[140px]">{item.head.replace(/_/g, ' ')}</span>
+                                                    <span className="font-bold tabular-nums">{formatCurrency(item.netAmount)}</span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                <span className="opacity-70">Total Income</span>
+                                                <span className="font-bold">{formatCurrency(taxCalculation.totalIncome)}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between text-sm py-1.5 border-b border-white/10 mt-1">
+                                            <span className="font-black text-xs uppercase tracking-tight">Gross Total Income</span>
                                             <span className="font-black">{formatCurrency(taxCalculation.totalIncome)}</span>
                                         </div>
-                                        <div className="flex justify-between text-sm py-1 border-b border-white/5">
-                                            <span className="opacity-80">Less: Deductions</span>
-                                            <span className="font-black text-emerald-400">- {formatCurrency(taxCalculation.totalIncome - taxCalculation.taxableIncome)}</span>
+                                    </div>
+
+                                    {/* ── Deductions ── */}
+                                    {(taxCalculation.totalIncome - taxCalculation.taxableIncome) > 0 && (
+                                        <div className="flex justify-between text-xs py-1 text-emerald-400">
+                                            <span className="font-bold">Less: Deductions (Ch VI-A)</span>
+                                            <span className="font-bold">- {formatCurrency(taxCalculation.totalIncome - taxCalculation.taxableIncome)}</span>
                                         </div>
-                                        <div className="flex justify-between text-sm py-1 border-b border-white/10">
-                                            <span className="font-black">Net Taxable Income</span>
-                                            <span className="font-black">{formatCurrency(taxCalculation.taxableIncome)}</span>
+                                    )}
+
+                                    <Separator className="bg-white/10" />
+
+                                    {/* ── Tax Computation Detail ── */}
+                                    <div className="space-y-1.5">
+                                        <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-2">Tax Computation</p>
+
+                                        {/* Normal Slab Tax */}
+                                        <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                            <span className="opacity-70">Tax on Normal Income (Slabs)</span>
+                                            <span className="font-bold tabular-nums">{formatCurrency(taxCalculation.totalTax - (taxCalculation.vdaTax || 0) - (taxCalculation.capitalGainsTax || 0) - (taxCalculation.surcharge || 0) - (taxCalculation.cess || 0) + (taxCalculation.rebate87A || 0))}</span>
+                                        </div>
+
+                                        {/* Crypto/VDA Tax — 115BBH */}
+                                        {(taxCalculation.vdaTax || 0) > 0 && (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                <span className="opacity-70 flex items-center gap-1">
+                                                    <Bitcoin className="h-3 w-3 text-amber-400" />
+                                                    Crypto Tax (§115BBH @30%)
+                                                </span>
+                                                <span className="font-bold text-amber-400 tabular-nums">{formatCurrency(taxCalculation.vdaTax)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Capital Gains Tax */}
+                                        {(taxCalculation.capitalGainsTax || 0) > 0 && (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                <span className="opacity-70 flex items-center gap-1">
+                                                    <TrendingUp className="h-3 w-3 text-sky-400" />
+                                                    Capital Gains Tax
+                                                </span>
+                                                <span className="font-bold text-sky-400 tabular-nums">{formatCurrency(taxCalculation.capitalGainsTax)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Rebate 87A */}
+                                        {(taxCalculation.rebate87A || 0) > 0 && (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5 text-emerald-400">
+                                                <span className="font-bold">Less: Rebate u/s 87A</span>
+                                                <span className="font-bold tabular-nums">- {formatCurrency(taxCalculation.rebate87A)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Surcharge */}
+                                        {(taxCalculation.surcharge || 0) > 0 && (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                <span className="opacity-70">Add: Surcharge</span>
+                                                <span className="font-bold tabular-nums">{formatCurrency(taxCalculation.surcharge)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Cess */}
+                                        {(taxCalculation.cess || 0) > 0 && (
+                                            <div className="flex justify-between text-xs py-1 border-b border-white/5">
+                                                <span className="opacity-70">Add: H&E Cess @4%</span>
+                                                <span className="font-bold tabular-nums">{formatCurrency(taxCalculation.cess)}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Total Tax */}
+                                        <div className="flex justify-between text-sm py-1.5 border-t border-white/20 mt-1">
+                                            <span className="font-black text-xs uppercase tracking-tight">Total Tax Liability</span>
+                                            <span className="font-black">{formatCurrency(taxCalculation.totalTax)}</span>
                                         </div>
                                     </div>
 
                                     <Separator className="bg-white/10" />
 
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between text-sm py-1">
-                                            <span className="opacity-80">Income Tax + Cess</span>
-                                            <span className="font-bold">{formatCurrency(taxCalculation.totalTax)}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm py-1 text-emerald-400">
-                                            <span className="font-bold">Total TDS Paid</span>
-                                            <span className="font-bold">- {formatCurrency(taxCalculation.tdsPaid)}</span>
-                                        </div>
+                                    {/* ── TDS Set-off ── */}
+                                    <div className="flex justify-between text-sm py-1 text-emerald-400">
+                                        <span className="font-bold text-xs">Less: TDS / Advance Tax Paid</span>
+                                        <span className="font-bold">- {formatCurrency(taxCalculation.tdsPaid)}</span>
                                     </div>
 
-                                    <div className={`p-5 rounded-2xl border-2 ${taxCalculation.refund > 0 ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-rose-500/20 border-rose-500/30'} flex flex-col items-center text-center gap-1`}>
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">
-                                            {taxCalculation.refund > 0 ? 'Tax Refund Estimated' : 'Balance Tax Payable'}
+                                    {/* ── Refund / Payable Box ── */}
+                                    <div className={`p-4 rounded-2xl border-2 ${taxCalculation.refund > 0 ? 'bg-emerald-500/20 border-emerald-500/30' : taxCalculation.netPayable > 0 ? 'bg-rose-500/20 border-rose-500/30' : 'bg-white/5 border-white/10'} flex flex-col items-center text-center gap-1`}>
+                                        <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80">
+                                            {taxCalculation.refund > 0 ? '🎉 Tax Refund Estimated' : taxCalculation.netPayable > 0 ? 'Balance Tax Payable' : '✅ No Tax Due'}
                                         </p>
-                                        <h4 className={`text-3xl font-black ${taxCalculation.refund > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        <h4 className={`text-3xl font-black ${taxCalculation.refund > 0 ? 'text-emerald-400' : taxCalculation.netPayable > 0 ? 'text-rose-400' : 'text-white/70'}`}>
                                             {formatCurrency(taxCalculation.refund > 0 ? taxCalculation.refund : taxCalculation.netPayable)}
                                         </h4>
-                                        <p className="text-[9px] mt-2 opacity-50 max-w-[180px]">Final amount will be calculated by ITD CPC based on matched TDS records.</p>
+                                        <p className="text-[8px] mt-1 opacity-40 max-w-[200px]">Final amount computed by CPC may vary based on matched TDS records.</p>
                                     </div>
 
-                                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
-                                        <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-                                            <Zap className="h-4 w-4 text-accent" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-[9px] font-black uppercase text-accent leading-none">AI Insight</p>
-                                            <p className="text-[10px] mt-1 line-clamp-2 italic opacity-70">
-                                                {selectedRegime === 'NEW' ? 'New Regime is best for you.' : 'Deductions help you save ₹42k.'}
-                                            </p>
-                                        </div>
+                                    {/* ── Regime Badge ── */}
+                                    <div className="flex items-center justify-center gap-2 py-1">
+                                        <Badge className={`text-[9px] font-bold tracking-wider ${selectedRegime === 'NEW' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-blue-500/20 text-blue-400 border-blue-500/30'}`}>
+                                            {selectedRegime === 'NEW' ? '✦ New Regime' : '✦ Old Regime'} • AY 2026-27
+                                        </Badge>
                                     </div>
                                 </CardContent>
                             </Card>
+
+                            {/* ─── Engine Warnings ─── */}
+                            {taxCalculation.warnings && taxCalculation.warnings.length > 0 && (
+                                <Card className="border-none shadow-lg bg-amber-950/80 text-amber-100 overflow-hidden">
+                                    <CardContent className="pt-4 pb-3 px-4 space-y-2">
+                                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                                            <AlertCircle className="h-3 w-3" /> Important Notes
+                                        </p>
+                                        {taxCalculation.warnings.map((w: string, i: number) => (
+                                            <p key={i} className="text-[10px] leading-relaxed opacity-80 pl-4 border-l-2 border-amber-500/30">
+                                                {w}
+                                            </p>
+                                        ))}
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* ─── Special Tax Details (expandable) ─── */}
+                            {((taxCalculation.vdaTax || 0) > 0 || (taxCalculation.capitalGainsTax || 0) > 0) && (
+                                <Card className="border-none shadow-lg bg-slate-800/90 text-white overflow-hidden">
+                                    <CardContent className="pt-4 pb-3 px-4 space-y-3">
+                                        <p className="text-[9px] font-black uppercase tracking-widest opacity-50 flex items-center gap-1.5">
+                                            <Info className="h-3 w-3" /> Special Rate Tax Details
+                                        </p>
+                                        {taxCalculation.cryptoTaxDetail && taxCalculation.cryptoTaxDetail.taxableAmount > 0 && (
+                                            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-1">
+                                                <p className="text-[10px] font-bold text-amber-400">§115BBH — Crypto/VDA</p>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                                    <span className="opacity-60">Taxable Gains</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.cryptoTaxDetail.taxableAmount)}</span>
+                                                    <span className="opacity-60">Tax @{taxCalculation.cryptoTaxDetail.rate}%</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.cryptoTaxDetail.tax)}</span>
+                                                    {taxCalculation.cryptoTaxDetail.surcharge > 0 && (
+                                                        <>
+                                                            <span className="opacity-60">Surcharge (max 15%)</span>
+                                                            <span className="text-right font-bold">{formatCurrency(taxCalculation.cryptoTaxDetail.surcharge)}</span>
+                                                        </>
+                                                    )}
+                                                    <span className="opacity-60">Cess @4%</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.cryptoTaxDetail.cess)}</span>
+                                                    <span className="font-bold text-amber-400 border-t border-amber-500/20 pt-1 mt-1">Total Crypto Tax</span>
+                                                    <span className="text-right font-black text-amber-400 border-t border-amber-500/20 pt-1 mt-1">{formatCurrency(taxCalculation.cryptoTaxDetail.totalTax)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {taxCalculation.stcgTaxDetail && taxCalculation.stcgTaxDetail.taxableAmount > 0 && (
+                                            <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 space-y-1">
+                                                <p className="text-[10px] font-bold text-sky-400">§111A — Short Term CG (Equity)</p>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                                    <span className="opacity-60">Taxable Gains</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.stcgTaxDetail.taxableAmount)}</span>
+                                                    <span className="opacity-60">Tax @{taxCalculation.stcgTaxDetail.rate}%</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.stcgTaxDetail.tax)}</span>
+                                                    <span className="font-bold text-sky-400 border-t border-sky-500/20 pt-1 mt-1">Total STCG Tax</span>
+                                                    <span className="text-right font-black text-sky-400 border-t border-sky-500/20 pt-1 mt-1">{formatCurrency(taxCalculation.stcgTaxDetail.totalTax)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {taxCalculation.ltcgTaxDetail && taxCalculation.ltcgTaxDetail.netTaxableAmount > 0 && (
+                                            <div className="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20 space-y-1">
+                                                <p className="text-[10px] font-bold text-violet-400">§112A — Long Term CG (Equity)</p>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                                    <span className="opacity-60">Gross Gains</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.ltcgTaxDetail.taxableAmount)}</span>
+                                                    {taxCalculation.ltcgTaxDetail.exemption > 0 && (
+                                                        <>
+                                                            <span className="opacity-60 text-emerald-400">Exemption</span>
+                                                            <span className="text-right font-bold text-emerald-400">- {formatCurrency(taxCalculation.ltcgTaxDetail.exemption)}</span>
+                                                        </>
+                                                    )}
+                                                    <span className="opacity-60">Tax @{taxCalculation.ltcgTaxDetail.rate}%</span>
+                                                    <span className="text-right font-bold">{formatCurrency(taxCalculation.ltcgTaxDetail.tax)}</span>
+                                                    <span className="font-bold text-violet-400 border-t border-violet-500/20 pt-1 mt-1">Total LTCG Tax</span>
+                                                    <span className="text-right font-black text-violet-400 border-t border-violet-500/20 pt-1 mt-1">{formatCurrency(taxCalculation.ltcgTaxDetail.totalTax)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            )}
                         </div>
                     </div>
                 )}
