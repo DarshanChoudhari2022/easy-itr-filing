@@ -7,10 +7,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 export default function AISReconciler() {
     const { user } = useAuth();
     const { toast } = useToast();
+    const navigate = useNavigate();
     const [itrData, setItrData] = useState<any>(null);
 
     useEffect(() => {
@@ -106,6 +108,7 @@ export default function AISReconciler() {
                                 });
                             }
                         }}
+                        onNext={() => navigate('/income')}
                     />
 
                     <Card className="bg-indigo-50 border-indigo-100">

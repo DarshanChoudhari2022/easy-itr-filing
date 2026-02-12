@@ -32,11 +32,12 @@ interface AISUploaderProps {
         tdsOther?: number;
     };
     onAutoFill?: (suggestions: ReturnType<typeof getAutoFillSuggestions>) => void;
+    onNext?: () => void;
 }
 
 type UploadStatus = 'idle' | 'processing' | 'parsed' | 'reconciled' | 'error';
 
-export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
+export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploaderProps) {
     const { toast } = useToast();
     const [status, setStatus] = useState<UploadStatus>('idle');
     const [error, setError] = useState<string | null>(null);
@@ -401,6 +402,11 @@ export default function AISUploader({ itrData, onAutoFill }: AISUploaderProps) {
                             <Button variant="outline" size="sm" onClick={reset} className="gap-1">
                                 <RefreshCw className="h-4 w-4" /> Upload New
                             </Button>
+                            {onNext && (
+                                <Button size="sm" onClick={onNext} className="gap-1 ml-auto">
+                                    Next <ArrowRight className="h-4 w-4" />
+                                </Button>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
