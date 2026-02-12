@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2, Wallet, Building2, TrendingUp, Briefcase, PiggyBank, Loader2 } from "lucide-react";
+import { Plus, Trash2, Wallet, Building2, TrendingUp, Briefcase, PiggyBank, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
 
 type IncomeSourceType = "salary" | "house_property" | "capital_gains_equity" | "capital_gains_debt" | "capital_gains_property" | "business_professional" | "other_sources";
 
@@ -64,7 +65,9 @@ export default function Income() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setIncomeSources(data || []);
+      // Filter out rows that are completely empty/corrupt (e.g. no amount and no type)
+      const validData = (data || []).filter((s: any) => s.source_type || s.amount > 0);
+      setIncomeSources(validData);
     } catch (error) {
       console.error("Error fetching income sources:", error);
       toast.error("Failed to load income sources");
@@ -385,6 +388,23 @@ export default function Income() {
             )}
           </CardContent>
         </Card>
+
+        {/* Navigation Buttons */}
+        <div className="flex items-center justify-between pt-6 border-t mt-8">
+          <Button variant="outline" asChild>
+            <Link to="/dashboard">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Link>
+          </Button>
+
+          <Button className="bg-primary hover:bg-primary/90" asChild disabled={incomeSources.length === 0}>
+            <Link to="/deductions">
+              Continue to Deductions
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </div>
     </AppLayout>
   );
