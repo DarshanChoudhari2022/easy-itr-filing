@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PlanGate } from "@/hooks/usePlanGuard";
 import AISUploader from "@/components/AISUploader";
-import { getITRFilings, ITRFilingData, saveIncomeSources, updateProfileKYC, IncomeSourcesData } from "@/lib/supabase-data-service";
+import { getITRFilings, ITRFilingData, saveIncomeSources, updateProfileKYC, IncomeSourcesData, getAISData, AISDBData } from "@/lib/supabase-data-service";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
@@ -14,12 +14,25 @@ export default function AISReconciler() {
     const { toast } = useToast();
     const navigate = useNavigate();
     const [itrData, setItrData] = useState<any>(null);
+    const [aisDBData, setAisDBData] = useState<AISDBData | undefined>(undefined);
 
     useEffect(() => {
         if (user) {
             loadITRData();
+            fetchAISData();
         }
     }, [user]);
+
+    const fetchAISData = async () => {
+        try {
+            const data = await getAISData('2025-26');
+            if (data) {
+                setAisDBData(data as unknown as AISDBData);
+            }
+        } catch (e) {
+            console.error("Failed to load AIS data", e);
+        }
+    };
 
     const loadITRData = async () => {
         try {
@@ -60,6 +73,7 @@ export default function AISReconciler() {
 
                     <AISUploader
                         itrData={itrData}
+                        initialData={aisDBData}
                         onAutoFill={async (suggestions) => {
                             try {
                                 console.log("Auto-filling data:", suggestions);

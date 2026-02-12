@@ -485,3 +485,72 @@ export async function getUserPlan(): Promise<{ plan: string; validUntil: string 
     };
 }
 
+
+// ============ AIS DATA ============
+
+export interface AISDBData {
+    assessment_year: string;
+    parsed_data: Record<string, any>;
+    file_path?: string;
+    source_type?: string;
+    status?: string;
+}
+
+export async function saveAISData(data: AISDBData) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data: result, error } = await supabase
+        .from('ais_data')
+        .upsert({
+            user_id: user.id,
+            ...data,
+            updated_at: new Date().toISOString(),
+        }, {
+            onConflict: 'user_id,assessment_year',
+        })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return result;
+}
+
+export async function getAISData(assessmentYear: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+        .from('ais_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('assessment_year', assessmentYear)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data;
+}
+
+export async function uploadAISFile(file: File, assessmentYear: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const fileExt = file.name.split('.').pop();
+    const filePath = `ais/${user.id}/${assessmentYear}/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('tax_documents')
+        .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    return filePath;
+}
+
+export async function getFileUrl(filePath: string) {
+    const { data } = supabase.storage
+        .from('tax_documents')
+        .getPublicUrl(filePath);
+
+    return data.publicUrl;
+}

@@ -1,12 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
     Upload, FileText, CheckCircle2, AlertTriangle, Loader2,
-    RefreshCw, XCircle, ArrowRight, FileCheck, Shield, Eye, Lock, Globe
+    RefreshCw, XCircle, ArrowRight, FileCheck, Shield, Eye, Lock, Globe, Keyboard, File as FileIcon
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { useToast } from '../hooks/use-toast';
 import { extractTextFromPDF, detectDocumentType } from '../lib/pdf-extractor';
 import {
@@ -15,6 +17,7 @@ import {
 } from '../lib/ais-parser';
 import { formatINR } from '../lib/validators';
 import { DEMO_AIS_DATA } from '../lib/ais-mock-data';
+import { saveAISData, uploadAISFile, getFileUrl, AISDBData } from '../lib/supabase-data-service';
 
 interface AISUploaderProps {
     /** User-entered ITR data for reconciliation */
@@ -31,25 +34,42 @@ interface AISUploaderProps {
         tdsDividend?: number;
         tdsOther?: number;
     };
+    initialData?: AISDBData;
     onAutoFill?: (suggestions: ReturnType<typeof getAutoFillSuggestions>) => void;
     onNext?: () => void;
 }
 
 type UploadStatus = 'idle' | 'processing' | 'parsed' | 'reconciled' | 'error';
 
-export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploaderProps) {
+export default function AISUploader({ itrData, initialData, onAutoFill, onNext }: AISUploaderProps) {
     const { toast } = useToast();
     const [status, setStatus] = useState<UploadStatus>('idle');
     const [error, setError] = useState<string | null>(null);
     const [aisData, setAisData] = useState<AISData | null>(null);
     const [reconciliation, setReconciliation] = useState<ReconciliationResult[]>([]);
     const [dragOver, setDragOver] = useState(false);
-    const [uploadType, setUploadType] = useState<'json' | 'pdf'>('json');
+    const [uploadType, setUploadType] = useState<'json' | 'pdf' | 'manual'>('json');
+    const [isSaving, setIsSaving] = useState(false);
+    const [uploadedFilePath, setUploadedFilePath] = useState<string | null>(null);
+
+    // Manual Entry State
+    const [manualMode, setManualMode] = useState(false);
+    const [manualFormData, setManualFormData] = useState({
+        salary: '', interest: '', dividend: '', capitalGains: '', tds: ''
+    });
 
     // Password Handling State
     const [passwordRequired, setPasswordRequired] = useState(false);
     const [pdfPassword, setPdfPassword] = useState('');
     const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+    // Initial Data Load
+    useEffect(() => {
+        if (initialData?.parsed_data) {
+            setAisData(initialData.parsed_data as AISData);
+            setStatus('parsed');
+        }
+    }, [initialData]);
 
     const handleFile = useCallback(async (file: File) => {
         setError(null);
@@ -106,6 +126,35 @@ export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploader
 
             setAisData(parsedAIS);
             setStatus('parsed');
+
+            // Save to DB in background
+            const currentUploadType = (file.type === 'application/json' || file.name.endsWith('.json')) ? 'json' : 'pdf';
+            (async () => {
+                try {
+                    setIsSaving(true);
+                    let filePath = initialData?.file_path;
+                    // Only upload if verified PDF/JSON and not already strictly linked (simplified logic)
+                    if (currentUploadType === 'pdf' && !filePath) {
+                        try {
+                            filePath = await uploadAISFile(file, parsedAIS.assessmentYear || '2025-26');
+                            setUploadedFilePath(filePath);
+                        } catch (err) { console.error("File upload failed", err); }
+                    }
+
+                    await saveAISData({
+                        assessment_year: parsedAIS.assessmentYear || '2025-26',
+                        parsed_data: parsedAIS,
+                        file_path: filePath,
+                        source_type: currentUploadType,
+                        status: 'parsed'
+                    });
+                    console.log("AIS Data synced to DB");
+                } catch (e) {
+                    console.error("Background sync failed", e);
+                } finally {
+                    setIsSaving(false);
+                }
+            })();
 
             // Auto-reconcile if ITR data is provided
             if (itrData && Object.values(itrData).some(v => (v || 0) > 0)) {
@@ -189,6 +238,60 @@ export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploader
         }
     };
 
+    const handleManualSubmit = async () => {
+        try {
+            setIsSaving(true);
+            const manualAIS: AISData = {
+                assessmentYear: '2025-26',
+                financialYear: '2024-25',
+                pan: 'MANUAL_ENTRY',
+                generatedDate: new Date().toISOString(),
+                records: [],
+                incomeDetails: {
+                    salary: parseFloat(manualFormData.salary) || 0,
+                    interest: parseFloat(manualFormData.interest) || 0,
+                    dividend: parseFloat(manualFormData.dividend) || 0,
+                    rentalIncome: 0,
+                    capitalGains: parseFloat(manualFormData.capitalGains) || 0,
+                    businessIncome: 0,
+                    otherSources: 0,
+                },
+                totalIncome: (parseFloat(manualFormData.salary) || 0) + (parseFloat(manualFormData.interest) || 0) + (parseFloat(manualFormData.dividend) || 0) + (parseFloat(manualFormData.capitalGains) || 0),
+                totalTDSCredited: parseFloat(manualFormData.tds) || 0,
+                totalTCSCredited: 0,
+                tdsDetails: {
+                    total: parseFloat(manualFormData.tds) || 0,
+                    salary: 0, interest: 0, dividend: 0, rent: 0, professional: 0, other: 0
+                },
+                sftTransactions: {
+                    savingsDeposits: 0, timeDeposits: 0, creditCardPayments: 0,
+                    mutualFundPurchases: 0, shareTransactions: 0, propertyTransactions: 0, foreignRemittances: 0
+                },
+                warnings: ['Manually entered data'],
+                lastUpdated: new Date()
+            };
+
+            await saveAISData({
+                assessment_year: '2025-26',
+                parsed_data: manualAIS,
+                source_type: 'manual',
+                status: 'parsed',
+                file_path: null
+            });
+
+            setAisData(manualAIS);
+            setStatus('parsed');
+            setManualMode(false);
+            toast({ title: "Manual Entry Saved", description: "Your data has been recorded." });
+
+        } catch (e) {
+            console.error(e);
+            toast({ variant: "destructive", title: "Error", description: "Failed to save data" });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const reset = () => {
         setStatus('idle');
         setError(null);
@@ -197,6 +300,9 @@ export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploader
         setPasswordRequired(false);
         setPdfPassword('');
         setPendingFile(null);
+        setManualMode(false);
+        setManualFormData({ salary: '', interest: '', dividend: '', capitalGains: '', tds: '' });
+        setUploadedFilePath(null);
     };
 
     return (
@@ -215,58 +321,123 @@ export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploader
                 <CardContent className="space-y-4">
                     {/* Upload Area */}
                     {status === 'idle' && !passwordRequired && (
-                        <>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-center text-xs text-gray-500 mb-3">
-                                <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                                    <FileText className="h-5 w-5 text-blue-600 mx-auto mb-1" />
-                                    <p className="font-medium text-blue-700">JSON (Recommended)</p>
-                                    <p>Download from e-Filing portal → AIS tab</p>
+                        manualMode ? (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 p-1">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Salary Income</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="0"
+                                            value={manualFormData.salary}
+                                            onChange={e => setManualFormData({ ...manualFormData, salary: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Interest Income</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="0"
+                                            value={manualFormData.interest}
+                                            onChange={e => setManualFormData({ ...manualFormData, interest: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Dividend Income</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="0"
+                                            value={manualFormData.dividend}
+                                            onChange={e => setManualFormData({ ...manualFormData, dividend: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Capital Gains</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="0"
+                                            value={manualFormData.capitalGains}
+                                            onChange={e => setManualFormData({ ...manualFormData, capitalGains: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="col-span-2 space-y-2">
+                                        <Label>Total TDS Deducted</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="0"
+                                            value={manualFormData.tds}
+                                            onChange={e => setManualFormData({ ...manualFormData, tds: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="p-3 bg-purple-50 rounded-lg border border-purple-100 cursor-pointer hover:bg-purple-100 transition-colors" onClick={() => window.open('https://eportal.incometax.gov.in/iec/foservices/#/login', '_blank')}>
-                                    <Globe className="h-5 w-5 text-purple-600 mx-auto mb-1" />
-                                    <p className="font-medium text-purple-700">Live Fetch (Portal)</p>
-                                    <p>Login to IT Portal to auto-download</p>
-                                </div>
-                                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                                    <FileText className="h-5 w-5 text-gray-400 mx-auto mb-1" />
-                                    <p className="font-medium text-gray-700">PDF</p>
-                                    <p>Password-protected AIS or 26AS</p>
+                                <div className="flex gap-2 justify-center pt-2">
+                                    <Button onClick={handleManualSubmit} disabled={isSaving} className="w-32">
+                                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                        Save
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => setManualMode(false)}>Cancel</Button>
                                 </div>
                             </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-center text-xs text-gray-500 mb-3">
+                                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                        <FileText className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                                        <p className="font-medium text-blue-700">JSON (Recommended)</p>
+                                        <p>Download from e-Filing portal → AIS tab</p>
+                                    </div>
+                                    <div className="p-3 bg-purple-50 rounded-lg border border-purple-100 cursor-pointer hover:bg-purple-100 transition-colors" onClick={() => window.open('https://eportal.incometax.gov.in/iec/foservices/#/login', '_blank')}>
+                                        <Globe className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+                                        <p className="font-medium text-purple-700">Live Fetch (Portal)</p>
+                                        <p>Login to IT Portal to auto-download</p>
+                                    </div>
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                        <FileText className="h-5 w-5 text-gray-400 mx-auto mb-1" />
+                                        <p className="font-medium text-gray-700">PDF</p>
+                                        <p>Password-protected AIS or 26AS</p>
+                                    </div>
+                                </div>
 
-                            <div
-                                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${dragOver
-                                    ? 'border-blue-400 bg-blue-50'
-                                    : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                    }`}
-                                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                                onDragLeave={() => setDragOver(false)}
-                                onDrop={handleDrop}
-                                onClick={() => document.getElementById('ais-file-input')?.click()}
-                            >
-                                <Upload className={`h-10 w-10 mx-auto mb-2 ${dragOver ? 'text-blue-500' : 'text-gray-300'}`} />
-                                <p className="text-sm font-medium text-gray-700">Drop your AIS file here</p>
-                                <p className="text-xs text-gray-400 mt-1">JSON or PDF • Downloaded from IT Portal</p>
-                                <input
-                                    id="ais-file-input"
-                                    type="file"
-                                    accept=".json,.pdf,application/json,application/pdf"
-                                    onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-                                    className="hidden"
-                                />
-                            </div>
+                                <div className="mb-4 flex justify-center">
+                                    <Button variant="outline" size="sm" onClick={() => setManualMode(true)} className="gap-2 text-xs border-dashed">
+                                        <Keyboard className="h-4 w-4" /> Enter Manually
+                                    </Button>
+                                </div>
 
-                            <div className="mt-2 text-center">
-                                <Button
-                                    variant="link"
-                                    size="sm"
-                                    onClick={handleDemoLoad}
-                                    className="text-xs text-indigo-400 hover:text-indigo-600 h-auto p-0"
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${dragOver
+                                        ? 'border-blue-400 bg-blue-50'
+                                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                                        }`}
+                                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                                    onDragLeave={() => setDragOver(false)}
+                                    onDrop={handleDrop}
+                                    onClick={() => document.getElementById('ais-file-input')?.click()}
                                 >
-                                    Don't have a file? Use Sample Data
-                                </Button>
-                            </div>
-                        </>
+                                    <Upload className={`h-10 w-10 mx-auto mb-2 ${dragOver ? 'text-blue-500' : 'text-gray-300'}`} />
+                                    <p className="text-sm font-medium text-gray-700">Drop your AIS file here</p>
+                                    <p className="text-xs text-gray-400 mt-1">JSON or PDF • Downloaded from IT Portal</p>
+                                    <input
+                                        id="ais-file-input"
+                                        type="file"
+                                        accept=".json,.pdf,application/json,application/pdf"
+                                        onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                                        className="hidden"
+                                    />
+                                </div>
+
+                                <div className="mt-2 text-center">
+                                    <Button
+                                        variant="link"
+                                        size="sm"
+                                        onClick={handleDemoLoad}
+                                        className="text-xs text-indigo-400 hover:text-indigo-600 h-auto p-0"
+                                    >
+                                        Don't have a file? Use Sample Data
+                                    </Button>
+                                </div>
+                            </>
+                        )
                     )}
 
                     {/* Password Prompt */}
@@ -397,6 +568,17 @@ export default function AISUploader({ itrData, onAutoFill, onNext }: AISUploader
                             {itrData && status !== 'reconciled' && (
                                 <Button variant="outline" size="sm" onClick={runReconciliation} className="gap-1">
                                     <Eye className="h-4 w-4" /> Run Reconciliation
+                                </Button>
+                            )}
+                            {(uploadedFilePath || initialData?.file_path) && (
+                                <Button variant="outline" size="sm" onClick={async () => {
+                                    const path = uploadedFilePath || initialData?.file_path;
+                                    if (path) {
+                                        const url = await getFileUrl(path);
+                                        if (url) window.open(url, '_blank');
+                                    }
+                                }} className="gap-1">
+                                    <FileIcon className="h-4 w-4" /> View PDF
                                 </Button>
                             )}
                             <Button variant="outline" size="sm" onClick={reset} className="gap-1">
