@@ -1025,38 +1025,125 @@ export function SmartFilingWizard() {
                                         title="What is Freelancing/Business Income?"
                                         shortDescription="Any money you earned by working independently — not as a salaried employee."
                                         details={[
-                                            'Includes: Consulting fees, Upwork/Fiverr earnings, tutoring income, content creation revenue.',
-                                            'Presumptive Taxation (44ADA): If you\'re an IT professional, Doctor, CA, etc., declare JUST 50% of receipts as profit.',
-                                            'Example: Earned ₹10L from freelancing → Taxable profit = ₹5L (under 44ADA). No need for complex account books!',
-                                            'If your receipts are below ₹75 Lakhs and 95%+ are digital, you qualify for presumptive scheme.',
+                                            'This includes ALL non-salary earnings: agency work, shop income, consulting, tutoring, Upwork/Fiverr, content creation, etc.',
+                                            'IMPORTANT: Even if you received money from an agency/company that isn\'t formally registered (has only a Shop Act license), it\'s still business income.',
+                                            'The government offers a special "Presumptive Taxation" scheme to make filing SUPER EASY — no need for complicated accounting!',
+                                            'You just declare a percentage of your total receipts as profit, and pay tax only on that.',
                                         ]}
                                         tips={[
-                                            'Most freelancers should choose 44ADA — it\'s the simplest and you don\'t need an audit.',
-                                            'Keep records of all invoices and payments received even if using presumptive scheme.',
+                                            'If TDS was deducted on your payments, enter that in the TDS field — you\'ll get credit for it!',
+                                            'Keep bank statements showing all payments received as proof of your total receipts.',
                                         ]}
                                         variant="tip"
+                                        defaultOpen={true}
                                     />
-                                    <div className="p-4 rounded-xl bg-slate-50 border space-y-3">
-                                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select Taxation Scheme</Label>
+
+                                    {/* Taxation Scheme Selection with Detailed Guidance */}
+                                    <div className="p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select Taxation Scheme</Label>
+                                            <Badge className="bg-amber-100 text-amber-700 border-none text-[9px] font-black">⚡ Important Choice</Badge>
+                                        </div>
                                         <Select
                                             value={income.freelanceSection}
                                             onValueChange={v => updateIncomeField('freelanceSection', v)}
                                         >
-                                            <SelectTrigger className="h-12 border-slate-200">
+                                            <SelectTrigger className="h-12 border-slate-200 bg-white font-bold">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="44ADA">Presumptive (44ADA) - Professionals (IT, Medical, CA, etc.)</SelectItem>
-                                                <SelectItem value="44AD">Presumptive (44AD) - Small Business Owners</SelectItem>
-                                                <SelectItem value="Regular">Regular - Maintain Detailed Books of Accounts</SelectItem>
+                                                <SelectItem value="44ADA">✅ Presumptive (44ADA) - Professionals (IT, Doctor, CA, Lawyer, etc.)</SelectItem>
+                                                <SelectItem value="44AD">✅ Presumptive (44AD) - Business / Shop / Agency / Trading</SelectItem>
+                                                <SelectItem value="Regular">📋 Regular - I maintain detailed books of accounts</SelectItem>
                                             </SelectContent>
                                         </Select>
-                                        <p className="text-[10px] text-muted-foreground flex gap-2">
-                                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                                            <span>💡 Under Presumptive scheme, you declare 50% (ADA) or 6-8% (AD) of receipts as profit. No need to maintain bills or audits if turnover is under limits.</span>
-                                        </p>
+
+                                        {/* Detailed explanation cards for each scheme */}
+                                        <div className="space-y-3">
+                                            {/* 44ADA Card */}
+                                            <div className={`p-4 rounded-xl border-2 transition-all ${income.freelanceSection === '44ADA'
+                                                ? 'border-emerald-400 bg-emerald-50/50 shadow-sm'
+                                                : 'border-slate-100 bg-white/50 opacity-60'
+                                                }`}>
+                                                <div className="flex items-start gap-3">
+                                                    <span className="text-lg">🎯</span>
+                                                    <div className="flex-1">
+                                                        <h5 className="font-black text-sm">Section 44ADA — For Licensed Professionals</h5>
+                                                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                                                            Declare <strong>50% of total receipts</strong> as profit. No bills/invoices tracking needed.
+                                                        </p>
+                                                        <div className="mt-2 text-[10px] space-y-1">
+                                                            <p className="text-emerald-700 font-bold">✅ Choose this if you are:</p>
+                                                            <p className="text-slate-600">• IT freelancer / Software Developer / Web Designer</p>
+                                                            <p className="text-slate-600">• Doctor / Dentist / Physiotherapist</p>
+                                                            <p className="text-slate-600">• Chartered Accountant / Company Secretary / Lawyer</p>
+                                                            <p className="text-slate-600">• Architect / Interior Designer / Engineer (consulting)</p>
+                                                            <p className="text-slate-600">• Film Artist / Author / Content Creator</p>
+                                                            <p className="mt-1 text-blue-600 font-medium">📊 Example: Earned ₹10L → Taxable profit = ₹5L</p>
+                                                            <p className="text-amber-600 font-medium">⚠️ Turnover limit: ₹75 Lakhs (if 95%+ digital receipts)</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 44AD Card */}
+                                            <div className={`p-4 rounded-xl border-2 transition-all ${income.freelanceSection === '44AD'
+                                                ? 'border-emerald-400 bg-emerald-50/50 shadow-sm'
+                                                : 'border-slate-100 bg-white/50 opacity-60'
+                                                }`}>
+                                                <div className="flex items-start gap-3">
+                                                    <span className="text-lg">🏪</span>
+                                                    <div className="flex-1">
+                                                        <h5 className="font-black text-sm">Section 44AD — For Business / Shop / Agency Owners</h5>
+                                                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                                                            Declare <strong>6% (digital) or 8% (cash)</strong> of total receipts as profit.
+                                                        </p>
+                                                        <div className="mt-2 text-[10px] space-y-1">
+                                                            <p className="text-emerald-700 font-bold">✅ Choose this if you are:</p>
+                                                            <p className="text-slate-600">• Any business with <strong>Shop Act license</strong> or trade license</p>
+                                                            <p className="text-slate-600">• Agency (staffing, marketing, graphic design, etc.)</p>
+                                                            <p className="text-slate-600">• Retail shop / E-commerce seller / Amazon/Flipkart seller</p>
+                                                            <p className="text-slate-600">• Commission agent / Distributor / Trader</p>
+                                                            <p className="text-slate-600">• Tuition centre / Coaching class (non-professional)</p>
+                                                            <p className="text-slate-600">• Transport / Delivery / Logistics business</p>
+                                                            <p className="mt-1 text-blue-600 font-medium">📊 Example: Earned ₹10L (all digital) → Taxable profit = ₹60,000</p>
+                                                            <p className="text-amber-600 font-medium">⚠️ Turnover limit: ₹3 Crore (if 95%+ digital receipts)</p>
+                                                            <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                                                <p className="text-blue-800 font-bold">💡 Real Example: "I earned from an agency with Shop Act license"</p>
+                                                                <p className="text-blue-700 mt-0.5">→ Select <strong>44AD</strong>. The agency is a business (not a professional firm). Enter total payments received as your turnover. If payments were via bank transfer, only 6% is treated as profit!</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Regular Card */}
+                                            <div className={`p-4 rounded-xl border-2 transition-all ${income.freelanceSection === 'Regular'
+                                                ? 'border-amber-400 bg-amber-50/50 shadow-sm'
+                                                : 'border-slate-100 bg-white/50 opacity-60'
+                                                }`}>
+                                                <div className="flex items-start gap-3">
+                                                    <span className="text-lg">📋</span>
+                                                    <div className="flex-1">
+                                                        <h5 className="font-black text-sm">Regular Books — Full Accounting</h5>
+                                                        <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                                                            You track and declare <strong>actual profit</strong> (income minus expenses).
+                                                        </p>
+                                                        <div className="mt-2 text-[10px] space-y-1">
+                                                            <p className="text-amber-700 font-bold">⚠️ Choose this ONLY if:</p>
+                                                            <p className="text-slate-600">• Your actual expenses are VERY high (profit is less than 6-8% of turnover)</p>
+                                                            <p className="text-slate-600">• Your turnover exceeds the presumptive limits</p>
+                                                            <p className="text-slate-600">• You maintain proper books of accounts with a CA</p>
+                                                            <p className="mt-1 text-rose-600 font-medium">⚠️ Requires tax audit if profit is below 6-8% and turnover exceeds ₹1 Crore</p>
+                                                            <p className="text-slate-500 italic">Most small businesses and freelancers do NOT need this option.</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
+                                    {/* Income Entry Fields */}
                                     <div className="grid gap-6 sm:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Total Receipts / Turnover *</Label>
@@ -1065,16 +1152,20 @@ export function SmartFilingWizard() {
                                                 <Input
                                                     type="number"
                                                     className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50"
+                                                    placeholder="Total money received this year"
                                                     value={income.freelanceTurnover || ''}
                                                     onChange={e => {
                                                         const val = Number(e.target.value);
                                                         updateIncomeField('freelanceTurnover', val);
                                                         if (income.freelanceSection === '44ADA') {
                                                             updateIncomeField('freelanceGross', val * 0.5);
+                                                        } else if (income.freelanceSection === '44AD') {
+                                                            updateIncomeField('freelanceGross', val * 0.06);
                                                         }
                                                     }}
                                                 />
                                             </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Total amount you received from clients/customers (before any expenses). Check bank statements for all credit entries from business.</p>
                                         </div>
                                         {income.freelanceSection === 'Regular' ? (
                                             <div className="space-y-2">
@@ -1084,10 +1175,12 @@ export function SmartFilingWizard() {
                                                     <Input
                                                         type="number"
                                                         className="pl-9 h-12 text-lg font-bold border-slate-100 bg-slate-50/50"
+                                                        placeholder="Rent, salaries, materials, etc."
                                                         value={income.freelanceExpenses || ''}
                                                         onChange={e => updateIncomeField('freelanceExpenses', e.target.value)}
                                                     />
                                                 </div>
+                                                <p className="text-[10px] text-muted-foreground italic">💡 All legitimate business costs: office rent, internet, laptop, travel, raw materials, employee salaries, etc.</p>
                                             </div>
                                         ) : (
                                             <div className="space-y-2">
@@ -1095,6 +1188,7 @@ export function SmartFilingWizard() {
                                                 <div className="h-12 flex items-center px-4 bg-emerald-50 border border-emerald-100 rounded-lg text-lg font-black text-emerald-700">
                                                     ₹{(income.freelanceGross || 0).toLocaleString('en-IN')}
                                                 </div>
+                                                <p className="text-[10px] text-emerald-600 italic">💡 {income.freelanceSection === '44ADA' ? 'Auto-calculated at 50% of your turnover (44ADA rule)' : 'Auto-calculated at 6% of your digital turnover (44AD rule). If you received cash payments, effective rate is 8%.'}</p>
                                             </div>
                                         )}
                                     </div>
@@ -1117,32 +1211,49 @@ export function SmartFilingWizard() {
                                     </div>
                                 </div>
                                 <CardContent className="pt-6 space-y-6 relative z-10">
-                                    <Alert className="bg-amber-50 border-amber-200">
-                                        <Info className="h-4 w-4 text-amber-600" />
-                                        <AlertDescription className="text-amber-800 font-medium">
-                                            VDA gains are taxed at <strong>30% flat rate</strong>. No deduction (except cost of acquisition) or set-off of losses is allowed against any other income.
-                                        </AlertDescription>
-                                    </Alert>
+                                    <StepExplainer
+                                        emoji="₿"
+                                        title="What is Crypto/VDA Income?"
+                                        shortDescription="Any profit from selling, swapping, or transferring cryptocurrency, NFTs, or any virtual digital asset."
+                                        details={[
+                                            'FLAT 30% TAX — No slab benefit. Whether you earn ₹1,000 or ₹1 Crore, tax is always 30%.',
+                                            'NO LOSS SET-OFF — If you lost money on crypto, you CANNOT reduce your other income tax. Crypto losses stay in crypto.',
+                                            '1% TDS — Exchanges like WazirX, CoinDCX deduct 1% TDS when you sell. This is already paid tax, enter it below for credit!',
+                                            'Net Gains = Total Sale Value − Cost of Buying. You only pay tax on PROFIT, not on total sale amount.',
+                                        ]}
+                                        tips={[
+                                            'Download your tax report from WazirX/CoinDCX/Binance — it shows exact gains and TDS deducted.',
+                                            'Swapping one coin for another (ETH → BTC) is ALSO taxable! It counts as selling ETH and buying BTC.',
+                                            'Airdrops and staking rewards are taxed as "Income from Other Sources" at your slab rate, NOT 30%.',
+                                        ]}
+                                        variant="warning"
+                                    />
                                     <div className="grid gap-4 sm:grid-cols-2">
-                                        <div>
-                                            <Label>Net Crypto Gains (₹)</Label>
-                                            <Input
-                                                type="number"
-                                                value={income.cryptoGains || ''}
-                                                onChange={e => updateIncomeField('cryptoGains', e.target.value)}
-                                                className="text-lg font-semibold"
-                                            />
-                                            <p className="text-xs text-slate-500 mt-1">Taxable gains from Schedule VDA</p>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Net Crypto Gains (₹)</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-amber-100 bg-amber-50/30"
+                                                    value={income.cryptoGains || ''}
+                                                    onChange={e => updateIncomeField('cryptoGains', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Total profit from selling crypto. Find this in your exchange's "Tax Report" → Net Gains/P&L section.</p>
                                         </div>
-                                        <div>
-                                            <Label>TDS Deducted (1% u/s 194S)</Label>
-                                            <Input
-                                                type="number"
-                                                value={income.cryptoTDS || ''}
-                                                onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
-                                                className="text-lg font-semibold"
-                                            />
-                                            <p className="text-xs text-slate-500 mt-1">1% TDS on sale consideration</p>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">TDS Already Deducted (1%)</Label>
+                                            <div className="relative">
+                                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold border-emerald-100 bg-emerald-50/30"
+                                                    value={income.cryptoTDS || ''}
+                                                    onChange={e => updateIncomeField('cryptoTDS', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Exchanges deduct 1% TDS on every sale. This is tax you ALREADY paid — it'll be adjusted against your final tax. Check your exchange's TDS certificate.</p>
                                         </div>
                                     </div>
 
@@ -1204,6 +1315,23 @@ export function SmartFilingWizard() {
                                     <Badge className="bg-primary/10 text-primary border-none">ITR-2/3</Badge>
                                 </div>
                                 <CardContent className="pt-6 space-y-6">
+                                    <StepExplainer
+                                        emoji="📈"
+                                        title="What are Capital Gains?"
+                                        shortDescription="Profit made from selling shares, mutual funds, ETFs, or bonds."
+                                        details={[
+                                            'STCG (Short Term Capital Gains): Sold within 12 months of buying → Taxed at 20% (Budget 2024).',
+                                            'LTCG (Long Term Capital Gains): Sold after holding for 12+ months → Tax-free up to ₹1.25 Lakh, then 12.5%.',
+                                            'IPO Listing Gains: If you got IPO allotment and sold on listing day = Short Term Capital Gain.',
+                                            'Mutual Fund Redemption: Equity MF held > 1 year = LTCG. Debt MF gains = taxed at your slab rate.',
+                                        ]}
+                                        tips={[
+                                            'Download your Capital Gains Statement from Zerodha Console, Groww app, or Angel One.',
+                                            'Losses can be set off! STCG loss vs STCG/LTCG gain. LTCG loss only vs LTCG gain.',
+                                            'If you only had IPO listing gains and no other trading, enter the profit under STCG.',
+                                        ]}
+                                        variant="info"
+                                    />
                                     <div className="grid gap-6 sm:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Short Term Gains (STCG)</Label>
@@ -1212,11 +1340,12 @@ export function SmartFilingWizard() {
                                                 <Input
                                                     type="number"
                                                     className="pl-9 h-12 text-lg font-bold"
+                                                    placeholder="Profit from shares held < 1 year"
                                                     value={income.stcgEquity || ''}
                                                     onChange={e => updateIncomeField('stcgEquity', e.target.value)}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-muted-foreground flex items-center gap-1"><Info className="h-3 w-3" /> Equity held &lt; 1 yr. Taxed at 15%</p>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Shares/MF sold within 12 months. Includes IPO listing day sales. Taxed at 20%. Find this in your broker's Tax P&L report → "Short Term" section.</p>
                                         </div>
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-emerald-600">Long Term Gains (LTCG)</Label>
@@ -1225,11 +1354,12 @@ export function SmartFilingWizard() {
                                                 <Input
                                                     type="number"
                                                     className="pl-9 h-12 text-lg font-bold border-emerald-100 bg-emerald-50/20"
+                                                    placeholder="Profit from shares held > 1 year"
                                                     value={income.ltcgEquity || ''}
                                                     onChange={e => updateIncomeField('ltcgEquity', e.target.value)}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-muted-foreground flex items-center gap-1"><Sparkles className="h-3 w-3 text-emerald-500" /> Equity held &gt; 1 yr. Tax-free up to ₹1 Lakh!</p>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Shares/MF held over 12 months. First ₹1.25 Lakh is completely TAX-FREE! Only the excess is taxed at 12.5%. Check broker's "Long Term" P&L section.</p>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -1245,6 +1375,22 @@ export function SmartFilingWizard() {
                                     <Badge className="bg-primary/10 text-primary border-none">ITR-1/2/3/4</Badge>
                                 </div>
                                 <CardContent className="pt-6 space-y-6">
+                                    <StepExplainer
+                                        emoji="🏠"
+                                        title="What is House Property Income?"
+                                        shortDescription="Income from renting out your house, flat, or commercial property."
+                                        details={[
+                                            'The government automatically gives you 30% deduction on rent received (for repairs, maintenance) — you don\'t need receipts for this!',
+                                            'If you have a home loan, the interest paid is deductible: up to ₹2 Lakh for self-occupied, unlimited for let-out property.',
+                                            'Even if property is vacant, municipal tax paid is deductible from rental income.',
+                                            'If you live in the house yourself (self-occupied), the rental income is considered NIL, but you can still claim home loan interest deduction.',
+                                        ]}
+                                        tips={[
+                                            'Get the home loan interest certificate from your bank — it shows exactly how much interest you paid this year.',
+                                            'If you own 2+ properties, only ONE can be shown as self-occupied. Others are "deemed let out" and taxed at fair rental value.',
+                                        ]}
+                                        variant="info"
+                                    />
                                     <div className="grid gap-6 sm:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Annual Rent Received</Label>
@@ -1253,10 +1399,12 @@ export function SmartFilingWizard() {
                                                 <Input
                                                     type="number"
                                                     className="pl-9 h-12 text-lg font-bold"
+                                                    placeholder="Total rent for the year"
                                                     value={income.rentalIncome || ''}
                                                     onChange={e => updateIncomeField('rentalIncome', e.target.value)}
                                                 />
                                             </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Total rent collected from tenant (April 2025 - March 2026). Enter ₹0 if self-occupied.</p>
                                         </div>
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Interest on Home Loan</Label>
@@ -1265,11 +1413,12 @@ export function SmartFilingWizard() {
                                                 <Input
                                                     type="number"
                                                     className="pl-9 h-12 text-lg font-bold"
+                                                    placeholder="From bank's interest certificate"
                                                     value={income.homeLoanInterest || ''}
                                                     onChange={e => updateIncomeField('homeLoanInterest', e.target.value)}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-muted-foreground leading-tight italic">Claim up to ₹2 Lakhs for Self-Occupied property u/s 24(b).</p>
+                                            <p className="text-[10px] text-muted-foreground leading-tight italic">💡 Only the INTEREST portion of home loan EMI (not principal). Self-occupied: max ₹2L. Let-out: no limit. Get certificate from your bank under Section 24(b).</p>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -1277,48 +1426,103 @@ export function SmartFilingWizard() {
                         )}
 
                         {income.hasInterest && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
                                         <Landmark className="h-5 w-5" /> Interest Income
                                     </CardTitle>
-                                </CardHeader>
-                                <CardContent className="grid gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <Label>Savings Account Interest</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.savingsInterest || ''}
-                                            onChange={e => updateIncomeField('savingsInterest', e.target.value)}
-                                        />
-                                    </div>
-                                    <div>
-                                        <Label>FD/RD Interest</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.fdInterest || ''}
-                                            onChange={e => updateIncomeField('fdInterest', e.target.value)}
-                                        />
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-1/2/3/4</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <StepExplainer
+                                        emoji="🏦"
+                                        title="What is Interest Income?"
+                                        shortDescription="The money your bank pays you for keeping money with them — in savings accounts, FDs, or RDs."
+                                        details={[
+                                            'Savings Account Interest: Banks pay 2.5-4% interest on your savings balance. You get 80TTA deduction of ₹10,000 on this (under Old Regime).',
+                                            'FD/RD Interest: Banks deduct TDS if your total interest exceeds ₹40,000/year (₹50,000 for seniors). The TDS is already paid tax — claim credit!',
+                                            'Post Office/NSC Interest: Also taxable, but some special schemes have partial exemptions.',
+                                            'Your bank statement or passbook shows "Interest Credited" entries — add them up for the full year (April to March).',
+                                        ]}
+                                        tips={[
+                                            'Check Form 26AS or AIS for exact interest reported by your bank to the IT department. Your numbers should match!',
+                                            'If you have multiple savings accounts, add up interest from ALL banks.',
+                                            'Even ₹500 of interest income must be reported — the IT dept knows about it from your bank\'s TDS returns.',
+                                        ]}
+                                        variant="info"
+                                    />
+                                    <div className="grid gap-6 sm:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Savings Account Interest</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold"
+                                                    placeholder="From all savings accounts"
+                                                    value={income.savingsInterest || ''}
+                                                    onChange={e => updateIncomeField('savingsInterest', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Check your bank passbook or statement for "Interest Credited" entries. Add up from ALL banks. Up to ₹10,000 is deductible under Section 80TTA!</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">FD/RD Interest</Label>
+                                            <div className="relative">
+                                                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                                <Input
+                                                    type="number"
+                                                    className="pl-9 h-12 text-lg font-bold"
+                                                    placeholder="From all FDs, RDs, post office"
+                                                    value={income.fdInterest || ''}
+                                                    onChange={e => updateIncomeField('fdInterest', e.target.value)}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 Fully taxable at your slab rate. Bank already deducted TDS if interest exceeds ₹40K/year. Check Form 26AS for TDS credit. Don't forget to claim this TDS!</p>
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
                         )}
 
                         {income.hasDividends && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
+                            <Card className="border-none shadow-lg overflow-hidden">
+                                <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
+                                    <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
                                         <PiggyBank className="h-5 w-5" /> Dividend Income
                                     </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div>
-                                        <Label>Total Dividends Received</Label>
-                                        <Input
-                                            type="number"
-                                            value={income.dividendIncome || ''}
-                                            onChange={e => updateIncomeField('dividendIncome', e.target.value)}
-                                        />
+                                    <Badge className="bg-primary/10 text-primary border-none">ITR-1/2/3/4</Badge>
+                                </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    <StepExplainer
+                                        emoji="💸"
+                                        title="What is Dividend Income?"
+                                        shortDescription="Cash payments companies or mutual funds give you from their profits — just for holding their shares/units."
+                                        details={[
+                                            'Dividends are now FULLY TAXABLE at your slab rate (changed from April 2020 — they used to be tax-free).',
+                                            'Companies deduct 10% TDS if your dividends exceed ₹5,000/year. This TDS is already paid tax — enter it for credit.',
+                                            'Mutual fund dividends are also taxable. Check your MF statement for "Dividend Payout" entries.',
+                                            'You can claim deduction of interest paid on loan taken to buy the shares (up to 20% of dividend), under Section 57.',
+                                        ]}
+                                        tips={[
+                                            'Check your Demat account (CDSL/NSDL) or broker app for total dividends received.',
+                                            'Your AIS shows all dividends reported by companies — match your numbers with AIS!',
+                                        ]}
+                                        variant="info"
+                                    />
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Total Dividends Received</Label>
+                                        <div className="relative">
+                                            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                            <Input
+                                                type="number"
+                                                className="pl-9 h-12 text-lg font-bold"
+                                                placeholder="From all shares & mutual funds"
+                                                value={income.dividendIncome || ''}
+                                                onChange={e => updateIncomeField('dividendIncome', e.target.value)}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground italic">💡 Total dividends from ALL companies and mutual funds combined. Check your Demat/broker statement → "Dividend" section. Also check AIS on IT portal for accuracy.</p>
                                     </div>
                                 </CardContent>
                             </Card>
