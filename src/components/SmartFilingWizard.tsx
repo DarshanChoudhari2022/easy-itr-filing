@@ -29,6 +29,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { calculateTax, compareRegimes } from '@/lib/tax-calculation';
 import { downloadITRJson, validateITRData, ITRFilingData } from '@/lib/itr-json-generator';
 import { calculateDetailedPortfolio } from '@/lib/crypto-engine';
+import { StepExplainer } from '@/components/filing/StepExplainer';
+import { EnhancedDeductionsStep } from '@/components/filing/EnhancedDeductionsStep';
+import { RegimeComparisonCard } from '@/components/filing/RegimeComparisonCard';
 
 // ============= TYPES =============
 interface IncomeSource {
@@ -107,10 +110,25 @@ interface Deductions {
     section80C: number;
     section80D: number;
     section80CCD1B: number;
+    section80CCD2: number;
     section80E: number;
     section80G: number;
     section80TTA: number;
+    section80TTB: number;
+    section80GG: number;
+    section80DD: number;
+    section80DDB: number;
+    section80EE: number;
+    section80EEA: number;
+    section80EEB: number;
+    section80U: number;
+    section80GGA: number;
+    section80GGC: number;
+    hra: number;
+    lta: number;
     homeLoanInterest: number;
+    other: number;
+    [key: string]: number; // Allow dynamic keys from enhanced deduction categories
 }
 
 // ============= INCOME SOURCES CONFIG =============
@@ -280,8 +298,12 @@ const DEFAULT_INCOME: UserIncome = {
 };
 
 const DEFAULT_DEDUCTIONS: Deductions = {
-    section80C: 0, section80D: 0, section80CCD1B: 0,
-    section80E: 0, section80G: 0, section80TTA: 0, homeLoanInterest: 0
+    section80C: 0, section80D: 0, section80CCD1B: 0, section80CCD2: 0,
+    section80E: 0, section80G: 0, section80TTA: 0, section80TTB: 0,
+    section80GG: 0, section80DD: 0, section80DDB: 0,
+    section80EE: 0, section80EEA: 0, section80EEB: 0, section80U: 0,
+    section80GGA: 0, section80GGC: 0,
+    hra: 0, lta: 0, homeLoanInterest: 0, other: 0
 };
 
 // ============= MAIN COMPONENT =============
@@ -737,6 +759,24 @@ export function SmartFilingWizard() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="pt-8 space-y-6">
+                            <StepExplainer
+                                emoji="📄"
+                                title="What is AIS (Annual Information Statement)?"
+                                shortDescription="AIS is like a receipt from the government listing ALL money that banks, employers, and companies reported about you."
+                                details={[
+                                    'AIS contains your salary details, bank interest, stock trades, and more — reported by banks and companies directly.',
+                                    'If you upload this, we can auto-fill 90% of your ITR — saving you hours of manual work!',
+                                    'It\'s available for free on the Income Tax portal (incometax.gov.in).',
+                                    'You can download it as a PDF and upload it here.',
+                                ]}
+                                tips={[
+                                    'First time filing? The AIS might not have all data — that\'s okay, you can enter details manually.',
+                                    'Make sure to download AIS for FY 2025-26 (Assessment Year 2026-27).',
+                                    'You can skip this step and enter data manually, but AIS upload is recommended for accuracy.',
+                                ]}
+                                variant="info"
+                                defaultOpen={false}
+                            />
                             <div className="grid md:grid-cols-2 gap-6">
                                 {/* AIS Download */}
                                 <div className="p-6 rounded-2xl border-2 border-white bg-white shadow-sm hover:shadow-md transition-all group">
@@ -811,6 +851,26 @@ export function SmartFilingWizard() {
                             <CardHeader>
                                 <CardTitle className="text-2xl font-black">Which income sources apply to you?</CardTitle>
                                 <CardDescription className="text-base">We use this to customize the filing forms and ensure you're using the correct ITR version.</CardDescription>
+                                <StepExplainer
+                                    emoji="💰"
+                                    title="What are Income Sources?"
+                                    shortDescription="Every way you earned money this year. Select ALL that apply — even small amounts matter!"
+                                    details={[
+                                        'Salary: Got a monthly salary from a company? Even internship stipend counts!',
+                                        'Freelancing: Upwork, Fiverr, consulting fees, tuition fees you earned?',
+                                        'Crypto: Bought/sold Bitcoin, Ethereum on WazirX, CoinDCX?',
+                                        'Stocks: Zerodha, Groww, Angel One trades? IPO allotment listing gains?',
+                                        'Interest: Money earned in savings account or FDs?',
+                                        'Dividends: Received dividend from your shares or mutual funds?',
+                                    ]}
+                                    tips={[
+                                        'Report ALL income sources — even ₹500 savings interest. The IT dept already knows about it from AIS!',
+                                        'Not sure about crypto? Check WazirX, CoinDCX, or Binance transaction history.',
+                                        'IPO listing gains are Short Term Capital Gains (STCG) — select "Stocks & Mutual Funds" for this.',
+                                    ]}
+                                    variant="tip"
+                                    defaultOpen={false}
+                                />
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="grid sm:grid-cols-2 gap-3">
@@ -884,6 +944,23 @@ export function SmartFilingWizard() {
                 {/* Step 3: Enter Income Details */}
                 {step === 3 && (
                     <div className="space-y-6">
+                        <StepExplainer
+                            emoji="📝"
+                            title="Enter Your Income Details"
+                            shortDescription="Fill in the numbers for each income source you selected. Don't worry — we'll guide you through every field!"
+                            details={[
+                                'Enter amounts as annual figures (April 2025 - March 2026).',
+                                'If TDS (Tax Deducted at Source) was cut from any income, enter that too — it reduces your final tax!',
+                                'We auto-apply Standard Deduction based on your regime choice.',
+                                'Not sure about exact numbers? Use approximate values for now, you can edit later.',
+                            ]}
+                            tips={[
+                                'Check Form 16 for salary details, bank statements for interest, and broker apps for trading gains.',
+                                'IPO listing gains = Sale Price minus Issue Price × Number of shares. This is STCG at 15%.',
+                            ]}
+                            variant="info"
+                        />
+
                         {income.hasSalary && (
                             <Card className="border-none shadow-lg overflow-hidden">
                                 <div className="bg-primary/5 p-4 border-b flex items-center justify-between">
@@ -906,7 +983,7 @@ export function SmartFilingWizard() {
                                                     onChange={e => updateIncomeField('salaryGross', e.target.value)}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-muted-foreground italic">Total of Basic, HRA, and Special Allowances from Form 16</p>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 This is your total annual salary BEFORE any deductions. Find it in Form 16 Part B → Gross Salary</p>
                                         </div>
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">TDS Deducted (Employer)</Label>
@@ -920,14 +997,14 @@ export function SmartFilingWizard() {
                                                     onChange={e => updateIncomeField('salaryTDS', e.target.value)}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-muted-foreground italic">Check Part A of your Form 16 (TRACES report)</p>
+                                            <p className="text-[10px] text-muted-foreground italic">💡 TDS = Tax Deducted at Source. Your employer already paid this tax on your behalf. It's like a prepayment of your tax!</p>
                                         </div>
                                     </div>
                                     <div className="p-4 rounded-xl bg-primary shadow-2xl shadow-primary/20 text-white flex gap-4 items-center">
                                         <Sparkles className="h-10 w-10 text-accent shrink-0 animate-pulse" />
                                         <div>
-                                            <h4 className="text-sm font-bold">Standard Deduction of ₹75,000</h4>
-                                            <p className="text-xs opacity-70">We've automatically applied this for you in the {selectedRegime} regime calculation.</p>
+                                            <h4 className="text-sm font-bold">✨ Standard Deduction of ₹{selectedRegime === 'NEW' ? '75,000' : '50,000'} Auto-Applied!</h4>
+                                            <p className="text-xs opacity-70">Every salaried person gets this discount on their taxable income. No documents needed!</p>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -943,6 +1020,22 @@ export function SmartFilingWizard() {
                                     <Badge className="bg-primary/10 text-primary border-none">ITR-3/4</Badge>
                                 </div>
                                 <CardContent className="pt-6 space-y-6">
+                                    <StepExplainer
+                                        emoji="👤"
+                                        title="What is Freelancing/Business Income?"
+                                        shortDescription="Any money you earned by working independently — not as a salaried employee."
+                                        details={[
+                                            'Includes: Consulting fees, Upwork/Fiverr earnings, tutoring income, content creation revenue.',
+                                            'Presumptive Taxation (44ADA): If you\'re an IT professional, Doctor, CA, etc., declare JUST 50% of receipts as profit.',
+                                            'Example: Earned ₹10L from freelancing → Taxable profit = ₹5L (under 44ADA). No need for complex account books!',
+                                            'If your receipts are below ₹75 Lakhs and 95%+ are digital, you qualify for presumptive scheme.',
+                                        ]}
+                                        tips={[
+                                            'Most freelancers should choose 44ADA — it\'s the simplest and you don\'t need an audit.',
+                                            'Keep records of all invoices and payments received even if using presumptive scheme.',
+                                        ]}
+                                        variant="tip"
+                                    />
                                     <div className="p-4 rounded-xl bg-slate-50 border space-y-3">
                                         <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select Taxation Scheme</Label>
                                         <Select
@@ -960,7 +1053,7 @@ export function SmartFilingWizard() {
                                         </Select>
                                         <p className="text-[10px] text-muted-foreground flex gap-2">
                                             <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                                            <span>Under Presumptive scheme, you declare 50% (ADA) or 6-8% (AD) of receipts as profit. No need to maintain bills or audits if turnover is under limits.</span>
+                                            <span>💡 Under Presumptive scheme, you declare 50% (ADA) or 6-8% (AD) of receipts as profit. No need to maintain bills or audits if turnover is under limits.</span>
                                         </p>
                                     </div>
 
@@ -1233,38 +1326,57 @@ export function SmartFilingWizard() {
                     </div>
                 )}
 
-                {/* Step 4: Deductions */}
+                {/* Step 4: Deductions & Tax Strategy */}
                 {step === 4 && (
                     <div className="space-y-6">
+                        {/* Tax Regime Selection */}
                         <Card className="border-none shadow-xl overflow-hidden">
-                            <div className="bg-primary p-6 text-white">
+                            <div className="bg-gradient-to-r from-primary to-indigo-800 p-6 text-white">
                                 <CardTitle className="text-xl font-black flex items-center gap-3">
-                                    <Zap className="h-6 w-6 text-accent" /> Choose Your Tax Strategy
+                                    <Zap className="h-6 w-6 text-accent" /> Step 4: Tax Strategy & Deductions
                                 </CardTitle>
                                 <CardDescription className="text-indigo-100 mt-1">
-                                    India has two tax systems. We'll help you pick the one that saves you the most money.
+                                    First choose your tax regime, then claim all eligible deductions to save tax!
                                 </CardDescription>
                             </div>
                             <CardContent className="pt-6">
-                                <div className="grid sm:grid-cols-2 gap-4">
+                                <StepExplainer
+                                    emoji="🤔"
+                                    title="Old Regime vs New Regime — What's the difference?"
+                                    shortDescription="India has 2 tax systems. We'll help you pick the one that saves the most money."
+                                    details={[
+                                        'OLD REGIME: Higher tax rates BUT you can claim deductions (80C, 80D, HRA, etc.) to reduce taxable income. Best if you have lots of investments & insurance.',
+                                        'NEW REGIME: Lower tax rates BUT almost no deductions allowed (only ₹75K standard deduction). Best if you don\'t invest much.',
+                                        'You can switch between regimes every year (for salaried) or once (for business).',
+                                        'We calculate BOTH and show which saves more with YOUR actual numbers!',
+                                    ]}
+                                    tips={[
+                                        'If your 80C + 80D + HRA deductions are less than ₹2 Lakhs, New Regime is usually better.',
+                                        'If you have heavy home loan interest + insurance + PPF, Old Regime might save you more.',
+                                    ]}
+                                    variant="info"
+                                    defaultOpen={true}
+                                />
+
+                                <div className="grid sm:grid-cols-2 gap-4 mt-6">
                                     <div
-                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'NEW' ? 'border-primary bg-primary/5 shadow-inner' : 'border-slate-100 hover:bg-slate-50'}`}
+                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'NEW' ? 'border-emerald-500 bg-emerald-50/50 shadow-lg shadow-emerald-500/10' : 'border-slate-100 hover:bg-slate-50'}`}
                                         onClick={() => setSelectedRegime('NEW')}
                                     >
                                         <div className="flex justify-between items-start mb-2">
-                                            <p className="font-black text-lg text-primary">New Regime (Default)</p>
-                                            {selectedRegime === 'NEW' && <CheckCircle className="h-5 w-5 text-accent" />}
+                                            <p className="font-black text-lg text-emerald-700">New Regime (Default)</p>
+                                            {selectedRegime === 'NEW' && <CheckCircle className="h-5 w-5 text-emerald-500" />}
                                         </div>
                                         <p className="text-xs text-muted-foreground leading-relaxed mb-4">Lower tax rates for most people. No need to track complicated investments or house rent. <strong>Recommended for simplicity.</strong></p>
                                         <Badge className="bg-emerald-100 text-emerald-700 border-none">Std. Deduction: ₹75,000</Badge>
                                     </div>
                                     <div
-                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'OLD' ? 'border-primary bg-primary/5 shadow-inner' : 'border-slate-100 hover:bg-slate-50'}`}
+                                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedRegime === 'OLD' ? 'border-blue-500 bg-blue-50/50 shadow-lg shadow-blue-500/10' : 'border-slate-100 hover:bg-slate-50'}`}
                                         onClick={() => setSelectedRegime('OLD')}
                                     >
                                         <div className="flex justify-between items-start mb-2">
-                                            <p className="font-black text-lg text-primary">Old Regime</p>
-                                            {selectedRegime === 'OLD' && <CheckCircle className="h-5 w-5 text-accent" />}
+                                            <p className="font-black text-lg text-blue-700">Old Regime</p>
+                                            {selectedRegime === 'OLD' && <CheckCircle className="h-5 w-5 text-blue-500" />}
                                         </div>
                                         <p className="text-xs text-muted-foreground leading-relaxed mb-4">Better if you have high LIC, PPF, Home Loan Interest, or HRA. Requires proofs for every deduction claimed.</p>
                                         <Badge className="bg-blue-100 text-blue-700 border-none">Std. Deduction: ₹50,000</Badge>
@@ -1273,74 +1385,59 @@ export function SmartFilingWizard() {
                             </CardContent>
                         </Card>
 
-                        {selectedRegime === 'OLD' ? (
-                            <Card className="border-none shadow-xl">
-                                <CardHeader className="border-b bg-slate-50/50">
-                                    <CardTitle className="text-lg font-black flex items-center gap-2">
-                                        <PiggyBank className="h-5 w-5 text-primary" /> Tax Saving Deductions (Chapter VI-A)
-                                    </CardTitle>
-                                    <CardDescription>Enter your investments for FY 2025-26</CardDescription>
-                                </CardHeader>
-                                <CardContent className="pt-6 grid gap-6 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between">
-                                            <Label className="text-xs font-bold uppercase tracking-wider">ELSS, PPF, LIC (80C)</Label>
-                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹1.5L</span>
-                                        </div>
-                                        <Input
-                                            type="number"
-                                            placeholder="Max ₹1,50,000"
-                                            className="h-11 font-bold"
-                                            value={deductions.section80C || ''}
-                                            onChange={e => updateDeductionField('section80C', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between">
-                                            <Label className="text-xs font-bold uppercase tracking-wider">Health Insurance (80D)</Label>
-                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹75k</span>
-                                        </div>
-                                        <Input
-                                            type="number"
-                                            placeholder="Self + Parents"
-                                            className="h-11 font-bold"
-                                            value={deductions.section80D || ''}
-                                            onChange={e => updateDeductionField('section80D', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between">
-                                            <Label className="text-xs font-bold uppercase tracking-wider">NPS - Addl. (80CCD1B)</Label>
-                                            <span className="text-[10px] font-bold text-slate-400">Limit: ₹50k</span>
-                                        </div>
-                                        <Input
-                                            type="number"
-                                            placeholder="Exclusive NPS deduction"
-                                            className="h-11 font-bold"
-                                            value={deductions.section80CCD1B || ''}
-                                            onChange={e => updateDeductionField('section80CCD1B', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold uppercase tracking-wider">Edu. Loan Interest (80E)</Label>
-                                        <Input
-                                            type="number"
-                                            className="h-11 font-bold"
-                                            value={deductions.section80E || ''}
-                                            onChange={e => updateDeductionField('section80E', e.target.value)}
-                                        />
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ) : (
-                            <div className="p-6 rounded-2xl bg-indigo-50 border border-indigo-100 flex gap-4 items-center">
-                                <Info className="h-8 w-8 text-primary shrink-0" />
-                                <div>
-                                    <h4 className="font-bold text-primary">Deductions are disabled in New Regime</h4>
-                                    <p className="text-xs text-indigo-800/70">The New Tax Regime trades off these deductions for significantly lower tax slab rates across all income levels.</p>
-                                </div>
-                            </div>
-                        )}
+                        {/* Enhanced Deductions Component */}
+                        <EnhancedDeductionsStep
+                            values={{
+                                section_80c: deductions.section80C,
+                                section_80d: deductions.section80D,
+                                section_80ccd_1b: deductions.section80CCD1B,
+                                section_80ccd_2: deductions.section80CCD2,
+                                section_80e: deductions.section80E,
+                                section_80g: deductions.section80G,
+                                section_80tta: deductions.section80TTA,
+                                section_80ttb: deductions.section80TTB,
+                                section_80gg: deductions.section80GG,
+                                section_80dd: deductions.section80DD,
+                                section_80ddb: deductions.section80DDB,
+                                section_80ee: deductions.section80EE,
+                                section_80eea: deductions.section80EEA,
+                                section_80eeb: deductions.section80EEB,
+                                section_80u: deductions.section80U,
+                                section_80gga: deductions.section80GGA,
+                                section_80ggc: deductions.section80GGC,
+                                hra: deductions.hra,
+                                lta: deductions.lta,
+                                other: deductions.other,
+                            }}
+                            onChange={(key, value) => {
+                                // Map from category ids back to deductions state keys
+                                const keyMap: Record<string, string> = {
+                                    section_80c: 'section80C',
+                                    section_80d: 'section80D',
+                                    section_80ccd_1b: 'section80CCD1B',
+                                    section_80ccd_2: 'section80CCD2',
+                                    section_80e: 'section80E',
+                                    section_80g: 'section80G',
+                                    section_80tta: 'section80TTA',
+                                    section_80ttb: 'section80TTB',
+                                    section_80gg: 'section80GG',
+                                    section_80dd: 'section80DD',
+                                    section_80ddb: 'section80DDB',
+                                    section_80ee: 'section80EE',
+                                    section_80eea: 'section80EEA',
+                                    section_80eeb: 'section80EEB',
+                                    section_80u: 'section80U',
+                                    section_80gga: 'section80GGA',
+                                    section_80ggc: 'section80GGC',
+                                    hra: 'hra',
+                                    lta: 'lta',
+                                    other: 'other',
+                                };
+                                const stateKey = keyMap[key] || key;
+                                setDeductions(prev => ({ ...prev, [stateKey]: value }));
+                            }}
+                            regime={selectedRegime}
+                        />
                     </div>
                 )}
 
