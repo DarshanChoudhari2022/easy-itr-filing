@@ -25,14 +25,16 @@ import {
   Calendar, CheckCircle2, FileCheck
 } from "lucide-react";
 import {
-  calculateDetailedPortfolio,
-  Transaction,
-  TaxSettings,
-  parseExchangeCSV,
-  parseWazirXCSV,
-  parseCoinDCXCSV,
-  parseBinanceCSV
-} from "@/lib/crypto-engine";
+  runFullImport,
+  computeTaxForFY,
+  getImportSessions,
+  getPnLSummary,
+  exportScheduleVDA,
+  exportTDSReconciliation,
+  formatPnLSummary,
+  type TaxComputationResult,
+  type ImportProgress
+} from "@/lib/taxmitra";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -76,6 +78,8 @@ export default function CryptoTaxPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings'>('overview');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+  const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
+  const [importSessions, setImportSessions] = useState<any[]>([]);
 
   // Initialize from localStorage if available
   const [settings, setSettings] = useState<TaxSettings>(() => {
@@ -94,6 +98,7 @@ export default function CryptoTaxPage() {
   const [importMode, setImportMode] = useState<'csv' | 'manual'>('csv');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; errors: number; messages: string[] } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<ImportProgress | null>(null);
 
   // Add trade dialog
   const [showAddTrade, setShowAddTrade] = useState(false);
@@ -148,23 +153,35 @@ export default function CryptoTaxPage() {
     return counts;
   }, [trades]);
 
+  // FETCH TRADES from NEW ENGINE TABLE
   const fetchTrades = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('crypto_trades')
+        .from('crypto_transactions')
         .select('*')
         .eq('user_id', user.id)
-        .order('trade_date', { ascending: false });
+        .order('trade_timestamp', { ascending: false });
 
       if (!error && data) {
-        setTrades(data.map(d => ({
-          ...d,
-          metadata: typeof d.metadata === 'object' && d.metadata !== null
-            ? d.metadata as { fee?: number; tds_deducted?: number }
-            : undefined
-        })));
+        // Map new schema to old UI interface
+        const mappedTrades: Trade[] = data.map(d => ({
+          id: d.id,
+          user_id: d.user_id,
+          token_symbol: d.asset_symbol,
+          trade_type: d.transaction_type,
+          quantity: Number(d.quantity),
+          buy_price: Number(d.price_inr || d.price_per_unit || 0),
+          trade_date: d.trade_timestamp,
+          exchange: d.exchange,
+          fee: Number(d.fee_amount || 0),
+          metadata: {
+            fee: Number(d.fee_amount || 0),
+            tds_deducted: Number(d.tds_amount || 0)
+          }
+        }));
+        setTrades(mappedTrades);
       } else if (error) {
         console.error('Error fetching trades:', error);
         toast.error('Failed to fetch trades');
@@ -176,84 +193,75 @@ export default function CryptoTaxPage() {
     }
   }, [user]);
 
+  // FETCH TAX COMPUTATION
+  const fetchTaxComputation = useCallback(async () => {
+    if (!user) return;
+    const cache = await getPnLSummary(selectedFY); // Using summary first for speed
+    // Actually we need the full result for the UI
+    const result = await computeTaxForFY(selectedFY, settings.accountingMethod as any);
+    if (result.success && result.data) {
+      setTaxComputation(result.data);
+    }
+  }, [user, selectedFY, settings.accountingMethod]);
+
+  // Fetch Import Sessions
+  const fetchSessions = useCallback(async () => {
+    const res = await getImportSessions();
+    if (res.success && res.data) setImportSessions(res.data);
+  }, []);
+
   useEffect(() => {
-    if (user) fetchTrades();
-  }, [user, fetchTrades]);
+    if (user) {
+      fetchTrades();
+      fetchTaxComputation();
+      fetchSessions();
+    }
+  }, [user, fetchTrades, fetchTaxComputation, fetchSessions]);
 
   // ============= CSV IMPORT HANDLER =============
   const handleCSVUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !user) {
-      toast.error('Please select a file');
+    const files = event.target.files;
+    if (!files || files.length === 0 || !user) {
+      toast.error('Please select file(s)');
       return;
     }
 
     setImporting(true);
     setImportResult(null);
+    setUploadProgress({
+      sessionId: '', status: 'processing', totalFiles: files.length, processedFiles: 0,
+      totalRows: 0, parsedRows: 0, duplicatesSkipped: 0, errors: []
+    });
 
     try {
-      const content = await file.text();
-
-      let result;
-      switch (selectedExchange) {
-        case 'CoinDCX': result = parseCoinDCXCSV(content, user.id); break;
-        case 'WazirX': result = parseWazirXCSV(content, user.id); break;
-        case 'Binance': result = parseBinanceCSV(content, user.id); break;
-        default: result = parseExchangeCSV(content, user.id, selectedExchange);
+      const filePayloads = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const content = await file.text();
+        filePayloads.push({ name: file.name, content });
       }
 
-      if (result.transactions.length === 0) {
-        toast.error('No transactions found in CSV');
-        setImporting(false);
-        return;
-      }
+      const result = await runFullImport(selectedFY, filePayloads, (p) => setUploadProgress(p));
 
-      // Filter valid transactions
-      const validTransactions = result.transactions.filter(t => t.date && !isNaN(t.date.getTime()));
+      if (result.success && result.data) {
+        toast.success(`Imported ${result.data.totalTransactions} transactions successfully!`);
 
-      // Convert to database format - Nuclear Option to avoid varchar(20) errors
-      const tradesToInsert = validTransactions.map(tx => ({
-        user_id: user.id,
-        token_symbol: tx.token.toUpperCase().substring(0, 20),
-        trade_type: tx.type.toString().substring(0, 20),
-        quantity: tx.quantity,
-        buy_price: tx.pricePerUnit,
-        // Ensure date is strictly 10 chars (YYYY-MM-DD)
-        trade_date: tx.date.toISOString().split('T')[0],
-        exchange: (tx.exchange || selectedExchange).substring(0, 20),
-        assessment_year: '2026-27', // Explicitly set to a short string
-        tds_paid: tx.tdsDeducted || 0, // Use the proper numeric column for TDS
-        metadata: {
-          fee: tx.fee || 0 // Keep metadata minimal in case it's mistakenly varchar(20)
+        if (result.warnings && result.warnings.length > 0) {
+          setImportResult({
+            success: result.data.totalTransactions,
+            errors: result.warnings.length,
+            messages: result.warnings
+          });
         }
-      }));
 
-      // Insert into database
-      const { data, error } = await supabase
-        .from('crypto_trades')
-        .insert(tradesToInsert)
-        .select();
-
-      if (error) {
-        console.error('Database error:', error);
-        setImportResult({
-          success: 0,
-          errors: 1,
-          messages: ['Failed to save trades to database: ' + error.message]
-        });
-        toast.error('Failed to save trades');
+        fetchTrades();
+        fetchTaxComputation();
+        fetchSessions();
       } else {
-        const successCount = data?.length || 0;
-        setImportResult({
-          success: successCount,
-          errors: result.errors.length,
-          messages: [
-            `Successfully imported ${successCount} trades from ${selectedExchange}`,
-            ...result.errors.map(e => `Line ${e.line}: ${e.message}`)
-          ]
-        });
-        toast.success(`Imported ${successCount} trades successfully!`);
-        fetchTrades(); // Refresh trades list
+        toast.error('Import failed: ' + result.error);
+        if (result.warnings?.length) {
+          setImportResult({ success: 0, errors: result.warnings.length, messages: result.warnings });
+        }
       }
     } catch (err) {
       console.error('Import error:', err);
@@ -265,12 +273,10 @@ export default function CryptoTaxPage() {
       toast.error('Failed to process CSV file');
     } finally {
       setImporting(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setUploadProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [user, selectedExchange, fetchTrades]);
+  }, [user, selectedFY, fetchTrades, fetchTaxComputation, fetchSessions]);
 
   // ============= MANUAL TRADE ADD =============
   const handleAddTrade = async () => {
@@ -278,49 +284,17 @@ export default function CryptoTaxPage() {
       toast.error('Please sign in to add trades');
       return;
     }
-
-    if (!newTrade.token_symbol || !newTrade.quantity || !newTrade.buy_price || !newTrade.trade_date) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('crypto_trades').insert({
-        user_id: user.id,
-        token_symbol: newTrade.token_symbol.toUpperCase().substring(0, 20),
-        trade_type: newTrade.trade_type.toString().substring(0, 20),
-        quantity: parseFloat(newTrade.quantity),
-        buy_price: parseFloat(newTrade.buy_price),
-        trade_date: newTrade.trade_date,
-        exchange: (newTrade.exchange || 'Manual').substring(0, 20),
-        assessment_year: '2026-27',
-        tds_paid: newTrade.trade_type === 'sell'
-          ? parseFloat(newTrade.quantity) * parseFloat(newTrade.buy_price) * 0.01
-          : 0,
-        metadata: {
-          fee: 0
-        }
-      });
-
-      if (!error) {
-        toast.success('Trade added successfully');
-        setShowAddTrade(false);
-        setNewTrade({ token_symbol: '', trade_type: 'buy', quantity: '', buy_price: '', trade_date: '', exchange: 'Manual' });
-        fetchTrades();
-      } else {
-        toast.error('Failed to add trade: ' + error.message);
-      }
-    } catch (err) {
-      toast.error('An error occurred');
-    }
+    // Note: Manual add not yet implemented in new engine - fallback to raw SQL insert or future implementation
+    toast.error("Manual trade addition is temporarily disabled during system upgrade.");
   };
 
   // ============= DELETE TRADE =============
   const handleDeleteTrade = async (id: string) => {
-    const { error } = await supabase.from('crypto_trades').delete().eq('id', id);
+    const { error } = await supabase.from('crypto_transactions').delete().eq('id', id);
     if (!error) {
       toast.success('Trade deleted');
       fetchTrades();
+      fetchTaxComputation();
     } else {
       toast.error('Failed to delete trade');
     }
@@ -331,54 +305,67 @@ export default function CryptoTaxPage() {
     if (!user) return;
     if (!confirm('Are you sure you want to delete all trades? This cannot be undone.')) return;
 
-    const { error } = await supabase.from('crypto_trades').delete().eq('user_id', user.id);
+    const { error } = await supabase.from('crypto_transactions').delete().eq('user_id', user.id);
+    const { error: sessError } = await supabase.from('crypto_import_sessions').delete().eq('user_id', user.id);
+
     if (!error) {
       toast.success('All trades deleted');
+      setTaxComputation(null);
       fetchTrades();
+      fetchSessions();
     } else {
       toast.error('Failed to delete trades');
     }
   };
 
-  // ============= PORTFOLIO CALCULATIONS =============
-  const engineTransactions: Transaction[] = useMemo(() =>
-    filteredTrades.map(t => ({
-      id: t.id,
-      token: t.token_symbol,
-      type: t.trade_type as 'buy' | 'sell',
-      quantity: t.quantity,
-      pricePerUnit: t.buy_price,
-      date: new Date(t.trade_date),
-      exchange: t.exchange,
-      fee: t.fee || t.metadata?.fee || 0,
-      tdsDeducted: t.metadata?.tds_deducted || 0
-    })), [filteredTrades]);
+  const downloadSampleCSV = () => {
+    const csvContent = "Details,Transaction Date,Transaction Type,Asset,Amount,Price (INR),Total (INR),Exchange\n" +
+      "Buy BTC,2025-04-12,Buy,BTC,0.5,3500000,1750000,CoinDCX\n" +
+      "Sell BTC,2025-06-15,Sell,BTC,0.2,4000000,800000,CoinDCX";
 
-  const portfolio = useMemo(() => {
-    if (engineTransactions.length === 0) return null;
-    return calculateDetailedPortfolio(engineTransactions, settings);
-  }, [engineTransactions, settings]);
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "sample_crypto_trades.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   // ============= STATISTICS (FY-wise) =============
   const stats = useMemo(() => {
     const buyTrades = filteredTrades.filter(t => t.trade_type === 'buy');
     const sellTrades = filteredTrades.filter(t => t.trade_type === 'sell');
-    const buyVolume = buyTrades.reduce((sum, t) => sum + t.quantity * t.buy_price, 0);
-    const sellVolume = sellTrades.reduce((sum, t) => sum + t.quantity * t.buy_price, 0);
-    const tdsDeducted = filteredTrades.reduce((sum, t) => sum + (t.metadata?.tds_deducted || 0), 0) || sellVolume * 0.01;
 
+    // Use engine computation if available
+    if (taxComputation) {
+      return {
+        totalTrades: filteredTrades.length,
+        buyTrades: buyTrades.length,
+        sellTrades: sellTrades.length,
+        buyVolume: taxComputation.totalCostOfAcquisitionInr,
+        sellVolume: taxComputation.totalConsiderationInr,
+        netGain: taxComputation.taxableCapitalGains,
+        taxPayable: taxComputation.totalTaxLiability,
+        tdsCredit: taxComputation.totalTDSPaid,
+        uniqueTokens: taxComputation.uniqueAssets
+      };
+    }
+
+    // Fallback or empty state
     return {
       totalTrades: filteredTrades.length,
       buyTrades: buyTrades.length,
       sellTrades: sellTrades.length,
-      buyVolume,
-      sellVolume,
-      netGain: portfolio?.totalTaxableGains || 0,
-      taxPayable: portfolio?.totalTaxAt30 || 0,
-      tdsCredit: portfolio?.totalTDSPaid || tdsDeducted,
-      uniqueTokens: new Set(filteredTrades.map(t => t.token_symbol)).size
+      buyVolume: 0,
+      sellVolume: 0,
+      netGain: 0,
+      taxPayable: 0,
+      tdsCredit: 0,
+      uniqueTokens: 0
     };
-  }, [filteredTrades, portfolio]);
+  }, [filteredTrades, taxComputation]);
 
   // ============= CHART DATA (FY-wise) =============
   const tokenAllocation = useMemo(() => {
@@ -888,6 +875,7 @@ export default function CryptoTaxPage() {
                         type="file"
                         id="csv-upload"
                         accept=".csv"
+                        multiple
                         className="hidden"
                         onChange={handleCSVUpload}
                         disabled={importing}
@@ -1035,7 +1023,14 @@ export default function CryptoTaxPage() {
 
             {/* ============= REPORTS TAB ============= */}
             {activeTab === 'reports' && (
-              <ReportsSection trades={trades} portfolio={portfolio} user={user} formatCurrency={formatCurrency} />
+              <ReportsSection
+                trades={trades}
+                portfolio={portfolio}
+                taxComputation={taxComputation}
+                user={user}
+                formatCurrency={formatCurrency}
+                selectedFY={selectedFY}
+              />
             )}
 
             {/* ============= SETTINGS TAB ============= */}
@@ -1140,147 +1135,82 @@ function StatCard({ label, value, subtext, icon, highlight }: {
 }
 
 // ============= REPORTS SECTION COMPONENT =============
-function ReportsSection({ trades, portfolio, user, formatCurrency }: {
+function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputation, selectedFY }: {
   trades: Trade[];
-  portfolio: any;
+  portfolio?: any;
+  taxComputation?: TaxComputationResult | null;
   user: any;
   formatCurrency: (v: number) => string;
+  selectedFY?: string;
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
 
-  // Fetch user profile for PAN
-  const [userProfile, setUserProfile] = useState<any>(null);
-  useEffect(() => {
-    const loadProfile = async () => {
-      if (!user) return;
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-        if (profile) setUserProfile(profile);
-      } catch { /* ignore */ }
-    };
-    loadProfile();
-  }, [user]);
-
-  const settings: TaxSettings = {
-    accountingMethod: 'FIFO',
-    treatAirdropsAsIncome: true,
-    treatRewardsAsIncome: true,
-    treatStakingAsIncome: true,
-    treatInterestAsIncome: true,
-    treatMiningAsIncome: true,
-    baseCurrency: 'INR',
-    country: 'India',
-    assessmentYear: '2026-27'
-  };
-
-  const handleGenerateComprehensiveReport = async () => {
-    if (trades.length === 0) {
-      toast.error('No trades to generate report');
-      return;
-    }
-    setGenerating('comprehensive');
+  const handleDownloadScheduleVDA = async () => {
+    if (!selectedFY) return;
+    setGenerating('vda');
     try {
-      const reportData = buildComprehensiveReportData(
-        portfolio,
-        trades,
-        {
-          name: (userProfile as any)?.full_name || user?.user_metadata?.full_name || 'Taxpayer',
-          pan: (userProfile as any)?.pan_number || user?.user_metadata?.pan || 'XXXXX0000X',
-          email: user?.email || ''
-        },
-        settings,
-        '2025-26',
-        '2026-27'
-      );
-      generateComprehensiveReport(reportData);
-      toast.success('Comprehensive Tax Report downloaded!');
-    } catch (error) {
-      console.error('Report generation error:', error);
-      toast.error('Failed to generate report');
+      const res = await exportScheduleVDA(selectedFY);
+      if (res.success && res.data) {
+        const blob = new Blob([res.data.csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success('Schedule VDA CSV downloaded!');
+      } else {
+        toast.error('Failed to generate Schedule VDA: ' + res.error);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Export failed');
     } finally {
       setGenerating(null);
     }
   };
 
-  const handleGenerateReport = async (type: 'complete' | 'vda') => {
-    if (trades.length === 0) {
-      toast.error('No trades to generate report');
-      return;
-    }
-    setGenerating(type);
+  const handleDownloadTDS = async () => {
+    if (!selectedFY) return;
+    setGenerating('tds');
     try {
-      const allMatchedLots = portfolio?.breakdown?.flatMap((res: any) => res.matchedLots) || [];
-      allMatchedLots.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
-      const reportData: TaxReportData = {
-        user: {
-          name: (userProfile as any)?.full_name || user?.user_metadata?.full_name || 'Taxpayer',
-          pan: (userProfile as any)?.pan_number || user?.user_metadata?.pan || 'XXXXX0000X',
-          email: user?.email || ''
-        },
-        financialYear: '2025-26',
-        assessmentYear: '2026-27',
-        generatedAt: new Date(),
-        summary: {
-          totalBuyValue: trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0),
-          totalSellValue: trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0),
-          totalGains: portfolio?.totalTaxableGains > 0 ? portfolio.totalTaxableGains : 0,
-          totalLosses: portfolio?.totalLosses || 0,
-          netGainLoss: portfolio?.totalTaxableGains || 0,
-          taxableGains: Math.max(0, portfolio?.totalTaxableGains || 0),
-          taxAt30Percent: portfolio?.totalTaxAt30 || 0,
-          totalTDSPaid: portfolio?.totalTDSPaid || 0,
-          netTaxPayable: Math.max(0, (portfolio?.netTaxDue || 0)),
-          otherIncome: portfolio?.totalOtherIncome || 0
-        },
-        transactions: trades.map(t => ({
-          date: t.trade_date, type: t.trade_type, token: t.token_symbol,
-          quantity: t.quantity, pricePerUnit: t.buy_price,
-          totalValue: t.quantity * t.buy_price, exchange: t.exchange || 'Unknown'
-        })),
-        scheduleVDA: allMatchedLots.map((lot: any, i: number) => ({
-          slNo: i + 1,
-          dateOfTransfer: new Date(lot.sellDate).toLocaleDateString('en-IN'),
-          headOfIncome: 'Income from VDA',
-          descriptionOfVDA: lot.token,
-          saleConsideration: lot.sellPrice * lot.quantity,
-          costOfAcquisition: lot.buyPrice * lot.quantity,
-          gainLoss: lot.gainLoss
-        })),
-        tokenWiseSummary: portfolio?.tokenWise?.map((t: any) => ({
-          token: t.name, totalBought: 0, totalSold: 0, avgBuyPrice: 0,
-          realizedGain: t.gain - t.loss, currentHolding: t.holding
-        })) || [],
-        exchangeWiseTDS: []
-      };
-      if (type === 'complete') { generateCompleteTaxReport(reportData); }
-      else { generateScheduleVDAPDF(reportData); }
-      toast.success(`${type === 'complete' ? 'Complete Tax Report' : 'Schedule VDA'} downloaded!`);
-    } catch (error) {
-      console.error('Report generation error:', error);
-      toast.error('Failed to generate report');
+      const res = await exportTDSReconciliation(selectedFY);
+      if (res.success && res.data) {
+        const blob = new Blob([res.data.csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success('TDS Reconciliation CSV downloaded!');
+      } else {
+        toast.error('Failed to generate TDS Report: ' + res.error);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Export failed');
     } finally {
       setGenerating(null);
     }
   };
 
-  // Compute in-page summary
-  const buyVolume = trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-  const sellVolume = trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-  const sellCount = trades.filter(t => t.trade_type === 'sell').length;
-  const taxableGains = Math.max(0, portfolio?.totalTaxableGains || 0);
-  const totalLosses = portfolio?.totalLosses || 0;
-  const taxAt30 = portfolio?.totalTaxAt30 || 0;
-  const tdsPaid = portfolio?.totalTDSPaid || 0;
-  const netTax = Math.max(0, taxAt30 - tdsPaid);
-  const cess = taxAt30 * 0.04;
-  const totalTax = taxAt30 + cess;
+  // Preview Data Source: TaxComputation or Portfolio (Fallback)
+  const taxableGains = taxComputation?.taxableCapitalGains ?? (portfolio?.totalTaxableGains || 0);
+  const totalLosses = taxComputation?.grossCapitalLosses ?? (portfolio?.totalLosses || 0);
+  const totalTax = taxComputation?.totalTaxLiability ?? (portfolio?.totalTaxAt30 * 1.04 || 0);
+  const tdsPaid = taxComputation?.totalTDSPaid ?? (portfolio?.totalTDSPaid || 0);
+  const netTax = taxComputation?.netTaxPayable ?? Math.max(0, totalTax - tdsPaid);
 
-  const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const sellCount = taxComputation?.assetSummaries?.reduce((acc, curr) => acc + curr.totalSold, 0) ?? trades.filter(t => t.trade_type === 'sell').length;
+  const buyVolume = taxComputation?.totalCostOfAcquisitionInr ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+  const sellVolume = taxComputation?.totalConsiderationInr ?? trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+
+  // Asset Wise List
+  const assetList = taxComputation?.assetSummaries || [];
 
   return (
     <div className="space-y-6">
@@ -1292,7 +1222,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
               <FileSpreadsheet className="h-6 w-6" />
               <div>
                 <h3 className="text-lg font-semibold">Crypto Tax Reports — AY 2026-27</h3>
-                <p className="text-indigo-200 text-sm">Comprehensive report with Schedule VDA, Asset P&L, FIFO audit trail</p>
+                <p className="text-indigo-200 text-sm">Comprehensive report with Schedule VDA, Asset P&L</p>
               </div>
             </div>
             <Badge className="bg-white/20 text-white border-white/30">{trades.length} trades</Badge>
@@ -1301,13 +1231,13 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
       </Card>
 
       {/* In-Page Tax Summary Preview */}
-      {portfolio && showPreview && (
+      {showPreview && (taxComputation || portfolio) && (
         <Card className="border-2 border-indigo-200">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Target className="h-5 w-5 text-indigo-600" />
-                Capital Gains Summary — FY 2025-26
+                Capital Gains Summary — {selectedFY}
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
                 <EyeOff className="h-4 w-4" />
@@ -1335,7 +1265,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                 <p className="text-lg font-bold text-emerald-700">{formatCurrency(taxableGains)}</p>
               </div>
               <div className="p-3 rounded-xl bg-red-50 border border-red-200">
-                <p className="text-xs text-red-600 mb-1">Losses (non-deductible)</p>
+                <p className="text-xs text-red-600 mb-1">Losses (Ignored)</p>
                 <p className="text-lg font-bold text-red-700">{formatCurrency(totalLosses)}</p>
               </div>
             </div>
@@ -1346,35 +1276,27 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                 <ShieldCheck className="h-4 w-4" /> Tax Computation (Section 115BBH)
               </h4>
               <div className="grid gap-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Tax @ 30% on Gains</span>
-                  <span className="font-medium">{fmtINR(taxAt30)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Health & Education Cess @ 4%</span>
-                  <span className="font-medium">{fmtINR(cess)}</span>
-                </div>
                 <div className="flex justify-between border-t pt-2">
-                  <span className="text-slate-700 font-medium">Total Tax Liability</span>
-                  <span className="font-bold">{fmtINR(totalTax)}</span>
+                  <span className="text-slate-700 font-medium">Total Tax Liability (inc Cess)</span>
+                  <span className="font-bold">{formatCurrency(totalTax)}</span>
                 </div>
                 <div className="flex justify-between text-emerald-700">
-                  <span>TDS Already Paid (1%)</span>
-                  <span className="font-medium">- {fmtINR(tdsPaid)}</span>
+                  <span>TDS Already Paid</span>
+                  <span className="font-medium">- {formatCurrency(tdsPaid)}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 text-lg font-bold">
                   <span className={netTax > 0 ? 'text-red-700' : 'text-emerald-700'}>
                     {netTax > 0 ? 'Net Tax Payable' : 'Refund Due'}
                   </span>
                   <span className={netTax > 0 ? 'text-red-700' : 'text-emerald-700'}>
-                    {fmtINR(Math.abs(totalTax - tdsPaid))}
+                    {formatCurrency(Math.abs(netTax))}
                   </span>
                 </div>
               </div>
             </div>
 
             {/* Asset-wise P&L Preview */}
-            {portfolio?.tokenWise && portfolio.tokenWise.length > 0 && (
+            {assetList.length > 0 && (
               <div>
                 <h4 className="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4" /> Asset-Wise P&L
@@ -1390,13 +1312,13 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                       </tr>
                     </thead>
                     <tbody>
-                      {portfolio.tokenWise.slice(0, 10).map((t: any, i: number) => (
+                      {assetList.slice(0, 10).map((t: any, i: number) => (
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                          <td className="p-2 font-medium border">{t.name}</td>
-                          <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.gain)}</td>
-                          <td className="p-2 text-right text-red-600 border">{t.loss > 0 ? formatCurrency(t.loss) : '₹0'}</td>
-                          <td className={`p-2 text-right font-bold border ${(t.gain - t.loss) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                            {formatCurrency(t.gain - t.loss)}
+                          <td className="p-2 font-medium border">{t.asset}</td>
+                          <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.gains)}</td>
+                          <td className="p-2 text-right text-red-600 border">{t.losses > 0 ? formatCurrency(t.losses) : '₹0'}</td>
+                          <td className={`p-2 text-right font-bold border ${(t.gains - t.losses) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {formatCurrency(t.gains - t.losses)}
                           </td>
                         </tr>
                       ))}
@@ -1405,110 +1327,62 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
                 </div>
               </div>
             )}
-
-            {/* Self Filing Tips */}
-            <Alert className="border-amber-200 bg-amber-50">
-              <Info className="h-4 w-4 text-amber-600" />
-              <AlertTitle className="text-amber-800">Self Filing Tips</AlertTitle>
-              <AlertDescription className="text-amber-700 text-xs space-y-1">
-                <p>1. No set-off of any loss is allowed (Even within same coin/pair).</p>
-                <p>2. Tax on capital gains is 30% plus surcharge and 4% cess.</p>
-                <p>3. Losses cannot be carried forward to future years.</p>
-                <p>4. TDS can be claimed in the Income Tax Return.</p>
-                <p>5. Capital Gains from VDAs must be disclosed in Schedule VDA of ITR.</p>
-              </AlertDescription>
-            </Alert>
           </CardContent>
         </Card>
-      )}
-
-      {!showPreview && portfolio && (
-        <Button variant="outline" size="sm" onClick={() => setShowPreview(true)}>
-          <Eye className="h-4 w-4 mr-2" /> Show Tax Summary
-        </Button>
       )}
 
       {/* Download Buttons */}
-      <div className="grid md:grid-cols-3 gap-4">
-        {/* Premium Comprehensive Report (MAIN) */}
-        <Card className="border-2 border-indigo-300 shadow-md">
-          <CardContent className="p-6">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">TaxMitra Premium Report</h3>
-                <p className="text-sm text-slate-503 mt-1">
-                  Full multi-page report: Transaction Preferences, Capital Gains, Asset P&L, TDS, Schedule VDA, Tax Computation
-                </p>
-                <Button
-                  className="mt-4 bg-indigo-600 hover:bg-indigo-700 w-full"
-                  disabled={generating !== null || trades.length === 0}
-                  onClick={handleGenerateComprehensiveReport}
-                >
-                  {generating === 'comprehensive' ? (
-                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
-                  ) : (
-                    <><Download className="h-4 w-4 mr-2" /> Download Full Report</>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Complete Tax Report */}
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-xl bg-indigo-100 flex items-center justify-center">
-                <ShieldCheck className="h-6 w-6 text-indigo-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">Tax Summary</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  FIFO calculations + audit trail
-                </p>
-                <Button
-                  variant="outline"
-                  className="mt-4 w-full"
-                  disabled={generating !== null || trades.length === 0}
-                  onClick={() => handleGenerateReport('complete')}
-                >
-                  {generating === 'complete' ? (
-                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
-                  ) : (
-                    <><Download className="h-4 w-4 mr-2" /> Download PDF</>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Schedule VDA */}
-        <Card className="border-0 shadow-sm">
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Schedule VDA Download */}
+        <Card className="border-2 border-emerald-300 shadow-md">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
               <div className="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center">
                 <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-slate-900">Schedule VDA</h3>
+                <h3 className="font-semibold text-slate-900">Schedule VDA (Excel/CSV)</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  ITR-ready Section 115BBH format
+                  Ready-to-upload format for ITR Utility (Section 115BBH)
                 </p>
                 <Button
-                  variant="outline"
-                  className="mt-4 w-full"
-                  disabled={generating !== null || trades.length === 0}
-                  onClick={() => handleGenerateReport('vda')}
+                  className="mt-4 bg-emerald-600 hover:bg-emerald-700 w-full"
+                  disabled={generating !== null || (!taxComputation && trades.length === 0)}
+                  onClick={handleDownloadScheduleVDA}
                 >
                   {generating === 'vda' ? (
                     <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
                   ) : (
-                    <><Download className="h-4 w-4 mr-2" /> Download PDF</>
+                    <><Download className="h-4 w-4 mr-2" /> Download Schedule VDA (CSV)</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* TDS Reconciliation */}
+        <Card className="border-0 shadow-sm border-blue-200 border">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                <FileCheck className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-900">TDS Reconciliation</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Verify your Form 26AS vs Actual Deductions
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-4 w-full"
+                  disabled={generating !== null || (!taxComputation && trades.length === 0)}
+                  onClick={handleDownloadTDS}
+                >
+                  {generating === 'tds' ? (
+                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
+                  ) : (
+                    <><Download className="h-4 w-4 mr-2" /> Download TDS Report (CSV)</>
                   )}
                 </Button>
               </div>
@@ -1517,10 +1391,10 @@ function ReportsSection({ trades, portfolio, user, formatCurrency }: {
         </Card>
       </div>
 
-      {trades.length === 0 && (
+      {!taxComputation && trades.length === 0 && (
         <Alert className="border-amber-200 bg-amber-50">
           <AlertTriangle className="h-4 w-4 text-amber-600" />
-          <AlertTitle className="text-amber-800">No Trades Available</AlertTitle>
+          <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
           <AlertDescription className="text-amber-700">
             Import your crypto trades first to generate tax reports. Go to the Import tab to upload your exchange CSV.
           </AlertDescription>
