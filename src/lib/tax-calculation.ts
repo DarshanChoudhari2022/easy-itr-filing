@@ -27,6 +27,7 @@ export interface TaxData {
         section80C?: number;
         section80D?: number;
         section80TTA?: number;
+        section80TTB?: number;
         section80E?: number; // Education Loan
         section80G?: number; // Donations
         nps80CCD?: number; // NPS contribution
@@ -123,6 +124,7 @@ export function calculateTax(data: TaxData): TaxResult {
         const sec80C = Math.min(config.section80CLimit, deductions.section80C || 0);
         const sec80D = Math.min(75000, deductions.section80D || 0);
         const sec80TTA = Math.min(10000, deductions.section80TTA || 0);
+        const sec80TTB = Math.min(50000, deductions.section80TTB || 0);
         const sec80E = deductions.section80E || 0; // No limit
         const sec80G = deductions.section80G || 0;
         const nps = Math.min(config.section80CCDExtraLimit, deductions.nps80CCD || 0);
@@ -131,7 +133,7 @@ export function calculateTax(data: TaxData): TaxResult {
         const sec80DD = Math.min(125000, deductions.section80DD || 0);
         const sec80DDB = Math.min(100000, deductions.section80DDB || 0);
         const sec80U = Math.min(125000, deductions.section80U || 0);
-        totalDeductions = sec80C + sec80D + sec80TTA + sec80E + sec80G + nps +
+        totalDeductions = sec80C + sec80D + sec80TTA + sec80TTB + sec80E + sec80G + nps +
             sec80EE + sec80EEA + sec80DD + sec80DDB + sec80U;
     } else {
         // New regime: Only NPS employer contribution (80CCD(2)) and standard deduction

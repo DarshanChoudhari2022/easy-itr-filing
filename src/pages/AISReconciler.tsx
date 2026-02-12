@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PlanGate } from "@/hooks/usePlanGuard";
 import AISUploader from "@/components/AISUploader";
-import { getITRFilings, ITRFilingData, saveIncomeSources, updateProfileKYC, IncomeSourcesData, getAISData, AISDBData } from "@/lib/supabase-data-service";
+import { getITRFilings, ITRFilingData, updateProfileKYC, IncomeSourcesData, getAISData, AISDBData } from "@/lib/supabase-data-service";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { FileText } from "lucide-react";
@@ -25,7 +26,7 @@ export default function AISReconciler() {
 
     const fetchAISData = async () => {
         try {
-            const data = await getAISData('2025-26');
+            const data = await getAISData('2026-27');
             if (data) {
                 setAisDBData(data as unknown as AISDBData);
             }
@@ -37,7 +38,7 @@ export default function AISReconciler() {
     const loadITRData = async () => {
         try {
             // Fetch latest filing for current AY
-            const filings = await getITRFilings('2025-26');
+            const filings = await getITRFilings('2026-27');
             if (filings && filings.length > 0) {
                 const latest = filings[0] as unknown as ITRFilingData;
                 // Transform to format expected by AISUploader
@@ -78,40 +79,68 @@ export default function AISReconciler() {
                             try {
                                 console.log("Auto-filling data:", suggestions);
 
-                                // 1. Update Profile PAN if available
-                                if (suggestions.pan) {
+                                // 1. Update Profile PAN if available and valid
+                                if (suggestions.pan && suggestions.pan !== 'MANUAL_ENTRY' && /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(suggestions.pan)) {
                                     await updateProfileKYC({ pan_number: suggestions.pan });
                                 }
 
-                                // 2. Map suggestions to Income Sources structure
-                                const incomeData: IncomeSourcesData = {
-                                    assessment_year: '2025-26',
+                                // 2. Insert as List Items (matching Income.tsx schema)
+                                const ay = '2026-27';
+                                const items: any[] = [];
 
-                                    // Salary
-                                    has_salary: (suggestions.salary || 0) > 0,
-                                    salary_gross: suggestions.salary || 0,
-                                    salary_tds: suggestions.salaryTDS || 0,
+                                if ((suggestions.salary || 0) > 0) {
+                                    items.push({
+                                        user_id: user?.id,
+                                        source_type: 'salary',
+                                        amount: suggestions.salary,
+                                        tds_deducted: suggestions.salaryTDS || 0,
+                                        description: 'Imported from AIS (Salary)',
+                                        assessment_year: ay
+                                    });
+                                }
 
-                                    // Other Sources
-                                    has_other_sources: (suggestions.interestIncome || 0) > 0 || (suggestions.dividendIncome || 0) > 0,
-                                    savings_interest: suggestions.interestIncome || 0,
-                                    dividend_income: suggestions.dividendIncome || 0,
+                                if ((suggestions.interestIncome || 0) > 0) {
+                                    items.push({
+                                        user_id: user?.id,
+                                        source_type: 'other_sources',
+                                        amount: suggestions.interestIncome,
+                                        description: 'Interest Income (AIS)',
+                                        assessment_year: ay
+                                    });
+                                }
 
-                                    // Capital Gains
-                                    has_capital_gains: (suggestions.capitalGains || 0) > 0,
-                                    ltcg_equity: suggestions.capitalGains || 0, // Using LTCG as placeholder default
+                                if ((suggestions.dividendIncome || 0) > 0) {
+                                    items.push({
+                                        user_id: user?.id,
+                                        source_type: 'other_sources',
+                                        amount: suggestions.dividendIncome,
+                                        description: 'Dividend Income (AIS)',
+                                        assessment_year: ay
+                                    });
+                                }
 
-                                    // Crypto
-                                    has_crypto: suggestions.hasCryptoTransactions || false,
-                                };
+                                if ((suggestions.capitalGains || 0) > 0) {
+                                    items.push({
+                                        user_id: user?.id,
+                                        source_type: 'capital_gains_equity',
+                                        amount: suggestions.capitalGains,
+                                        description: 'Capital Gains (AIS)',
+                                        assessment_year: ay
+                                    });
+                                }
 
-                                // 3. Save to Supabase
-                                await saveIncomeSources(incomeData);
+                                // 3. Save to Supabase using 'any' cast to bypass strict typing
+                                if (items.length > 0 && user) {
+                                    const { error } = await supabase.from('income_sources' as any).insert(items);
+                                    if (error) throw error;
 
-                                toast({
-                                    title: "Synced with Database",
-                                    description: "Income details from AIS have been saved to your tax profile."
-                                });
+                                    toast({
+                                        title: "Synced with Income Page",
+                                        description: `Successfully added ${items.length} income sources from AIS.`
+                                    });
+                                } else {
+                                    toast({ title: "No new data", description: "No significant income found in AIS to import." });
+                                }
 
                             } catch (error) {
                                 console.error("Failed to save auto-fill data", error);

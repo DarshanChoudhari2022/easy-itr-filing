@@ -242,8 +242,8 @@ export default function AISUploader({ itrData, initialData, onAutoFill, onNext }
         try {
             setIsSaving(true);
             const manualAIS: AISData = {
-                assessmentYear: '2025-26',
-                financialYear: '2024-25',
+                assessmentYear: '2026-27',
+                financialYear: '2025-26',
                 pan: 'MANUAL_ENTRY',
                 generatedDate: new Date().toISOString(),
                 records: [],
@@ -272,7 +272,7 @@ export default function AISUploader({ itrData, initialData, onAutoFill, onNext }
             };
 
             await saveAISData({
-                assessment_year: '2025-26',
+                assessment_year: '2026-27',
                 parsed_data: manualAIS,
                 source_type: 'manual',
                 status: 'parsed',

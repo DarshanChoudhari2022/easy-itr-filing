@@ -304,8 +304,8 @@ export function parseAISJson(jsonData: any): AISData {
 
     return {
         pan: jsonData.pan || '',
-        financialYear: jsonData.financialYear || '2024-25',
-        assessmentYear: jsonData.assessmentYear || '2025-26',
+        financialYear: jsonData.financialYear || '2025-26',
+        assessmentYear: jsonData.assessmentYear || '2026-27',
         generatedDate: jsonData.generatedDate || new Date().toISOString(),
         totalTDSCredited: tdsDetails.total,
         totalTCSCredited: 0,

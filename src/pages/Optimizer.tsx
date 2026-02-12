@@ -9,7 +9,8 @@ import { Loader2, BarChart3, TrendingUp, Check, ArrowRight, RefreshCw, Sparkles,
 import { toast } from "sonner";
 import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { calculateTax as calculateTaxEngine } from "@/lib/tax-calculation";
+import { calculateTax as calculateTaxEngine, TaxData } from "@/lib/tax-calculation";
+import { getIncomeSources, getDeductions, getCryptoTrades } from "@/lib/supabase-data-service";
 
 interface TaxSummary {
   id: string;
@@ -80,46 +81,58 @@ export default function Optimizer() {
   const recalculateTax = async () => {
     setCalculating(true);
     try {
-      // Fetch all income sources
-      const { data: incomeSources } = await supabase
-        .from("income_sources")
-        .select("*")
-        .eq("user_id", user!.id);
+      // 1. Fetch aggregated income and deductions from service
+      const incomeData = await getIncomeSources(assessmentYear);
+      const deductionsData = await getDeductions(assessmentYear);
 
-      // Fetch all deductions
-      const { data: deductions } = await supabase
-        .from("deductions")
-        .select("*")
-        .eq("user_id", user!.id);
+      // 2. Fetch crypto trades for TDS calculation
+      const trades = await getCryptoTrades(assessmentYear);
 
-      // Fetch crypto trades
-      const { data: cryptoTrades } = await supabase
-        .from("crypto_trades")
-        .select("*")
-        .eq("user_id", user!.id);
+      // 3. Build comprehensive TaxData for the engine
+      const taxData: TaxData = {
+        salary: incomeData.salary_gross || 0,
+        houseProperty: incomeData.net_house_property_income || 0,
+        otherSources: {
+          savingsInterest: incomeData.savings_interest || 0,
+          fdInterest: incomeData.fd_interest || 0, // Assuming mapped
+          dividends: incomeData.dividend_income || 0,
+          misc: incomeData.other_income || 0
+        },
+        businessIncome: incomeData.presumptive_income || 0,
+        capitalGains: {
+          longTermEquity: incomeData.ltcg_equity || 0,
+          cryptoVDA: incomeData.crypto_gains || 0
+        },
+        deductions: {
+          section80C: deductionsData.section_80c || 0,
+          section80D: deductionsData.section_80d || 0,
+          section80TTA: deductionsData.section_80tta || 0,
+          section80TTB: deductionsData.section_80ttb || 0,
+          section80E: deductionsData.section_80e || 0,
+          section80G: deductionsData.section_80g || 0,
+          hra: deductionsData.hra_exemption || 0,
+          lta: deductionsData.lta_exemption || 0,
+          nps80CCD: (deductionsData.section_80ccd_1 || 0) + (deductionsData.section_80ccd_1b || 0)
+        },
+        assessmentYear: assessmentYear,
+        regime: 'new', // Default
+        tdsPaid: (incomeData.salary_tds || 0) + ((trades || []) as any[]).reduce((sum, s) => sum + (s.tds_paid || 0), 0)
+      };
 
-      // Calculate totals
-      const totalIncome = (incomeSources || []).reduce((sum, s) => sum + Number(s.amount), 0);
-      const totalDeductions = (deductions || []).reduce((sum, d) => sum + Number(d.amount), 0);
-      const totalTds = (incomeSources || []).reduce((sum, s) => sum + Number(s.tds_deducted || 0), 0) +
-        (cryptoTrades || []).reduce((sum, t) => sum + Number(t.tds_paid || 0), 0);
-
-      // Use the engine for both regimes
-      const resultOld = calculateTaxEngine({
-        salary: totalIncome,
-        deductions: { section80C: totalDeductions }, // Simplified mapping
-        regime: "old",
-        assessmentYear: assessmentYear
-      });
-
-      const resultNew = calculateTaxEngine({
-        salary: totalIncome,
-        regime: "new",
-        assessmentYear: assessmentYear
-      });
+      // 4. Calculate results for both regimes
+      const resultOld = calculateTaxEngine({ ...taxData, regime: "old" });
+      const resultNew = calculateTaxEngine({ ...taxData, regime: "new" });
 
       // Determine suggested regime
       const suggestedRegime = resultOld.finalTax <= resultNew.finalTax ? "old" : "new";
+
+      // 5. Build summary object for display
+      const totalIncome = (taxData.salary || 0) + (taxData.houseProperty || 0) +
+        (taxData.otherSources?.savingsInterest || 0) +
+        (taxData.otherSources?.dividends || 0) +
+        (taxData.capitalGains?.longTermEquity || 0);
+
+      const totalDeductions = resultOld.totalDeductions;
 
       // Upsert tax summary
       const { data, error } = await supabase
@@ -127,13 +140,13 @@ export default function Optimizer() {
         .upsert([{
           user_id: user!.id,
           assessment_year: assessmentYear,
-          total_income: totalIncome,
-          total_deductions: totalDeductions,
-          taxable_income_old: resultOld.taxableIncome,
-          taxable_income_new: resultNew.taxableIncome,
+          total_income: Math.round(totalIncome),
+          total_deductions: Math.round(totalDeductions),
+          taxable_income_old: Math.round(resultOld.taxableIncome),
+          taxable_income_new: Math.round(resultNew.taxableIncome),
           tax_old_regime: Math.round(resultOld.finalTax),
           tax_new_regime: Math.round(resultNew.finalTax),
-          tds_total: totalTds,
+          tds_total: Math.round(taxData.tdsPaid || 0),
           suggested_regime: suggestedRegime as "old" | "new",
           calculated_at: new Date().toISOString(),
         }], { onConflict: "user_id,assessment_year" })
