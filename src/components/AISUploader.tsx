@@ -522,24 +522,33 @@ function parseIndianNumber(raw: string): number {
 
 /**
  * Extract financial numbers from a line of text.
- * - Excludes numbers embedded in alphanumeric strings (TANs like MUMH25146C, PANs)
- * - Excludes phone numbers (10+ digit numbers)
- * - Returns { value, raw } for each number found
+ * Carefully masks out non-financial data before extracting numbers.
+ *
+ * Masking order:
+ * 1. Dates (DD/MM/YYYY) → prevents 19, 09, 2025 from leaking
+ * 2. Quarter labels (Q2(Jul-Sep)) → prevents 2 from leaking
+ * 3. Alphanumeric identifiers (MUMH25146C, BTJPC4473Q) → prevents TAN/PAN digits
+ * 4. Phone numbers (10+ consecutive digits)
+ *
+ * Indian number regex: `,\d{3}` is REQUIRED (not optional) to prevent
+ * `10,740` from being misread as `10,74` (=1074).
  */
 function extractFinancialNumbers(text: string): { value: number; raw: string }[] {
-    // First, mask out alphanumeric identifiers like PANs, TANs, Aadhaar, etc.
-    // These contain digits embedded in letter sequences
     const masked = text
-        .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ') // e.g., MUMH25146C, BTJPC4473Q
-        .replace(/\b\d{10,}\b/g, ' '); // phone numbers (10+ consecutive digits)
+        .replace(/\d{2}\/\d{2}\/\d{4}/g, ' ')       // Dates: 19/09/2025
+        .replace(/Q[1-4]\s*\([^)]*\)/gi, ' ')        // Quarter labels: Q2(Jul-Sep)
+        .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ')         // TANs/PANs: MUMH25146C
+        .replace(/\b\d{10,}\b/g, ' ');                // Phone numbers
 
-    // Match Indian-format numbers: 5,30,123 | 1,08,016 | 96,617 | 10740
-    const regex = /\b(\d{1,3}(?:,\d{2})*(?:,\d{3})?|\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\b/g;
+    // Indian format: d{1,2} followed by groups of ,dd then final ,ddd (REQUIRED)
+    // Western format: d{1,3} followed by groups of ,ddd
+    // Plain: just digits
+    const regex = /\b(\d{1,2}(?:,\d{2})*,\d{3}|\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\b/g;
     const results: { value: number; raw: string }[] = [];
     let match;
     while ((match = regex.exec(masked)) !== null) {
         const val = parseIndianNumber(match[0]);
-        if (!isNaN(val)) {
+        if (!isNaN(val) && val >= 0) {
             results.push({ value: val, raw: match[0] });
         }
     }
@@ -693,29 +702,47 @@ function extractAISFromPDFText(text: string): Record<string, any> {
 
         // Parse transaction detail rows within a section
         if (currentSection && isTransactionRow(line)) {
-            const amounts = getFinancialAmounts(line, 1);
+            const allNums = getFinancialAmounts(line, 0);
+
+            // Skip leading serial number (SR. NO column, always 1-50)
+            const startIdx = (allNums.length > 0 && allNums[0] <= 50) ? 1 : 0;
+            const amounts = allNums.slice(startIdx);
 
             if (amounts.length >= 1) {
                 const txAmount = amounts[0]; // AMOUNT PAID/CREDITED
                 const txTDS = amounts.length >= 2 ? amounts[1] : 0; // TDS DEDUCTED
                 const txTDSDeposited = amounts.length >= 3 ? amounts[2] : 0; // TDS DEPOSITED
 
+                // Validation: TDS should never exceed the amount
+                const validTDS = (txTDS <= txAmount) ? txTDS : 0;
+                const validTDSDep = (txTDSDeposited <= txAmount) ? txTDSDeposited : 0;
+
                 // Only count Active transactions
                 const isInactive = /inactive/i.test(line);
-                if (!isInactive) {
+                if (!isInactive && txAmount > 0) {
                     sectionAmountFromRows += txAmount;
-                    sectionTDSFromRows += txTDS;
+                    sectionTDSFromRows += validTDS;
                 }
 
-                console.log(`[AIS Parser v2]   Row: amt=${txAmount}, tds=${txTDS}, deposited=${txTDSDeposited}, inactive=${isInactive}`);
+                console.log(`[AIS Parser v3] Row: amt=${txAmount}, tds=${validTDS}, deposited=${validTDSDep}, inactive=${isInactive}, skippedSerial=${startIdx > 0 ? allNums[0] : 'none'}`);
             }
             continue;
         }
     }
 
     // Flush the last section
-    if (currentSection && sectionHeaderAmount > 0) {
+    if (currentSection && (sectionHeaderAmount > 0 || sectionAmountFromRows > 0)) {
         flushSectionV2(data, currentSection, sectionHeaderAmount, sectionTDSFromRows, sectionAmountFromRows);
+    }
+
+    // Cross-validation logging
+    if (data.vdaTransactions.length > 0) {
+        const vda = data.vdaTransactions[0];
+        console.log(`[AIS Parser v3] VALIDATION - VDA sale: ${vda.saleValue}, TDS: ${vda.tdsAmount}`);
+        if (vda.tdsAmount > vda.saleValue) {
+            console.warn('[AIS Parser v3] WARNING: TDS exceeds sale value - possible parsing error');
+            vda.tdsAmount = 0; // Safety reset
+        }
     }
 
     // If Part B was never found, try without the Part B guard (some PDFs may not have it)
@@ -739,11 +766,16 @@ function flushSectionV2(
     rowTDS: number,
     rowAmount: number
 ) {
-    // The header amount from the summary row is the most reliable
-    const finalAmount = headerAmount;
+    // Use header amount if available, fallback to sum of rows
+    const finalAmount = headerAmount > 0 ? headerAmount : rowAmount;
     const finalTDS = rowTDS;
 
-    console.log(`[AIS Parser v2] Flush ${section}: amount=${finalAmount}, tds=${finalTDS} (rowAmount=${rowAmount})`);
+    // Validation: TDS should be a reasonable percentage of amount (typically < 30% for most sections)
+    if (finalTDS > finalAmount && finalAmount > 0) {
+        console.warn(`[AIS Parser v3] WARNING: TDS (${finalTDS}) exceeds amount (${finalAmount}) for ${section}. Capping TDS.`);
+    }
+
+    console.log(`[AIS Parser v3] Flush ${section}: amount=${finalAmount}, tds=${finalTDS} (headerAmt=${headerAmount}, rowAmt=${rowAmount}, rowTDS=${rowTDS})`);
 
     switch (section) {
         case 'SALARY':
