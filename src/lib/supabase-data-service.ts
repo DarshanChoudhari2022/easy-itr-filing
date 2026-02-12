@@ -97,15 +97,19 @@ export async function getIncomeSources(assessmentYear: string): Promise<IncomeSo
             }
 
             // Business
-            if (row.source_type === 'business' || row.has_business_income) {
+            if (row.source_type === 'business' || row.source_type === 'business_professional' || row.has_business_income) {
                 summary.has_business_income = true;
                 summary.presumptive_income = (summary.presumptive_income || 0) + (row.amount || row.presumptive_income || 0);
             }
 
             // Capital Gains
-            if (row.source_type === 'capital_gains' || row.source_type === 'capital_gains_equity' || row.has_capital_gains) {
+            if (row.source_type?.startsWith('capital_gains') || row.has_capital_gains) {
                 summary.has_capital_gains = true;
-                summary.ltcg_equity = (summary.ltcg_equity || 0) + (row.amount || row.ltcg_equity || 0);
+                if (row.source_type === 'capital_gains_equity') {
+                    summary.ltcg_equity = (summary.ltcg_equity || 0) + (row.amount || row.ltcg_equity || 0);
+                } else {
+                    summary.ltcg_other = (summary.ltcg_other || 0) + (row.amount || row.ltcg_other || 0);
+                }
             }
 
             // Other Sources
