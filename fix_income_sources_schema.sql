@@ -33,6 +33,20 @@ BEGIN
          ALTER TABLE public.income_sources ADD COLUMN has_house_property boolean default false;
     END IF;
     -- (Add other columns as needed, kept brief for this targeted fix)
+
+    -- Missing Generic Columns for List Model (used by Income.tsx and Reconciler)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'amount') THEN
+        ALTER TABLE public.income_sources ADD COLUMN amount numeric default 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'tds_deducted') THEN
+        ALTER TABLE public.income_sources ADD COLUMN tds_deducted numeric default 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'description') THEN
+        ALTER TABLE public.income_sources ADD COLUMN description text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'employer_name') THEN
+        ALTER TABLE public.income_sources ADD COLUMN employer_name text;
+    END IF;
     
     -- 3. REMOVE Unique Constraint if it exists
     -- This constraint blocks adding multiple income sources (e.g. 2 salaries or Salary + Business).
