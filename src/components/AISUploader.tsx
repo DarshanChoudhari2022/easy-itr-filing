@@ -522,23 +522,31 @@ function parseIndianNumber(raw: string): number {
 
 /**
  * Extract financial numbers from a line of text.
- * Carefully masks out non-financial data before extracting numbers.
+ * Carefully masks out ALL non-financial data before extracting numbers.
  *
- * Masking order:
- * 1. Dates (DD/MM/YYYY) → prevents 19, 09, 2025 from leaking
- * 2. Quarter labels (Q2(Jul-Sep)) → prevents 2 from leaking
- * 3. Alphanumeric identifiers (MUMH25146C, BTJPC4473Q) → prevents TAN/PAN digits
- * 4. Phone numbers (10+ consecutive digits)
+ * Masking order (each step removes patterns that could leak false numbers):
+ * 1. Dates (DD/MM/YYYY, DD-MM-YYYY)
+ * 2. Quarter labels (Q2(Jul-Sep), Q 2, Q2 Jul-Sep, etc.)
+ * 3. Month names (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)
+ * 4. Status words (Active, Inactive)
+ * 5. Parenthesized text like (Section 194S)
+ * 6. Alphanumeric identifiers (MUMH25146C, BTJPC4473Q)
+ * 7. Phone numbers (10+ consecutive digits)
  *
  * Indian number regex: `,\d{3}` is REQUIRED (not optional) to prevent
  * `10,740` from being misread as `10,74` (=1074).
  */
 function extractFinancialNumbers(text: string): { value: number; raw: string }[] {
     const masked = text
-        .replace(/\d{2}\/\d{2}\/\d{4}/g, ' ')       // Dates: 19/09/2025
-        .replace(/Q[1-4]\s*\([^)]*\)/gi, ' ')        // Quarter labels: Q2(Jul-Sep)
-        .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ')         // TANs/PANs: MUMH25146C
-        .replace(/\b\d{10,}\b/g, ' ');                // Phone numbers
+        .replace(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/g, ' ')             // Dates: 19/09/2025 or 19-09-2025
+        .replace(/Q\s*[1-4]\s*\([^)]*\)/gi, ' ')                   // Q2(Jul-Sep) or Q 2(Jul-Sep)
+        .replace(/Q\s*[1-4]\s+[A-Z]{3}[\s\-]+[A-Z]{3}/gi, ' ')    // Q2 Jul-Sep (without parens)
+        .replace(/Q\s*[1-4]\b/gi, ' ')                             // Standalone Q2, Q 1, etc.
+        .replace(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/gi, ' ') // Month names
+        .replace(/\b(?:Active|Inactive)\b/gi, ' ')                 // Status words
+        .replace(/\([^)]*\)/g, ' ')                                // Any parenthesized text
+        .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ')                      // TANs/PANs: MUMH25146C
+        .replace(/\b\d{10,}\b/g, ' ');                             // Phone numbers
 
     // Indian format: d{1,2} followed by groups of ,dd then final ,ddd (REQUIRED)
     // Western format: d{1,3} followed by groups of ,ddd
@@ -704,27 +712,38 @@ function extractAISFromPDFText(text: string): Record<string, any> {
         if (currentSection && isTransactionRow(line)) {
             const allNums = getFinancialAmounts(line, 0);
 
-            // Skip leading serial number (SR. NO column, always 1-50)
-            const startIdx = (allNums.length > 0 && allNums[0] <= 50) ? 1 : 0;
+            // ROBUST: Skip ALL consecutive leading numbers ≤ 50
+            // These are serial numbers (1-12), leaked quarter digits (Q2→2),
+            // sub-rule numbers, or any other non-financial small values.
+            let startIdx = 0;
+            while (startIdx < allNums.length && allNums[startIdx] <= 50) {
+                startIdx++;
+            }
             const amounts = allNums.slice(startIdx);
 
+            // Log every row with full detail for debugging
+            console.log(`[AIS Parser v3] Line ${i}: "${line.substring(0, 90)}"`);
+            console.log(`[AIS Parser v3]   allNums=[${allNums.join(',')}], skipped=${startIdx}, amounts=[${amounts.join(',')}]`);
+
             if (amounts.length >= 1) {
-                const txAmount = amounts[0]; // AMOUNT PAID/CREDITED
+                const txAmount = amounts[0]; // AMOUNT PAID/CREDITED (first number > 50)
                 const txTDS = amounts.length >= 2 ? amounts[1] : 0; // TDS DEDUCTED
                 const txTDSDeposited = amounts.length >= 3 ? amounts[2] : 0; // TDS DEPOSITED
 
-                // Validation: TDS should never exceed the amount
+                // Validation: TDS should never exceed the amount paid
                 const validTDS = (txTDS <= txAmount) ? txTDS : 0;
-                const validTDSDep = (txTDSDeposited <= txAmount) ? txTDSDeposited : 0;
 
-                // Only count Active transactions
+                // Only count Active transactions with positive amounts
                 const isInactive = /inactive/i.test(line);
                 if (!isInactive && txAmount > 0) {
                     sectionAmountFromRows += txAmount;
                     sectionTDSFromRows += validTDS;
                 }
 
-                console.log(`[AIS Parser v3] Row: amt=${txAmount}, tds=${validTDS}, deposited=${validTDSDep}, inactive=${isInactive}, skippedSerial=${startIdx > 0 ? allNums[0] : 'none'}`);
+                console.log(`[AIS Parser v3]   → amt=${txAmount}, tds=${validTDS}, inactive=${isInactive}`);
+            } else {
+                // All numbers were ≤ 50 (small/zero transaction) — skip
+                console.log(`[AIS Parser v3]   → skipped (all numbers ≤ 50)`);
             }
             continue;
         }
