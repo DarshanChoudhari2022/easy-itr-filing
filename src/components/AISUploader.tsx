@@ -515,39 +515,46 @@ function ReconciliationRow({ item }: { item: ReconciliationResult }) {
  */
 function parseIndianNumber(raw: string): number {
     if (!raw) return 0;
-    // Remove all spaces, then remove commas
     const cleaned = raw.replace(/\s/g, '').replace(/,/g, '');
     const val = parseFloat(cleaned);
     return isNaN(val) ? 0 : val;
 }
 
 /**
- * Extract ALL numbers from a text string, handling Indian number formats.
- * Returns an array of { value, index } objects.
+ * Extract financial numbers from a line of text.
+ * - Excludes numbers embedded in alphanumeric strings (TANs like MUMH25146C, PANs)
+ * - Excludes phone numbers (10+ digit numbers)
+ * - Returns { value, raw } for each number found
  */
-function extractAllNumbers(text: string): { value: number; raw: string }[] {
-    // Match Indian-style numbers: optional commas, at least one digit
-    // Patterns: 5,30,123  |  1,08,016  |  10740  |  96,617  |  10  |  0
-    const regex = /(?<!\d)(\d{1,3}(?:,\d{2,3})*(?:,\d{3})*|\d+)(?:\.\d+)?(?!\d)/g;
+function extractFinancialNumbers(text: string): { value: number; raw: string }[] {
+    // First, mask out alphanumeric identifiers like PANs, TANs, Aadhaar, etc.
+    // These contain digits embedded in letter sequences
+    const masked = text
+        .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ') // e.g., MUMH25146C, BTJPC4473Q
+        .replace(/\b\d{10,}\b/g, ' '); // phone numbers (10+ consecutive digits)
+
+    // Match Indian-format numbers: 5,30,123 | 1,08,016 | 96,617 | 10740
+    const regex = /\b(\d{1,3}(?:,\d{2})*(?:,\d{3})?|\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\b/g;
     const results: { value: number; raw: string }[] = [];
     let match;
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = regex.exec(masked)) !== null) {
         const val = parseIndianNumber(match[0]);
-        results.push({ value: val, raw: match[0] });
+        if (!isNaN(val)) {
+            results.push({ value: val, raw: match[0] });
+        }
     }
     return results;
 }
 
 /**
- * Extract structured data from AIS PDF text
- * Handles the tabular format of AIS PDFs from the Income Tax portal.
+ * Extract structured data from AIS PDF text.
  *
- * Strategy:
- * 1. Extract PAN and Assessment Year from header
- * 2. Detect section headers (e.g. "TDS 194S", "TDS 192", "194A") to determine context
- * 3. For each section header row, extract the AMOUNT (last large number on the line)
- * 4. Parse individual transaction sub-rows (dates, amounts, TDS deducted/deposited)
- * 5. Aggregate totals per section
+ * FIXED approach:
+ * 1. Only start parsing AFTER "Part B" is found (ignores Part A personal info)
+ * 2. Detect section headers (TDS 194S, 192, 194A) — if same section re-detected, MERGE (no double-count)
+ * 3. Use section header AMOUNT as the authoritative total
+ * 4. Parse individual transaction rows for TDS details
+ * 5. Filter out non-financial numbers (phone numbers, TANs, years)
  */
 function extractAISFromPDFText(text: string): Record<string, any> {
     const data: Record<string, any> = {
@@ -563,10 +570,9 @@ function extractAISFromPDFText(text: string): Record<string, any> {
         financialYear: '',
     };
 
-    console.log('[AIS Parser] Raw text length:', text.length);
-    console.log('[AIS Parser] First 500 chars:', text.substring(0, 500));
+    console.log('[AIS Parser v2] Raw text length:', text.length);
 
-    // 1. Extract identity info
+    // 1. Extract identity info from anywhere in the document
     const panMatch = text.match(/(?:Permanent Account Number|PAN)[^A-Z]*([A-Z]{5}\d{4}[A-Z])/i);
     if (panMatch) data.pan = panMatch[1];
 
@@ -576,282 +582,245 @@ function extractAISFromPDFText(text: string): Record<string, any> {
     const fyMatch = text.match(/Financial\s*Year\s*(\d{4}-\d{2,4})/i);
     if (fyMatch) data.financialYear = fyMatch[1];
 
-    // 2. Split into lines and process
-    const lines = text.split('\n');
-    let currentSection = ''; // Tracks what TDS section we are in
-    let sectionTotalAmount = 0;
-    let sectionTotalTDS = 0;
-    let transactionRows: any[] = [];
+    console.log(`[AIS Parser v2] PAN: ${data.pan}, AY: ${data.assessmentYear}, FY: ${data.financialYear}`);
 
-    // Helper: determine if a line is a section header
-    // AIS section headers typically contain "TDS 194S", "TDS 192", etc.
+    // 2. Find where Part B starts — IGNORE everything before it
+    const lines = text.split('\n');
+    let partBStarted = false;
+    let currentSection = '';
+    let sectionHeaderAmount = 0; // From the header row (authoritative)
+    let sectionTDSFromRows = 0;  // Sum of individual row TDS
+    let sectionAmountFromRows = 0; // Sum of individual row amounts
+
+    // Detect section type from line content
     const detectSection = (line: string): string | null => {
         const upper = line.toUpperCase();
-        // Order matters — check more specific patterns first
-        if (upper.includes('194S') && (upper.includes('VIRTUAL DIGITAL') || upper.includes('TDS') || upper.includes('TRANSFER'))) return 'VDA';
-        if (upper.includes('TDS 194S') || (upper.includes('194S') && !upper.includes('194' + 'A'))) return 'VDA';
-        if (upper.includes('192') && (upper.includes('SALARY') || upper.includes('TDS'))) return 'SALARY';
-        if (upper.includes('TDS 192') || upper.includes('SECTION 192') || upper.includes('SEC 192')) return 'SALARY';
-        if (upper.includes('194A') && (upper.includes('INTEREST') || upper.includes('TDS'))) return 'INTEREST';
-        if (upper.includes('194K') && upper.includes('DIVIDEND')) return 'DIVIDEND';
-        if (upper.includes('194') && upper.includes('DIVIDEND')) return 'DIVIDEND';
+
+        // Skip column header rows (they contain keywords but aren't section data)
+        if (upper.includes('SR. NO') && (upper.includes('INFORMATION CODE') || upper.includes('QUARTER'))) return null;
+        if (upper.includes('DATE OF PAYMENT') || upper.includes('AMOUNT PAID')) return null;
+
+        // VDA / Crypto — check FIRST (most specific)
+        if (/\b194S\b/.test(line) && (upper.includes('VIRTUAL DIGITAL') || upper.includes('TRANSFER OF VIRTUAL'))) return 'VDA';
+        if (/TDS.{0,5}194S/i.test(line)) return 'VDA';
+
+        // Salary (Section 192)
+        if (/\b192\b/.test(line) && upper.includes('SALARY')) return 'SALARY';
+        if (/TDS.{0,5}192\b/i.test(line)) return 'SALARY';
+
+        // Interest (Section 194A)
+        if (/\b194A\b/.test(line) && upper.includes('INTEREST')) return 'INTEREST';
+
+        // Dividend
+        if (/\b194[K]?\b/.test(line) && upper.includes('DIVIDEND')) return 'DIVIDEND';
+
+        // SFT categories
         if (upper.includes('MUTUAL FUND') || upper.includes('UNITS OF MF')) return 'MF';
         if (/SFT.?0?17|SFT.?0?18|SALE OF SECURITIES/i.test(line)) return 'SHARES';
-        if (upper.includes('PROPERTY') && (upper.includes('PURCHASE') || upper.includes('SALE'))) return 'PROPERTY';
+
         return null;
     };
 
-    // Helper: determine if a line looks like a transaction detail row
-    // Transaction rows have dates like DD/MM/YYYY and multiple numbers
+    // Check if a line is a transaction detail row (has date + numbers)
     const isTransactionRow = (line: string): boolean => {
         const hasDate = /\d{2}\/\d{2}\/\d{4}/.test(line);
-        const hasQuarter = /Q[1-4]/i.test(line);
-        const numbers = extractAllNumbers(line);
-        // A transaction row has a date + at least 2 numbers (amount + TDS)
-        return (hasDate || hasQuarter) && numbers.length >= 2;
+        const hasQuarter = /Q[1-4]\s*\(/i.test(line);
+        return hasDate || hasQuarter;
     };
 
-    // Process line by line
+    // Filter numbers to only financial amounts (exclude years, serial numbers, section codes)
+    const getFinancialAmounts = (line: string, minValue = 1): number[] => {
+        return extractFinancialNumbers(line)
+            .map(n => n.value)
+            .filter(v =>
+                v >= minValue &&
+                !(v >= 2020 && v <= 2030) &&  // years
+                !(v >= 190 && v <= 200) &&     // section numbers (192, 194, 194S → 194)
+                v < 100000000                   // < 10 crore (reasonableness cap)
+            );
+    };
+
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line.length < 3) continue;
 
-        // Check for section header
+        // Wait for Part B to start
+        if (!partBStarted) {
+            if (/Part\s*B/i.test(line) || /Information relating to tax/i.test(line)) {
+                partBStarted = true;
+                console.log(`[AIS Parser v2] Part B starts at line ${i}: "${line.substring(0, 60)}"`);
+            }
+            continue;
+        }
+
+        // Detect section header
         const section = detectSection(line);
         if (section) {
-            // Before switching sections, flush any pending data from previous section
-            if (currentSection && (sectionTotalAmount > 0 || transactionRows.length > 0)) {
-                flushSection(data, currentSection, sectionTotalAmount, sectionTotalTDS, transactionRows);
+            // If SAME section detected again (e.g. "TDS 194S" then "virtual digital asset (Section 194S)")
+            // → just update the header amount, don't flush
+            if (section === currentSection) {
+                const amounts = getFinancialAmounts(line, 100);
+                if (amounts.length > 0) {
+                    const newAmount = amounts[amounts.length - 1];
+                    if (newAmount > sectionHeaderAmount) {
+                        sectionHeaderAmount = newAmount;
+                        console.log(`[AIS Parser v2] Same section ${section} re-detected, updated amount: ${sectionHeaderAmount}`);
+                    }
+                }
+                continue;
             }
 
+            // Different section → flush previous section first
+            if (currentSection && sectionHeaderAmount > 0) {
+                flushSectionV2(data, currentSection, sectionHeaderAmount, sectionTDSFromRows, sectionAmountFromRows);
+            }
+
+            // Start new section
             currentSection = section;
-            sectionTotalAmount = 0;
-            sectionTotalTDS = 0;
-            transactionRows = [];
+            sectionHeaderAmount = 0;
+            sectionTDSFromRows = 0;
+            sectionAmountFromRows = 0;
 
-            // Try to extract the summary amount from the section header line
-            // The header line often ends with COUNT and AMOUNT, e.g.: "... 10    5,30,123"
-            const numbers = extractAllNumbers(line);
-            // Filter out years (2024, 2025, 2026) and serial numbers (single digits)
-            const meaningfulNumbers = numbers.filter(n =>
-                n.value > 50 &&
-                !(n.value >= 2020 && n.value <= 2030) &&
-                !(n.value >= 190 && n.value <= 200) // Exclude section numbers like 192, 194
-            );
-            if (meaningfulNumbers.length > 0) {
-                // The last meaningful number is typically the total AMOUNT
-                sectionTotalAmount = meaningfulNumbers[meaningfulNumbers.length - 1].value;
-                // If there's more than one, the second-to-last might be COUNT
+            // Extract amount from this header line
+            const amounts = getFinancialAmounts(line, 100);
+            if (amounts.length > 0) {
+                sectionHeaderAmount = amounts[amounts.length - 1]; // Last number = AMOUNT column
             }
 
-            console.log(`[AIS Parser] Section detected: ${section}, line: "${line.substring(0, 80)}", amount: ${sectionTotalAmount}`);
+            console.log(`[AIS Parser v2] New section: ${section}, header amount: ${sectionHeaderAmount}, line: "${line.substring(0, 80)}"`);
             continue;
         }
 
-        // If we're in a section, check for transaction detail rows
+        // Parse transaction detail rows within a section
         if (currentSection && isTransactionRow(line)) {
-            const numbers = extractAllNumbers(line);
-            // Filter out years, section numbers and SR NO
-            const amounts = numbers.filter(n =>
-                n.value > 50 &&
-                !(n.value >= 2020 && n.value <= 2030)
-            );
+            const amounts = getFinancialAmounts(line, 1);
 
             if (amounts.length >= 1) {
-                // For VDA/Crypto rows: AMOUNT PAID/CREDITED, TDS DEDUCTED, TDS DEPOSITED
-                // The first meaningful amount is usually the transaction amount
-                // TDS values follow
-                const txn: any = {
-                    amount: amounts[0]?.value || 0,
-                    tdsDeducted: amounts.length >= 2 ? amounts[1].value : 0,
-                    tdsDeposited: amounts.length >= 3 ? amounts[2].value : 0,
-                    date: '',
-                    status: 'Active',
-                };
+                const txAmount = amounts[0]; // AMOUNT PAID/CREDITED
+                const txTDS = amounts.length >= 2 ? amounts[1] : 0; // TDS DEDUCTED
+                const txTDSDeposited = amounts.length >= 3 ? amounts[2] : 0; // TDS DEPOSITED
 
-                // Extract date
-                const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{4})/);
-                if (dateMatch) txn.date = dateMatch[1];
+                // Only count Active transactions
+                const isInactive = /inactive/i.test(line);
+                if (!isInactive) {
+                    sectionAmountFromRows += txAmount;
+                    sectionTDSFromRows += txTDS;
+                }
 
-                // Extract quarter
-                const quarterMatch = line.match(/Q([1-4])\s*\(/i);
-                if (quarterMatch) txn.quarter = `Q${quarterMatch[1]}`;
-
-                // Check status
-                if (/inactive/i.test(line)) txn.status = 'Inactive';
-
-                transactionRows.push(txn);
+                console.log(`[AIS Parser v2]   Row: amt=${txAmount}, tds=${txTDS}, deposited=${txTDSDeposited}, inactive=${isInactive}`);
             }
             continue;
-        }
-
-        // Even outside a detected section, look at the line for section-level data
-        // This catches cases when the section header detection missed it
-        // e.g. lines like "Amount received on transfer of virtual digital asset"
-        const upper = line.toUpperCase();
-        if (!currentSection) {
-            if (upper.includes('VIRTUAL DIGITAL ASSET') || upper.includes('194S')) {
-                currentSection = 'VDA';
-                const numbers = extractAllNumbers(line);
-                const meaningful = numbers.filter(n => n.value > 100 && !(n.value >= 2020 && n.value <= 2030));
-                if (meaningful.length > 0) sectionTotalAmount = meaningful[meaningful.length - 1].value;
-                console.log(`[AIS Parser] Late section detect: VDA, amount: ${sectionTotalAmount}`);
-            }
         }
     }
 
     // Flush the last section
-    if (currentSection && (sectionTotalAmount > 0 || transactionRows.length > 0)) {
-        flushSection(data, currentSection, sectionTotalAmount, sectionTotalTDS, transactionRows);
+    if (currentSection && sectionHeaderAmount > 0) {
+        flushSectionV2(data, currentSection, sectionHeaderAmount, sectionTDSFromRows, sectionAmountFromRows);
     }
 
-    // If we still couldn't parse sections, try a last-resort global scan
-    if (data.tdsSalary.length === 0 && data.tdsInterest.length === 0 &&
-        data.vdaTransactions.length === 0 && data.tdsDividend.length === 0) {
-        console.log('[AIS Parser] Section-based parsing found nothing, trying global scan...');
-        globalScanFallback(text, data);
+    // If Part B was never found, try without the Part B guard (some PDFs may not have it)
+    if (!partBStarted) {
+        console.log('[AIS Parser v2] Part B marker not found, retrying without guard...');
+        return extractAISFromPDFTextNoGuard(text);
     }
 
-    console.log('[AIS Parser] Final parsed data:', JSON.stringify(data, null, 2));
+    console.log('[AIS Parser v2] Final result:', JSON.stringify(data, null, 2));
     return data;
 }
 
 /**
- * Flush accumulated section data into the result object
+ * Flush a completed section into the data object.
+ * Uses the section header amount as the authoritative total (not the sum of rows).
  */
-function flushSection(
+function flushSectionV2(
     data: Record<string, any>,
     section: string,
-    totalAmount: number,
-    totalTDS: number,
-    rows: any[]
+    headerAmount: number,
+    rowTDS: number,
+    rowAmount: number
 ) {
-    // Calculate totals from individual rows if we have them
-    const rowTotal = rows.reduce((sum, r) => sum + (r.amount || 0), 0);
-    const rowTDS = rows.reduce((sum, r) => sum + (r.tdsDeducted || 0), 0);
+    // The header amount from the summary row is the most reliable
+    const finalAmount = headerAmount;
+    const finalTDS = rowTDS;
 
-    // Use whichever is larger — section header total or sum of rows
-    const bestAmount = Math.max(totalAmount, rowTotal);
-    const bestTDS = Math.max(totalTDS, rowTDS);
-
-    // Determine the source name from rows if available
-    const sourceName = rows[0]?.sourceName || 'From AIS';
-
-    console.log(`[AIS Parser] Flushing section ${section}: amount=${bestAmount}, tds=${bestTDS}, rows=${rows.length}`);
+    console.log(`[AIS Parser v2] Flush ${section}: amount=${finalAmount}, tds=${finalTDS} (rowAmount=${rowAmount})`);
 
     switch (section) {
         case 'SALARY':
-            data.tdsSalary.push({
-                grossSalary: bestAmount,
-                deductorName: 'Employer (from AIS)',
-                tdsAmount: bestTDS
-            });
+            data.tdsSalary.push({ grossSalary: finalAmount, deductorName: 'Employer (from AIS)', tdsAmount: finalTDS });
             break;
         case 'INTEREST':
-            data.tdsInterest.push({
-                grossAmount: bestAmount,
-                deductorName: 'Bank (from AIS)',
-                tdsAmount: bestTDS
-            });
+            data.tdsInterest.push({ grossAmount: finalAmount, deductorName: 'Bank (from AIS)', tdsAmount: finalTDS });
             break;
         case 'DIVIDEND':
-            data.tdsDividend.push({
-                income: bestAmount,
-                companyName: 'Company (from AIS)',
-                tdsAmount: bestTDS
-            });
+            data.tdsDividend.push({ income: finalAmount, companyName: 'Company (from AIS)', tdsAmount: finalTDS });
             break;
         case 'VDA':
-            data.vdaTransactions.push({
-                saleValue: bestAmount,
-                tokenName: 'Crypto/VDA (from AIS)',
-                tdsAmount: bestTDS,
-                transactionCount: rows.length || 1,
-                transactions: rows
-            });
+            data.vdaTransactions.push({ saleValue: finalAmount, tokenName: 'Crypto/VDA (from AIS)', tdsAmount: finalTDS });
             break;
         case 'MF':
-            data.mutualFundTransactions.push({
-                amount: bestAmount,
-                fundName: 'Mutual Fund (from AIS)'
-            });
+            data.mutualFundTransactions.push({ amount: finalAmount, fundName: 'Mutual Fund (from AIS)' });
             break;
         case 'SHARES':
-            data.sftShares.push({
-                saleValue: bestAmount,
-                stockName: 'Share Transaction (from AIS)'
-            });
+            data.sftShares.push({ saleValue: finalAmount, stockName: 'Share Transaction (from AIS)' });
             break;
         case 'PROPERTY':
-            data.propertyTransactions.push({
-                saleValue: bestAmount,
-                description: 'Property (from AIS)'
-            });
+            data.propertyTransactions.push({ saleValue: finalAmount, description: 'Property (from AIS)' });
             break;
     }
 }
 
 /**
- * Global fallback scan: if section-based parsing failed, look for key patterns anywhere in the text
+ * Fallback parser without the Part B guard — for PDFs that don't clearly mark Part B.
  */
-function globalScanFallback(text: string, data: Record<string, any>) {
-    const upper = text.toUpperCase();
+function extractAISFromPDFTextNoGuard(text: string): Record<string, any> {
+    const data: Record<string, any> = {
+        tdsSalary: [], tdsInterest: [], tdsDividend: [],
+        vdaTransactions: [], mutualFundTransactions: [],
+        sftShares: [], propertyTransactions: [],
+        pan: '', assessmentYear: '', financialYear: '',
+    };
 
-    // Look for VDA / Crypto
-    // Pattern: "194S" followed eventually by a large number
-    const vdaMatch = text.match(/194S[\s\S]{0,500}?(?:AMOUNT|COUNT)\s*[\s\S]{0,100}?([\d,]+(?:\.\d+)?)\s*$/m);
-    if (vdaMatch) {
-        const val = parseIndianNumber(vdaMatch[1]);
-        if (val > 0) {
-            data.vdaTransactions.push({ saleValue: val, tokenName: 'Crypto/VDA (from AIS)' });
-            console.log(`[AIS Parser] Global fallback VDA: ${val}`);
-        }
-    }
+    const panMatch = text.match(/(?:Permanent Account Number|PAN)[^A-Z]*([A-Z]{5}\d{4}[A-Z])/i);
+    if (panMatch) data.pan = panMatch[1];
+    const ayMatch = text.match(/Assessment\s*Year\s*(\d{4}-\d{2,4})/i);
+    if (ayMatch) data.assessmentYear = ayMatch[1];
+    const fyMatch = text.match(/Financial\s*Year\s*(\d{4}-\d{2,4})/i);
+    if (fyMatch) data.financialYear = fyMatch[1];
 
-    // Look for any line mentioning 194S with a large number at the end
+    // Simple line-by-line scan for section headers with amounts
     const lines = text.split('\n');
     for (const line of lines) {
-        if (/194S/i.test(line) && !/SR\.\s*NO|QUARTER|DATE/i.test(line)) {
-            const nums = extractAllNumbers(line).filter(n =>
-                n.value > 100 && !(n.value >= 2020 && n.value <= 2030) && !(n.value >= 190 && n.value <= 200)
-            );
-            if (nums.length > 0 && data.vdaTransactions.length === 0) {
-                data.vdaTransactions.push({
-                    saleValue: nums[nums.length - 1].value,
-                    tokenName: 'Crypto/VDA (from AIS)'
-                });
-                console.log(`[AIS Parser] Global fallback VDA from line: ${nums[nums.length - 1].value}`);
-            }
-        }
+        const upper = line.toUpperCase();
 
-        // Look for salary (192)
-        if (/(?:TDS\s*)?192\b/i.test(line) && /SALARY/i.test(line)) {
-            const nums = extractAllNumbers(line).filter(n =>
-                n.value > 1000 && !(n.value >= 2020 && n.value <= 2030)
-            );
-            if (nums.length > 0 && data.tdsSalary.length === 0) {
-                data.tdsSalary.push({
-                    grossSalary: nums[nums.length - 1].value,
-                    deductorName: 'Employer (from AIS)',
-                    tdsAmount: 0
-                });
-                console.log(`[AIS Parser] Global fallback Salary: ${nums[nums.length - 1].value}`);
-            }
-        }
+        // Skip non-data lines
+        if (upper.includes('SR. NO') || upper.includes('QUARTER') || upper.includes('DATE OF PAYMENT')) continue;
 
-        // Look for interest (194A)
-        if (/194A/i.test(line) && /INTEREST/i.test(line)) {
-            const nums = extractAllNumbers(line).filter(n =>
-                n.value > 100 && !(n.value >= 2020 && n.value <= 2030)
-            );
-            if (nums.length > 0 && data.tdsInterest.length === 0) {
-                data.tdsInterest.push({
-                    grossAmount: nums[nums.length - 1].value,
-                    deductorName: 'Bank (from AIS)',
-                    tdsAmount: 0
-                });
-                console.log(`[AIS Parser] Global fallback Interest: ${nums[nums.length - 1].value}`);
-            }
+        // Mask out alphanumeric identifiers before extracting numbers
+        const masked = line
+            .replace(/[A-Z]{2,}[\dA-Z]+/gi, ' ')
+            .replace(/\b\d{10,}\b/g, ' ');
+
+        const numbers = extractFinancialNumbers(masked)
+            .map(n => n.value)
+            .filter(v => v > 100 && !(v >= 2020 && v <= 2030) && !(v >= 190 && v <= 200) && v < 100000000);
+
+        if (numbers.length === 0) continue;
+        const amount = numbers[numbers.length - 1];
+
+        if (/\b194S\b/i.test(line) && (upper.includes('VIRTUAL DIGITAL') || upper.includes('TDS')) && data.vdaTransactions.length === 0) {
+            data.vdaTransactions.push({ saleValue: amount, tokenName: 'Crypto/VDA (from AIS)' });
+            console.log(`[AIS Parser v2 Fallback] VDA: ${amount}`);
+        } else if (/\b192\b/.test(line) && upper.includes('SALARY') && data.tdsSalary.length === 0) {
+            data.tdsSalary.push({ grossSalary: amount, deductorName: 'Employer (from AIS)', tdsAmount: 0 });
+            console.log(`[AIS Parser v2 Fallback] Salary: ${amount}`);
+        } else if (/\b194A\b/.test(line) && upper.includes('INTEREST') && data.tdsInterest.length === 0) {
+            data.tdsInterest.push({ grossAmount: amount, deductorName: 'Bank (from AIS)', tdsAmount: 0 });
+            console.log(`[AIS Parser v2 Fallback] Interest: ${amount}`);
         }
     }
+
+    console.log('[AIS Parser v2 Fallback] Result:', JSON.stringify(data, null, 2));
+    return data;
 }
+
