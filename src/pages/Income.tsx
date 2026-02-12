@@ -74,6 +74,14 @@ export default function Income() {
   };
 
   const addIncomeSource = async () => {
+    console.log("Attempting to add income source:", newSource);
+
+    if (!user) {
+      console.error("No user found in addIncomeSource");
+      toast.error("You must be logged in to add income");
+      return;
+    }
+
     if (!newSource.amount || parseFloat(newSource.amount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -81,19 +89,30 @@ export default function Income() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.from("income_sources").insert({
-        user_id: user!.id,
+      const payload = {
+        user_id: user.id,
         source_type: newSource.source_type,
-        description: (newSource.description || "").substring(0, 20) || null,
-        employer_name: (newSource.employer_name || "").substring(0, 20) || null,
+        description: newSource.description || null,
+        employer_name: newSource.employer_name || null,
         amount: parseFloat(newSource.amount),
         tds_deducted: parseFloat(newSource.tds_deducted) || 0,
         assessment_year: "2026-27"
-      });
+      };
 
-      if (error) throw error;
+      console.log("Sending payload to Supabase:", payload);
 
-      toast.success("Income source added");
+      const { data, error } = await supabase.from("income_sources")
+        .insert(payload)
+        .select();
+
+      if (error) {
+        console.error("Supabase insert error:", error);
+        throw error;
+      }
+
+      console.log("Supabase insert success:", data);
+
+      toast.success("Income source added successfully");
       setDialogOpen(false);
       setNewSource({
         source_type: "salary",
