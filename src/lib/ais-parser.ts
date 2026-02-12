@@ -127,9 +127,9 @@ export function parseAISJson(jsonData: any): AISData {
         // Parse TDS on Salary
         if (jsonData.tdsSalary) {
             jsonData.tdsSalary.forEach((item: any, index: number) => {
-                const amount = parseFloat(item.tdsAmount || item.taxDeducted || 0);
+                const amount = Number(item.tdsAmount || item.taxDeducted || 0);
                 tdsDetails.salary += amount;
-                incomeDetails.salary += parseFloat(item.grossSalary || item.income || 0);
+                incomeDetails.salary += Number(item.grossSalary || item.income || 0);
 
                 records.push({
                     id: `TDS_SAL_${index}`,
@@ -138,7 +138,7 @@ export function parseAISJson(jsonData: any): AISData {
                     informationSource: item.tan || item.deductorTan || '',
                     sourceName: item.employerName || item.deductorName || 'Employer',
                     transactionDate: item.assessmentYear || '',
-                    reportedValue: amount,
+                    reportedValue: Number(item.grossSalary || item.income || 0),
                     status: 'accepted'
                 });
             });
@@ -148,8 +148,8 @@ export function parseAISJson(jsonData: any): AISData {
         if (jsonData.tdsInterest || jsonData.tdsOnInterest) {
             const items = jsonData.tdsInterest || jsonData.tdsOnInterest || [];
             items.forEach((item: any, index: number) => {
-                const tdsAmount = parseFloat(item.tdsAmount || item.taxDeducted || 0);
-                const income = parseFloat(item.grossAmount || item.income || 0);
+                const tdsAmount = Number(item.tdsAmount || item.taxDeducted || 0);
+                const income = Number(item.grossAmount || item.income || 0);
                 tdsDetails.interest += tdsAmount;
                 incomeDetails.interest += income;
 
@@ -170,8 +170,8 @@ export function parseAISJson(jsonData: any): AISData {
         if (jsonData.dividendIncome || jsonData.tdsDividend) {
             const items = jsonData.dividendIncome || jsonData.tdsDividend || [];
             items.forEach((item: any, index: number) => {
-                const amount = parseFloat(item.dividendAmount || item.income || 0);
-                const tds = parseFloat(item.tdsAmount || 0);
+                const amount = Number(item.dividendAmount || item.income || 0);
+                const tds = Number(item.tdsAmount || 0);
                 tdsDetails.dividend += tds;
                 incomeDetails.dividend += amount;
 
@@ -276,8 +276,10 @@ export function parseAISJson(jsonData: any): AISData {
         if (jsonData.vdaTransactions || jsonData.cryptoTransactions) {
             const items = jsonData.vdaTransactions || jsonData.cryptoTransactions || [];
             items.forEach((item: any, index: number) => {
-                const amount = parseFloat(item.saleValue || item.amount || 0);
+                const amount = Number(item.saleValue || item.amount || 0);
+                const tds = Number(item.tdsAmount || 0);
                 incomeDetails.capitalGains += amount;
+                tdsDetails.other += tds;
 
                 records.push({
                     id: `VDA_${index}`,
