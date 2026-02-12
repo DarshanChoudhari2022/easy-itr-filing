@@ -289,6 +289,7 @@ export function SmartFilingWizard() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const [step, setStep] = useState(1);
+    const [maxStepReached, setMaxStepReached] = useState(1);
     const [loading, setLoading] = useState(false);
 
     // Income state
@@ -392,7 +393,10 @@ export function SmartFilingWizard() {
 
                 if (progress) {
                     const answers = progress.answers || {};
-                    if (progress.current_step) setStep(progress.current_step);
+                    if (progress.current_step) {
+                        setStep(progress.current_step);
+                        setMaxStepReached(progress.current_step);
+                    }
                     if (answers.income) setIncome(answers.income);
                     if (answers.deductions) setDeductions(answers.deductions);
                     if (answers.personalInfo) setPersonalInfo(prev => ({ ...prev, ...answers.personalInfo }));
@@ -408,6 +412,13 @@ export function SmartFilingWizard() {
 
         loadAllData();
     }, [user]);
+
+    // Keep track of maximum step reached
+    useEffect(() => {
+        if (step > maxStepReached) {
+            setMaxStepReached(step);
+        }
+    }, [step, maxStepReached]);
 
     // Fetch crypto data from database
     const fetchCryptoData = useCallback(async () => {
@@ -690,9 +701,9 @@ export function SmartFilingWizard() {
                     ].map((s, i) => (
                         <div key={s.num} className="flex items-center flex-shrink-0">
                             <div
-                                className={`flex flex-col items-center gap-1.5 min-w-[60px] cursor-pointer transition-all ${step === s.num ? 'opacity-100' : 'opacity-40 hover:opacity-60'
+                                className={`flex flex-col items-center gap-1.5 min-w-[60px] cursor-pointer transition-all ${step === s.num ? 'opacity-100' : s.num <= maxStepReached ? 'opacity-80 hover:opacity-100' : 'opacity-40 cursor-not-allowed'
                                     }`}
-                                onClick={() => step > s.num && setStep(s.num)}
+                                onClick={() => s.num <= maxStepReached && setStep(s.num)}
                             >
                                 <div className={`flex items-center justify-center w-8 h-8 rounded-xl shadow-sm transition-all ${step >= s.num ? 'bg-primary text-white scale-110' : 'bg-slate-100 text-slate-400'
                                     }`}>
