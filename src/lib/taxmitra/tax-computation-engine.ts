@@ -161,7 +161,7 @@ export interface TaxComputationResult {
 const VDA_TAX_RATE = 0.30;
 const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
-const ENGINE_VERSION = '2.0.0';
+const ENGINE_VERSION = '2.1.0';
 
 // Surcharge thresholds for AY 2026-27 (on total income basis)
 // For VDA income specifically, marginal surcharge caps may apply
@@ -243,13 +243,15 @@ export function computeVdaTaxForFinancialYear(
         activeLots.push(...result.remainingLots);
 
         totalConsideration += result.summary.totalSellValueInr;
-        totalCost += result.summary.totalBuyValueInr;
+        // CRITICAL: totalCost = cost of acquisition for SOLD assets only (from FIFO lot matches)
+        // NOT totalBuyValueInr which includes all buys (even unsold holdings)
+        totalCost += result.matches.reduce((s, m) => s + m.costOfAcquisition, 0);
         grossGains += result.summary.grossGains;
         grossLosses += result.summary.grossLosses;
 
-        // Collect TDS from sell trades
+        // Collect TDS from ALL sell-type trades (sell + swap_out are both taxable disposals)
         for (const tx of txs) {
-            if (tx.transactionType === 'sell' && tx.financialYear === financialYear) {
+            if ((tx.transactionType === 'sell' || tx.transactionType === 'swap_out') && tx.financialYear === financialYear) {
                 totalTDSFromTrades += tx.tdsAmount || 0;
             }
         }
@@ -318,7 +320,12 @@ export function computeVdaTaxForFinancialYear(
 
     // ─── Step 6: TDS Reconciliation ───
     const tdsRecon = reconcileTDS(tdsRecords, totalTDSFromTrades, financialYear);
-    const totalTDSCredit = Math.max(tdsRecon.totalTDSFromCertificates, tdsRecon.totalTDSFromTrades);
+    // TDS Credit: Use trade data TDS as primary source (extracted from each sell transaction).
+    // If TDS certificates are uploaded and reflect a higher amount, use certificates (official source).
+    // If no certificates uploaded, trade data TDS is the best estimate.
+    const totalTDSCredit = tdsRecon.totalTDSFromCertificates > 0
+        ? Math.max(tdsRecon.totalTDSFromCertificates, tdsRecon.totalTDSFromTrades)
+        : tdsRecon.totalTDSFromTrades;
 
     const netTaxPayable = totalTaxLiability - totalTDSCredit;
 

@@ -318,21 +318,6 @@ export default function CryptoTaxPage() {
     }
   };
 
-  const downloadSampleCSV = () => {
-    const csvContent = "Details,Transaction Date,Transaction Type,Asset,Amount,Price (INR),Total (INR),Exchange\n" +
-      "Buy BTC,2025-04-12,Buy,BTC,0.5,3500000,1750000,CoinDCX\n" +
-      "Sell BTC,2025-06-15,Sell,BTC,0.2,4000000,800000,CoinDCX";
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = "sample_crypto_trades.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
   // ============= STATISTICS (FY-wise) =============
   const stats = useMemo(() => {
     const buyTrades = filteredTrades.filter(t => t.trade_type === 'buy');
@@ -344,11 +329,11 @@ export default function CryptoTaxPage() {
         totalTrades: filteredTrades.length,
         buyTrades: buyTrades.length,
         sellTrades: sellTrades.length,
-        buyVolume: taxComputation.totalCostOfAcquisitionInr,
+        buyVolume: taxComputation.assetSummaries.reduce((s, a) => s + a.totalBuyValueInr, 0),
         sellVolume: taxComputation.totalConsiderationInr,
         netGain: taxComputation.taxableCapitalGains,
         taxPayable: taxComputation.totalTaxLiability,
-        tdsCredit: taxComputation.totalTDSPaid,
+        tdsCredit: taxComputation.totalTDSCredit,
         uniqueTokens: taxComputation.uniqueAssets
       };
     }
@@ -1202,11 +1187,11 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
   const taxableGains = taxComputation?.taxableCapitalGains ?? (portfolio?.totalTaxableGains || 0);
   const totalLosses = taxComputation?.grossCapitalLosses ?? (portfolio?.totalLosses || 0);
   const totalTax = taxComputation?.totalTaxLiability ?? (portfolio?.totalTaxAt30 * 1.04 || 0);
-  const tdsPaid = taxComputation?.totalTDSPaid ?? (portfolio?.totalTDSPaid || 0);
+  const tdsPaid = taxComputation?.totalTDSCredit ?? (portfolio?.totalTDSPaid || 0);
   const netTax = taxComputation?.netTaxPayable ?? Math.max(0, totalTax - tdsPaid);
 
   const sellCount = taxComputation?.assetSummaries?.reduce((acc, curr) => acc + curr.totalSold, 0) ?? trades.filter(t => t.trade_type === 'sell').length;
-  const buyVolume = taxComputation?.totalCostOfAcquisitionInr ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+  const buyVolume = taxComputation?.assetSummaries?.reduce((s, a) => s + a.totalBuyValueInr, 0) ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
   const sellVolume = taxComputation?.totalConsiderationInr ?? trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0);
 
   // Asset Wise List

@@ -1034,16 +1034,35 @@ export async function processImportSession(
         const parseResult = parseCoinDCXFile(file.content, file.name, file.type, fxRateLookup);
         parseResult.contentHash = fileHash;
 
-        // Filter to requested FY
-        const fyPrefix = financialYear; // e.g., '2025-26'
+        // Filter transactions: keep target FY + prior-FY buys (needed for FIFO cost basis)
+        // The tax engine's computeVdaTaxForFinancialYear needs prior-FY buys to build
+        // accurate cost basis. Without them, sells would show zero cost → inflated gains.
+        const fyPrefix = financialYear; // e.g., '2024-25'
+        const fyStartYear = parseInt(fyPrefix.split('-')[0]);
+
         parseResult.transactions = parseResult.transactions.filter(tx => {
-            if (tx.financialYear !== fyPrefix) {
-                session.warnings.push(
-                    `${file.name}: Skipped row dated ${tx.tradeTimestamp.toISOString()} — belongs to FY ${tx.financialYear}, not ${fyPrefix}`
-                );
-                return false;
+            const txFYStart = parseInt(tx.financialYear.split('-')[0]);
+
+            // Keep transactions from target FY
+            if (tx.financialYear === fyPrefix) return true;
+
+            // Keep prior-FY buy-side transactions (needed for FIFO cost basis)
+            if (txFYStart < fyStartYear) {
+                const isBuySide = tx.transactionType === 'buy' || tx.transactionType === 'swap_in' ||
+                    tx.transactionType === 'deposit' || tx.transactionType.startsWith('reward_');
+                if (isBuySide) {
+                    session.warnings.push(
+                        `${file.name}: Kept prior-FY buy (${tx.financialYear}) for FIFO cost basis: ${tx.quantity} ${tx.assetSymbol}`
+                    );
+                    return true;
+                }
             }
-            return true;
+
+            // Skip future-FY and prior-FY sells (not relevant)
+            session.warnings.push(
+                `${file.name}: Skipped row dated ${tx.tradeTimestamp.toISOString()} — belongs to FY ${tx.financialYear}, not ${fyPrefix}`
+            );
+            return false;
         });
 
         // Global dedup across files
