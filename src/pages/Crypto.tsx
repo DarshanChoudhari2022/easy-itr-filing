@@ -94,9 +94,28 @@ export default function CryptoTaxPage() {
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
-  // Client-side parsed data (no DB required)
-  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
-  const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
+  // Client-side parsed data — persisted to localStorage so data survives refresh
+  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>(() => {
+    try {
+      const saved = localStorage.getItem('taxmitra_transactions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Revive Date objects from ISO strings
+        return parsed.map((tx: any) => ({ ...tx, tradeTimestamp: new Date(tx.tradeTimestamp) }));
+      }
+    } catch (e) { console.log('Failed to restore transactions from localStorage'); }
+    return [];
+  });
+  const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('taxmitra_tds');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((r: any) => ({ ...r, tdsDate: new Date(r.tdsDate) }));
+      }
+    } catch (e) { console.log('Failed to restore TDS from localStorage'); }
+    return [];
+  });
 
   // Initialize from localStorage if available
   const [settings, setSettings] = useState<TaxSettings>(() => {
@@ -104,10 +123,22 @@ export default function CryptoTaxPage() {
     return saved ? JSON.parse(saved) : DEFAULT_TAX_SETTINGS;
   });
 
-  // Save changes to localStorage
+  // Save settings to localStorage
   useEffect(() => {
     localStorage.setItem('taxSettings', JSON.stringify(settings));
   }, [settings]);
+
+  // Persist parsed transactions & TDS to localStorage whenever they change
+  useEffect(() => {
+    if (parsedTransactions.length > 0) {
+      localStorage.setItem('taxmitra_transactions', JSON.stringify(parsedTransactions));
+    }
+  }, [parsedTransactions]);
+  useEffect(() => {
+    if (parsedTDSRecords.length > 0) {
+      localStorage.setItem('taxmitra_tds', JSON.stringify(parsedTDSRecords));
+    }
+  }, [parsedTDSRecords]);
 
   // Assessment Year state
   const [assessmentYear, setAssessmentYear] = useState('2026-27');
@@ -494,14 +525,25 @@ export default function CryptoTaxPage() {
 
   // ============= DELETE TRADE =============
   const handleDeleteTrade = async (id: string) => {
-    const { error } = await (supabase as any).from('crypto_transactions').delete().eq('id', id);
-    if (!error) {
-      toast.success('Trade deleted');
-      fetchTrades();
-      fetchTaxComputation();
+    // Remove from local state (works without DB)
+    const updatedTxs = parsedTransactions.filter(tx => tx.externalId !== id);
+    setParsedTransactions(updatedTxs);
+    setTrades(prev => prev.filter(t => t.id !== id));
+
+    // Recompute tax
+    if (updatedTxs.length > 0) {
+      const taxResult = computeVdaTaxForFinancialYear(updatedTxs, parsedTDSRecords, selectedFY, settings.accountingMethod as any);
+      setTaxComputation(taxResult);
     } else {
-      toast.error('Failed to delete trade');
+      setTaxComputation(null);
     }
+
+    // Also try DB delete (non-blocking)
+    try {
+      await (supabase as any).from('crypto_transactions').delete().eq('id', id);
+    } catch (e) { /* silent */ }
+
+    toast.success('Trade deleted');
   };
 
   // ============= DELETE ALL TRADES =============
@@ -509,19 +551,25 @@ export default function CryptoTaxPage() {
     if (!user) return;
     if (!confirm('Are you sure you want to delete all trades? This cannot be undone.')) return;
 
-    const { error } = await (supabase as any).from('crypto_transactions').delete().eq('user_id', user.id);
-    const { error: sessError } = await (supabase as any).from('crypto_import_sessions').delete().eq('user_id', user.id);
+    // Clear local state
+    setTaxComputation(null);
+    setParsedTransactions([]);
+    setParsedTDSRecords([]);
+    setTrades([]);
+    setImportSessions([]);
+    setImportResult(null);
 
-    if (!error) {
-      toast.success('All trades deleted');
-      setTaxComputation(null);
-      setParsedTransactions([]);
-      setParsedTDSRecords([]);
-      setTrades([]);
-      setImportSessions([]);
-    } else {
-      toast.error('Failed to delete trades');
-    }
+    // Clear localStorage
+    localStorage.removeItem('taxmitra_transactions');
+    localStorage.removeItem('taxmitra_tds');
+
+    // Also try DB delete (non-blocking)
+    try {
+      await (supabase as any).from('crypto_transactions').delete().eq('user_id', user.id);
+      await (supabase as any).from('crypto_import_sessions').delete().eq('user_id', user.id);
+    } catch (e) { /* silent */ }
+
+    toast.success('All trades deleted');
   };
 
   // ============= STATISTICS (FY-wise) =============
@@ -1305,7 +1353,7 @@ export default function CryptoTaxPage() {
             {/* ============= REPORTS TAB ============= */}
             {activeTab === 'reports' && (
               <ReportsSection
-                trades={trades}
+                trades={filteredTrades}
                 portfolio={null}
                 taxComputation={taxComputation}
                 user={user}
