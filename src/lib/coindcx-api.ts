@@ -10,7 +10,8 @@ import CryptoJS from 'crypto-js';
 import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
 
 // ============= CONFIG =============
-const COINDCX_API_BASE = 'https://api.coindcx.com';
+// API Base URL (with CORS proxy to bypass browser restrictions)
+const COINDCX_API_BASE = 'https://api.allorigins.win/raw?url=https://api.coindcx.com';
 
 // ============= TYPES =============
 export interface CoinDCXCredentials {
