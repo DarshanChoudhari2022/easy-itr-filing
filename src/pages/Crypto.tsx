@@ -294,7 +294,9 @@ export default function CryptoTaxPage() {
       const importResult = await processImportSession(
         sessionId,
         selectedFY,
-        filePayloads
+        filePayloads,
+        undefined, // fxRateLookup (use defaults)
+        selectedExchange // CoinDCX, WazirX, etc.
       );
 
       // 3. Collect all parsed transactions and TDS records
@@ -976,6 +978,47 @@ export default function CryptoTaxPage() {
                         </p>
                         <p className="text-sm text-slate-500">Drop your trade history file or click to browse</p>
                       </label>
+                    </div>
+
+                    {/* Exchange-specific download instructions */}
+                    <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                      <p className="font-medium text-blue-900 mb-2">📋 How to download your {selectedExchange} CSV:</p>
+                      <ol className="list-decimal list-inside text-sm text-blue-800 space-y-1">
+                        {selectedExchange === 'CoinDCX' && (
+                          <>
+                            <li>Go to <strong>coindcx.com → Orders → Order History</strong></li>
+                            <li>Click <strong>"FILLED ORDERS"</strong> tab (important!)</li>
+                            <li>Set dates: <strong>01/04/2024 to 31/03/2025</strong> (for FY 2024-25)</li>
+                            <li>Click <strong>"Download CSV"</strong> button</li>
+                            <li>Upload the downloaded CSV file here</li>
+                          </>
+                        )}
+                        {selectedExchange === 'WazirX' && (
+                          <>
+                            <li>Go to <strong>wazirx.com → Reports → Trading Report</strong></li>
+                            <li>Select date range for the financial year</li>
+                            <li>Download the <strong>Exchange Trades</strong> report</li>
+                            <li>Save the XLSX as CSV (or upload directly)</li>
+                            <li>Upload the CSV file here</li>
+                          </>
+                        )}
+                        {selectedExchange === 'Binance' && (
+                          <>
+                            <li>Go to <strong>binance.com → Orders → Spot Order → Trade History</strong></li>
+                            <li>Click <strong>"Export"</strong> and select date range</li>
+                            <li>Download as CSV</li>
+                            <li>Upload the CSV file here</li>
+                          </>
+                        )}
+                        {selectedExchange === 'ZebPay' && (
+                          <>
+                            <li>Go to <strong>zebpay.com → Reports → Trade History</strong></li>
+                            <li>Select the financial year date range</li>
+                            <li>Download as CSV</li>
+                            <li>Upload the CSV file here</li>
+                          </>
+                        )}
+                      </ol>
                     </div>
 
                     {/* Import Result */}

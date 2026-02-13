@@ -54,6 +54,7 @@ export {
     parseCoinDCXWithdrawalsCSV,
     parseCoinDCXTDSCSV,
     parseCoinDCXRewardsCSV,
+    parseWazirXTradesCSV,
     parseCoinDCXFile,
     detectCoinDCXFileType,
     processImportSession,

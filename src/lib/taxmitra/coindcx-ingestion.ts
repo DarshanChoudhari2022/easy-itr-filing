@@ -361,18 +361,20 @@ export function parseCoinDCXTradesCSV(
     const headers = parseCSVLine(lines[0]);
     result.totalRows = lines.length - 1;
 
-    // Map columns
+    // Map columns — supports both CoinDCX "Trade History" AND "Order History" formats
     const col = {
-        date: findColumn(headers, 'time', 'date', 'created_at', 'trade_time', 'timestamp'),
-        pair: findColumn(headers, 'pair', 'symbol', 'market', 'coin_pair', 'instrument'),
-        side: findColumn(headers, 'side', 'type', 'order_type', 'buy_sell', 'direction', 'trade_type'),
-        qty: findColumn(headers, 'quantity', 'qty', 'amount', 'volume', 'filled_qty', 'executed_qty'),
-        price: findColumn(headers, 'price', 'rate', 'avg_price', 'execution_price', 'price_per_unit'),
-        fee: findColumn(headers, 'fee', 'commission', 'fee_amount', 'charges'),
+        date: findColumn(headers, 'time', 'date', 'created_at', 'trade_time', 'timestamp', 'order_time', 'order_date'),
+        pair: findColumn(headers, 'pair', 'symbol', 'market', 'coin_pair', 'instrument', 'trading_pair'),
+        side: findColumn(headers, 'side', 'action', 'type', 'order_type', 'buy_sell', 'direction', 'trade_type'),
+        qty: findColumn(headers, 'filled_quantity', 'filled_qty', 'quantity', 'qty', 'amount', 'volume', 'executed_qty', 'traded_quantity'),
+        price: findColumn(headers, 'average_price', 'avg_price', 'price', 'rate', 'execution_price', 'price_per_unit'),
+        fee: findColumn(headers, 'fee', 'commission', 'fee_amount', 'charges', 'trading_fee'),
         feeCurrency: findColumn(headers, 'fee_currency', 'fee_asset', 'fee_coin'),
-        total: findColumn(headers, 'total', 'value', 'net_amount', 'gross_amount'),
+        total: findColumn(headers, 'total', 'value', 'net_amount', 'gross_amount', 'total_amount'),
         orderId: findColumn(headers, 'order_id', 'id', 'trade_id', 'txn_id'),
-        tds: findColumn(headers, 'tds', 'tds_amount', 'tds_deducted'),
+        tds: findColumn(headers, 'tds', 'tds_amount', 'tds_deducted', 'tds_charged'),
+        status: findColumn(headers, 'status', 'order_status', 'state'),
+        remainingQty: findColumn(headers, 'remaining_quantity', 'remaining_qty', 'unfilled_qty'),
     };
 
     // Fallback to positional if no headers matched
@@ -397,6 +399,15 @@ export function parseCoinDCXTradesCSV(
                 continue;
             }
             seenHashes.add(rowHash);
+
+            // Skip non-filled orders (cancelled, open, rejected)
+            if (col.status >= 0) {
+                const statusVal = values[col.status]?.toLowerCase().trim() || '';
+                if (statusVal === 'cancelled' || statusVal === 'rejected' || statusVal === 'open' || statusVal === 'init' || statusVal === 'untriggered') {
+                    result.warnings.push(`Row ${i + 1}: Skipped ${statusVal} order`);
+                    continue;
+                }
+            }
 
             const dateStr = col.date >= 0 ? values[col.date] : '';
             const pairStr = col.pair >= 0 ? values[col.pair] : '';
@@ -939,6 +950,181 @@ export function parseCoinDCXRewardsCSV(
     return result;
 }
 
+// ============= WAZIRX PARSER =============
+
+/**
+ * 6. WAZIRX TRADES CSV PARSER
+ * ----------------------------
+ * WazirX trade export columns (typical):
+ *   Date, Market (e.g. BTC/INR), Price, Volume, Amount, Side (Buy/Sell), Fee, Fee Currency, TDS
+ * 
+ * Note: WazirX exports XLSX — user should save as CSV or use the flat-file version.
+ */
+export function parseWazirXTradesCSV(
+    csvContent: string,
+    fileName: string = 'wazirx_trades.csv',
+    fxRateLookup?: (asset: string, date: Date) => number
+): FileParseResult {
+    const result: FileParseResult = {
+        fileType: 'trades',
+        fileName,
+        contentHash: '',
+        totalRows: 0,
+        successCount: 0,
+        errorCount: 0,
+        duplicateCount: 0,
+        transactions: [],
+        tdsRecords: [],
+        errors: [],
+        warnings: []
+    };
+
+    const lines = csvContent.split('\n').filter(l => l.trim());
+    if (lines.length < 2) {
+        result.errors.push({ line: 1, message: 'CSV file is empty or has no data rows' });
+        return result;
+    }
+
+    const headers = parseCSVLine(lines[0]);
+    result.totalRows = lines.length - 1;
+
+    // WazirX specific column mapping
+    const col = {
+        date: findColumn(headers, 'date', 'time', 'created_at', 'timestamp', 'trade_date'),
+        market: findColumn(headers, 'market', 'pair', 'symbol', 'coin_pair', 'trading_pair'),
+        price: findColumn(headers, 'price', 'rate', 'avg_price', 'execution_price'),
+        volume: findColumn(headers, 'volume', 'quantity', 'qty', 'amount', 'filled_qty', 'traded_quantity'),
+        amount: findColumn(headers, 'amount', 'total', 'value', 'net_amount'),
+        side: findColumn(headers, 'side', 'type', 'action', 'buy_sell', 'trade_type'),
+        fee: findColumn(headers, 'fee', 'commission', 'charges', 'trading_fee'),
+        feeCurrency: findColumn(headers, 'fee_currency', 'fee_asset', 'fee_coin'),
+        tds: findColumn(headers, 'tds', 'tds_charged', 'tds_amount', 'tds_deducted'),
+        orderId: findColumn(headers, 'order_id', 'id', 'trade_id', 'txn_id'),
+    };
+
+    // Fallback
+    if (col.date === -1 && col.volume === -1) {
+        result.warnings.push('Could not auto-detect WazirX columns — using positional fallback');
+        col.date = 0; col.market = 1; col.price = 2; col.volume = 3; col.amount = 4; col.side = 5; col.fee = 6;
+    }
+
+    const seenHashes = new Set<string>();
+
+    for (let i = 1; i < lines.length; i++) {
+        try {
+            const values = parseCSVLine(lines[i]);
+            if (values.length < 3) continue;
+
+            const rawData = rowToRecord(headers, values);
+            const rowHash = computeRowHash(rawData);
+
+            if (seenHashes.has(rowHash)) {
+                result.duplicateCount++;
+                continue;
+            }
+            seenHashes.add(rowHash);
+
+            const dateStr = col.date >= 0 ? values[col.date] : '';
+            const marketStr = col.market >= 0 ? values[col.market] : '';
+            const priceStr = col.price >= 0 ? values[col.price] : '0';
+            const volumeStr = col.volume >= 0 ? values[col.volume] : '0';
+            const sideStr = col.side >= 0 ? values[col.side] : 'buy';
+            const feeStr = col.fee >= 0 ? values[col.fee] : '0';
+            const feeCurrStr = col.feeCurrency >= 0 ? values[col.feeCurrency] : 'INR';
+            const tdsStr = col.tds >= 0 ? values[col.tds] : '0';
+            const orderIdStr = col.orderId >= 0 ? values[col.orderId] : `wazirx-${i}`;
+
+            const tradeDate = parseDate(dateStr);
+            if (isNaN(tradeDate.getTime())) {
+                result.errors.push({ line: i + 1, message: `Invalid date: "${dateStr}"`, rawData });
+                result.errorCount++;
+                continue;
+            }
+
+            const quantity = Math.abs(parseFloat(volumeStr) || 0);
+            const pricePerUnit = Math.abs(parseFloat(priceStr) || 0);
+            const feeAmount = Math.abs(parseFloat(feeStr) || 0);
+            const tdsAmount = Math.abs(parseFloat(tdsStr) || 0);
+
+            if (quantity === 0) {
+                result.errors.push({ line: i + 1, message: 'Volume is zero — skipping', rawData });
+                result.errorCount++;
+                continue;
+            }
+
+            // WazirX market format: "BTC/INR" or "ETH/USDT" 
+            const baseAsset = extractBaseAsset(marketStr);
+            const quoteAsset = extractQuoteAsset(marketStr);
+            const sideNorm = sideStr.toLowerCase().trim();
+            const isBuy = sideNorm.includes('buy') || sideNorm === 'b';
+            const txType = isBuy ? 'buy' : 'sell';
+
+            // INR conversion
+            let priceInr = pricePerUnit;
+            if (quoteAsset !== 'INR') {
+                if (fxRateLookup) {
+                    const rate = fxRateLookup(quoteAsset, tradeDate);
+                    priceInr = pricePerUnit * rate;
+                } else {
+                    const defaultRates: Record<string, number> = {
+                        'USDT': 84, 'USDC': 84, 'BUSD': 84,
+                        'BTC': 7500000, 'ETH': 250000, 'WRX': 15
+                    };
+                    priceInr = pricePerUnit * (defaultRates[quoteAsset] || 84);
+                    result.warnings.push(`Row ${i + 1}: Used default FX rate for ${quoteAsset}/INR.`);
+                }
+            }
+
+            const grossAmountInr = quantity * priceInr;
+            const feeInr = feeCurrStr.toUpperCase() === 'INR' ? feeAmount : feeAmount * priceInr;
+            const fy = getFinancialYear(tradeDate);
+            const ay = getAssessmentYear(fy);
+
+            // TDS estimation
+            let computedTds = tdsAmount;
+            if (computedTds === 0 && txType === 'sell' && grossAmountInr > TDS_THRESHOLD_RETAIL) {
+                computedTds = grossAmountInr * TDS_RATE;
+            }
+
+            const tx: NormalizedTransaction = {
+                externalId: orderIdStr,
+                exchange: 'WazirX',
+                transactionType: txType,
+                isTaxableEvent: txType === 'sell',
+                assetSymbol: baseAsset,
+                quoteAsset,
+                pair: `${baseAsset}/${quoteAsset}`,
+                quantity,
+                pricePerUnit,
+                priceInr,
+                grossAmountQuote: quantity * pricePerUnit,
+                grossAmountInr,
+                feeAmount,
+                feeAsset: feeCurrStr.toUpperCase(),
+                feeInr,
+                tdsAmount: computedTds,
+                tdsRate: TDS_RATE,
+                tradeTimestamp: tradeDate,
+                financialYear: fy,
+                assessmentYear: ay,
+                description: `${txType.toUpperCase()} ${quantity} ${baseAsset} @ ${priceInr.toFixed(2)} INR on WazirX`,
+                orderId: orderIdStr,
+                rawData,
+                contentHash: rowHash,
+            };
+
+            result.transactions.push(tx);
+            result.successCount++;
+
+        } catch (err) {
+            result.errors.push({ line: i + 1, message: `Parse error: ${(err as Error).message}` });
+            result.errorCount++;
+        }
+    }
+
+    return result;
+}
+
 // ============= AUTO-DETECT FILE TYPE =============
 
 /**
@@ -959,11 +1145,15 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
     if (firstLine.includes('withdrawal') || firstLine.includes('withdraw')) {
         return 'withdrawals';
     }
-    if (firstLine.includes('side') || firstLine.includes('pair') || firstLine.includes('trade') || firstLine.includes('buy')) {
+    // CoinDCX Order History: has 'action' and/or 'status' columns
+    if (firstLine.includes('side') || firstLine.includes('pair') || firstLine.includes('trade') ||
+        firstLine.includes('buy') || firstLine.includes('action') || firstLine.includes('average_price') ||
+        firstLine.includes('filled_quantity') || firstLine.includes('market') || firstLine.includes('volume')) {
         return 'trades';
     }
 
-    return 'generic';
+    // Fallback: treat unknown files as trades (most common download)
+    return 'trades';
 }
 
 /**
@@ -997,25 +1187,26 @@ export function parseCoinDCXFile(
 // ============= MULTI-FILE IMPORT SESSION =============
 
 /**
- * Process a complete CoinDCX import session with multiple CSV files.
+ * Process a complete import session with multiple CSV files.
+ * Supports CoinDCX and WazirX exchanges.
  * 
  * Usage:
  *   const files = [
  *     { name: 'trades_fy25.csv', content: '...', type: 'trades' },
  *     { name: 'tds_report.csv', content: '...', type: 'tds' },
- *     { name: 'rewards.csv', content: '...', type: 'rewards' },
  *   ];
- *   const result = await processImportSession('sess-123', '2025-26', files);
+ *   const result = await processImportSession('sess-123', '2025-26', files, undefined, 'CoinDCX');
  */
 export async function processImportSession(
     sessionId: string,
     financialYear: string,
     files: { name: string; content: string; type?: CoinDCXFileType }[],
-    fxRateLookup?: (asset: string, date: Date) => number
+    fxRateLookup?: (asset: string, date: Date) => number,
+    exchange: string = 'CoinDCX'
 ): Promise<ImportSessionResult> {
     const session: ImportSessionResult = {
         sessionId,
-        exchange: 'CoinDCX',
+        exchange,
         financialYear,
         files: [],
         totalTransactions: 0,
@@ -1031,7 +1222,13 @@ export async function processImportSession(
         // Compute file-level hash for dedup
         const fileHash = await computeContentHash(file.content);
 
-        const parseResult = parseCoinDCXFile(file.content, file.name, file.type, fxRateLookup);
+        // Route to correct parser based on exchange
+        let parseResult: FileParseResult;
+        if (exchange.toLowerCase() === 'wazirx') {
+            parseResult = parseWazirXTradesCSV(file.content, file.name, fxRateLookup);
+        } else {
+            parseResult = parseCoinDCXFile(file.content, file.name, file.type, fxRateLookup);
+        }
         parseResult.contentHash = fileHash;
 
         // Filter transactions: keep target FY + prior-FY buys (needed for FIFO cost basis)
