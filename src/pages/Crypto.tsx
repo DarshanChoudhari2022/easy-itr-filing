@@ -120,7 +120,7 @@ export default function CryptoTaxPage() {
   // Add trade dialog
   const [showAddTrade, setShowAddTrade] = useState(false);
   const [newTrade, setNewTrade] = useState({
-    token_symbol: '', trade_type: 'buy', quantity: '', buy_price: '', trade_date: '', exchange: 'Manual'
+    token_symbol: '', trade_type: 'buy', quantity: '', buy_price: '', trade_date: '', exchange: 'CoinDCX', tds_deducted: '', value_inr: ''
   });
 
   // File input ref
@@ -417,8 +417,79 @@ export default function CryptoTaxPage() {
       toast.error('Please sign in to add trades');
       return;
     }
-    // Note: Manual add not yet implemented in new engine - fallback to raw SQL insert or future implementation
-    toast.error("Manual trade addition is temporarily disabled during system upgrade.");
+    if (!newTrade.token_symbol || !newTrade.quantity || !newTrade.trade_date) {
+      toast.error('Please fill Token, Quantity, and Date');
+      return;
+    }
+    const qty = parseFloat(newTrade.quantity);
+    const price = parseFloat(newTrade.buy_price) || 0;
+    const tds = parseFloat(newTrade.tds_deducted) || 0;
+    const valueInr = parseFloat(newTrade.value_inr) || (qty * price);
+    if (qty <= 0) { toast.error('Quantity must be positive'); return; }
+
+    const tradeDate = new Date(newTrade.trade_date);
+    const month = tradeDate.getMonth();
+    const year = tradeDate.getFullYear();
+    const fy = month < 3 ? `${year - 1}-${String(year).slice(2)}` : `${year}-${String(year + 1).slice(2)}`;
+    const ayStart = parseInt(fy.split('-')[0]) + 1;
+    const ay = `${ayStart}-${String(ayStart + 1).slice(2)}`;
+
+    const txType = newTrade.trade_type;
+    const isReward = txType.startsWith('reward_') || txType === 'airdrop';
+    const isSell = txType === 'sell';
+
+    const manualTx: NormalizedTransaction = {
+      externalId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      exchange: newTrade.exchange || 'Manual',
+      transactionType: txType,
+      isTaxableEvent: isSell,
+      assetSymbol: newTrade.token_symbol.toUpperCase(),
+      quoteAsset: 'INR',
+      pair: `${newTrade.token_symbol.toUpperCase()}/INR`,
+      quantity: qty,
+      pricePerUnit: price || (valueInr / qty),
+      priceInr: price || (valueInr / qty),
+      grossAmountQuote: valueInr,
+      grossAmountInr: valueInr,
+      feeAmount: 0,
+      feeAsset: 'INR',
+      feeInr: 0,
+      tdsAmount: tds,
+      tdsRate: tds > 0 ? 0.01 : 0,
+      tradeTimestamp: tradeDate,
+      financialYear: fy,
+      assessmentYear: ay,
+      description: `MANUAL ${txType.toUpperCase()} ${qty} ${newTrade.token_symbol.toUpperCase()}${isReward ? ' (Other Income)' : ''}`,
+      rawData: { source: 'manual_entry' },
+      contentHash: `manual-${Date.now()}`,
+    };
+
+    // Add to parsed transactions
+    const updatedTxs = [...parsedTransactions, manualTx];
+    setParsedTransactions(updatedTxs);
+
+    // Update trades for UI
+    const newTradeUI: Trade = {
+      id: manualTx.externalId,
+      user_id: user.id,
+      token_symbol: manualTx.assetSymbol,
+      trade_type: manualTx.transactionType,
+      quantity: qty,
+      buy_price: manualTx.priceInr,
+      trade_date: tradeDate.toISOString(),
+      exchange: manualTx.exchange,
+      fee: 0,
+      metadata: { fee: 0, tds_deducted: tds }
+    };
+    setTrades(prev => [...prev, newTradeUI]);
+
+    // Recompute tax
+    const taxResult = computeVdaTaxForFinancialYear(updatedTxs, parsedTDSRecords, selectedFY, settings.accountingMethod as any);
+    setTaxComputation(taxResult);
+
+    toast.success(`Added ${isReward ? 'reward' : txType} for ${qty} ${newTrade.token_symbol.toUpperCase()}`);
+    setShowAddTrade(false);
+    setNewTrade({ token_symbol: '', trade_type: 'buy', quantity: '', buy_price: '', trade_date: '', exchange: 'CoinDCX', tds_deducted: '', value_inr: '' });
   };
 
   // ============= DELETE TRADE =============
@@ -623,28 +694,34 @@ export default function CryptoTaxPage() {
                         Add Trade
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
+                    <DialogContent className="sm:max-w-lg">
                       <DialogHeader>
-                        <DialogTitle>Add Manual Trade</DialogTitle>
-                        <DialogDescription>Enter the details of your crypto transaction.</DialogDescription>
+                        <DialogTitle>Add Transaction Manually</DialogTitle>
+                        <DialogDescription>Add trades, staking rewards, airdrops, or promotions that aren't in your CSV exports.</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 pt-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label>Token Symbol *</Label>
                             <Input
-                              placeholder="BTC, ETH, SOL..."
+                              placeholder="BTC, ETH, ADA..."
                               value={newTrade.token_symbol}
                               onChange={e => setNewTrade({ ...newTrade, token_symbol: e.target.value.toUpperCase() })}
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Type *</Label>
+                            <Label>Transaction Type *</Label>
                             <Select value={newTrade.trade_type} onValueChange={v => setNewTrade({ ...newTrade, trade_type: v })}>
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="buy">Buy</SelectItem>
                                 <SelectItem value="sell">Sell</SelectItem>
+                                <SelectItem value="reward_staking">🥩 Staking Reward</SelectItem>
+                                <SelectItem value="reward_airdrop">🎁 Airdrop / Promotion</SelectItem>
+                                <SelectItem value="reward_interest">💰 Interest / Lending</SelectItem>
+                                <SelectItem value="reward_mining">⛏️ Mining</SelectItem>
+                                <SelectItem value="deposit">Deposit</SelectItem>
+                                <SelectItem value="withdrawal">Withdrawal</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -659,7 +736,7 @@ export default function CryptoTaxPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Price per Unit (₹) *</Label>
+                            <Label>Price per Unit (₹)</Label>
                             <Input
                               type="number"
                               step="any"
@@ -668,26 +745,59 @@ export default function CryptoTaxPage() {
                               onChange={e => setNewTrade({ ...newTrade, buy_price: e.target.value })}
                             />
                           </div>
-                          <div className="space-y-2 col-span-2">
-                            <Label>Trade Date *</Label>
+                          <div className="space-y-2">
+                            <Label>Total Value (₹)</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              placeholder="Auto-calculated"
+                              value={newTrade.value_inr}
+                              onChange={e => setNewTrade({ ...newTrade, value_inr: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>TDS Deducted (₹)</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              placeholder="0.00"
+                              value={newTrade.tds_deducted}
+                              onChange={e => setNewTrade({ ...newTrade, tds_deducted: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Date *</Label>
                             <Input
                               type="date"
                               value={newTrade.trade_date}
                               onChange={e => setNewTrade({ ...newTrade, trade_date: e.target.value })}
                             />
                           </div>
-                          <div className="space-y-2 col-span-2">
+                          <div className="space-y-2">
                             <Label>Exchange</Label>
-                            <Input
-                              placeholder="CoinDCX, WazirX, etc."
-                              value={newTrade.exchange}
-                              onChange={e => setNewTrade({ ...newTrade, exchange: e.target.value })}
-                            />
+                            <Select value={newTrade.exchange} onValueChange={v => setNewTrade({ ...newTrade, exchange: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="CoinDCX">CoinDCX</SelectItem>
+                                <SelectItem value="WazirX">WazirX</SelectItem>
+                                <SelectItem value="Binance">Binance</SelectItem>
+                                <SelectItem value="ZebPay">ZebPay</SelectItem>
+                                <SelectItem value="Manual">Other / Manual</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
+                        {newTrade.trade_type.startsWith('reward_') || newTrade.trade_type === 'airdrop' ? (
+                          <Alert className="border-amber-200 bg-amber-50">
+                            <Info className="h-4 w-4 text-amber-600" />
+                            <AlertDescription className="text-amber-700 text-xs">
+                              💡 <strong>Where to find this data:</strong> Check your email for "CoinDCX reward credited" messages. Each email has the asset, amount, and date.
+                            </AlertDescription>
+                          </Alert>
+                        ) : null}
                         <div className="flex justify-end gap-3 pt-4">
                           <Button variant="outline" onClick={() => setShowAddTrade(false)}>Cancel</Button>
-                          <Button onClick={handleAddTrade} className="bg-indigo-600 hover:bg-indigo-700">Add Trade</Button>
+                          <Button onClick={handleAddTrade} className="bg-indigo-600 hover:bg-indigo-700">Add Transaction</Button>
                         </div>
                       </div>
                     </DialogContent>
@@ -917,8 +1027,18 @@ export default function CryptoTaxPage() {
                             <TableRow key={trade.id}>
                               <TableCell className="text-slate-600">{new Date(trade.trade_date).toLocaleDateString('en-IN')}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className={trade.trade_type === 'buy' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-amber-200 text-amber-700 bg-amber-50'}>
-                                  {trade.trade_type.toUpperCase()}
+                                <Badge variant="outline" className={
+                                  trade.trade_type === 'buy' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' :
+                                    trade.trade_type === 'sell' ? 'border-amber-200 text-amber-700 bg-amber-50' :
+                                      trade.trade_type.startsWith('reward_') ? 'border-purple-200 text-purple-700 bg-purple-50' :
+                                        trade.trade_type === 'deposit' ? 'border-blue-200 text-blue-700 bg-blue-50' :
+                                          'border-slate-200 text-slate-700 bg-slate-50'
+                                }>
+                                  {trade.trade_type === 'reward_staking' ? '🥩 STAKING' :
+                                    trade.trade_type === 'reward_airdrop' ? '🎁 AIRDROP' :
+                                      trade.trade_type === 'reward_interest' ? '💰 INTEREST' :
+                                        trade.trade_type === 'reward_mining' ? '⛏️ MINING' :
+                                          trade.trade_type.toUpperCase()}
                                 </Badge>
                               </TableCell>
                               <TableCell className="font-medium text-slate-900">{trade.token_symbol}</TableCell>
@@ -1016,11 +1136,12 @@ export default function CryptoTaxPage() {
                       <ol className="list-decimal list-inside text-sm text-blue-800 space-y-1">
                         {selectedExchange === 'CoinDCX' && (
                           <>
-                            <li>Go to <strong>coindcx.com → Orders → Order History</strong></li>
-                            <li>Click <strong>"FILLED ORDERS"</strong> tab (important!)</li>
-                            <li>Set dates: <strong>01/04/2024 to 31/03/2025</strong> (for FY 2024-25)</li>
-                            <li>Click <strong>"Download CSV"</strong> button</li>
-                            <li>Upload the downloaded CSV file here</li>
+                            <li><strong>File 1 — Order History (Required):</strong> Go to <strong>coindcx.com → Orders → Order History</strong></li>
+                            <li>Click <strong>"FILLED ORDERS"</strong> tab, set dates for your FY, click <strong>"Download CSV"</strong></li>
+                            <li><strong>File 2 — TDS Summary (Recommended):</strong> Go to <strong>Downloads → TDS Summary → Export CSV</strong></li>
+                            <li><strong>File 3 — Insta History (If used):</strong> If you used Instant Buy/Sell, download that CSV too</li>
+                            <li>Select all 3 files at once and upload — TaxMitra auto-detects each file type!</li>
+                            <li className="text-amber-700 font-medium mt-2">⚠️ <strong>Missing data:</strong> Staking rewards & airdrops aren't in CSV. Use "Add Trade" → Staking Reward to add manually.</li>
                           </>
                         )}
                         {selectedExchange === 'WazirX' && (
@@ -1132,10 +1253,12 @@ export default function CryptoTaxPage() {
                           <div className="relative space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                             {[
                               { step: "Step 1", text: "Login to CoinDCX on Desktop browser" },
-                              { step: "Step 2", text: "Go to 'Orders' → 'Trade History'" },
-                              { step: "Step 3", text: "Click 'Download Report' button" },
-                              { step: "Step 4", text: "Select 'Trade History' and your 'Financial Year'" },
-                              { step: "Step 5", text: "Choose CSV format and click 'Generate'" }
+                              { step: "Step 2", text: "Go to 'Orders' → 'Trade History' → Download CSV" },
+                              { step: "Step 3", text: "Go to 'Downloads' → 'TDS Summary' → Export CSV" },
+                              { step: "Step 4", text: "If you used Instant Buy/Sell, download Insta CSV too" },
+                              { step: "Step 5", text: "Upload all files at once — we auto-detect types!" },
+                              { step: "Step 6", text: "Click 'Add Trade' → Staking Reward for missing data" },
+                              { step: "Step 7", text: "Check your email for 'CoinDCX reward' notifications" }
                             ].map((s, i) => (
                               <div key={i} className="relative pl-6">
                                 <div className="absolute left-0 top-1.5 h-4 w-4 rounded-full border-2 border-slate-300 bg-white" />
