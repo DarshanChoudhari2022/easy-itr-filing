@@ -1,16 +1,18 @@
 /**
- * CoinDCX API Integration Service
+ * CoinDCX API Integration Service — Complete Data Fetcher
  * 
- * Provides read-only access to CoinDCX account data for tax calculation
- * Uses HMAC-SHA256 signature authentication
+ * Uses HMAC-SHA256 API Key + Secret authentication.
+ * Fetches ALL transaction types: trades, deposits, withdrawals, lending/staking.
+ * Converts to NormalizedTransaction[] for the tax computation engine.
  */
 
 import CryptoJS from 'crypto-js';
+import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
 
-// API Base URL
+// ============= CONFIG =============
 const COINDCX_API_BASE = 'https://api.coindcx.com';
 
-// Types
+// ============= TYPES =============
 export interface CoinDCXCredentials {
     apiKey: string;
     apiSecret: string;
@@ -32,27 +34,89 @@ export interface CoinDCXTrade {
     price: number;
     symbol: string;
     timestamp: number;
+    total_quantity?: number;
+    avg_price?: number;
+    fee_currency?: string;
 }
 
-export interface CoinDCXSyncResult {
+export interface CoinDCXOrder {
+    id: string;
+    market: string;
+    order_type: string;
+    side: 'buy' | 'sell';
+    status: string;
+    fee_amount: number;
+    total_quantity: number;
+    remaining_quantity: number;
+    avg_price: number;
+    price_per_unit: number;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface CoinDCXDeposit {
+    id: string;
+    currency: string;
+    amount: string;
+    fee?: string;
+    status: string;
+    created_at: string | number;
+    tx_hash?: string;
+}
+
+export interface CoinDCXWithdrawal {
+    id: string;
+    currency: string;
+    amount: string;
+    fee?: string;
+    status: string;
+    created_at: string | number;
+    address?: string;
+    tx_hash?: string;
+}
+
+export interface CoinDCXLendingHistory {
+    id: string;
+    currency: string;
+    amount: string;
+    interest_earned?: string;
+    type: string;          // 'lend', 'interest', 'reward', etc.
+    status: string;
+    created_at: string | number;
+}
+
+export interface SyncProgress {
+    stage: string;
+    detail: string;
+    current: number;
+    total: number;
+    pctComplete: number;
+}
+
+export interface FullSyncResult {
     success: boolean;
-    balances?: CoinDCXBalance[];
-    trades?: CoinDCXTrade[];
     error?: string;
-    tradesCount?: number;
+    transactions: NormalizedTransaction[];
+    tdsRecords: TDSRecord[];
+    balances: CoinDCXBalance[];
+    summary: {
+        totalTrades: number;
+        totalDeposits: number;
+        totalWithdrawals: number;
+        totalRewards: number;
+        totalTransactions: number;
+        uniqueAssets: string[];
+        fyBreakdown: Record<string, number>;
+    };
 }
 
-/**
- * Generate HMAC-SHA256 signature for CoinDCX API request
- */
+// ============= CORE AUTH =============
+
 function generateSignature(body: Record<string, any>, secret: string): string {
     const payload = JSON.stringify(body);
     return CryptoJS.HmacSHA256(payload, secret).toString(CryptoJS.enc.Hex);
 }
 
-/**
- * Make authenticated request to CoinDCX API
- */
 async function makeAuthenticatedRequest<T>(
     endpoint: string,
     body: Record<string, any>,
@@ -73,6 +137,7 @@ async function makeAuthenticatedRequest<T>(
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error(`[CoinDCX API] ${endpoint} failed: ${response.status}`, errorText);
             return {
                 success: false,
                 error: `API Error (${response.status}): ${errorText}`
@@ -82,6 +147,7 @@ async function makeAuthenticatedRequest<T>(
         const data = await response.json();
         return { success: true, data };
     } catch (error) {
+        console.error(`[CoinDCX API] ${endpoint} network error:`, error);
         return {
             success: false,
             error: `Network error: ${(error as Error).message}`
@@ -89,15 +155,30 @@ async function makeAuthenticatedRequest<T>(
     }
 }
 
-/**
- * Fetch current account balances from CoinDCX
- */
+async function makePublicRequest<T>(
+    endpoint: string
+): Promise<{ success: boolean; data?: T; error?: string }> {
+    try {
+        const response = await fetch(`${COINDCX_API_BASE}${endpoint}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) {
+            return { success: false, error: `API Error (${response.status})` };
+        }
+        const data = await response.json();
+        return { success: true, data };
+    } catch (error) {
+        return { success: false, error: `Network error: ${(error as Error).message}` };
+    }
+}
+
+// ============= INDIVIDUAL FETCHERS =============
+
 export async function fetchCoinDCXBalances(
     credentials: CoinDCXCredentials
 ): Promise<{ success: boolean; data?: CoinDCXBalance[]; error?: string }> {
-    const timestamp = Date.now();
-    const body = { timestamp };
-
+    const body = { timestamp: Date.now() };
     return makeAuthenticatedRequest<CoinDCXBalance[]>(
         '/exchange/v1/users/balances',
         body,
@@ -106,10 +187,8 @@ export async function fetchCoinDCXBalances(
 }
 
 /**
- * Fetch trade history from CoinDCX
- * 
- * @param credentials API credentials
- * @param options Optional filters (from_timestamp, to_timestamp, symbol)
+ * Fetch trade history with pagination support.
+ * CoinDCX trade_history returns max 500 per call.
  */
 export async function fetchCoinDCXTradeHistory(
     credentials: CoinDCXCredentials,
@@ -120,153 +199,524 @@ export async function fetchCoinDCXTradeHistory(
         limit?: number;
     }
 ): Promise<{ success: boolean; data?: CoinDCXTrade[]; error?: string }> {
-    const timestamp = Date.now();
+    const allTrades: CoinDCXTrade[] = [];
+    let page = 0;
+    const limit = options?.limit || 500;
+    let hasMore = true;
 
-    const body: Record<string, any> = {
-        timestamp,
-        limit: options?.limit || 500,
-        sort: 'desc',
+    while (hasMore) {
+        const body: Record<string, any> = {
+            timestamp: Date.now(),
+            limit,
+            page,
+            sort: 'asc',
+        };
+        if (options?.fromTimestamp) body.from_id = undefined; // Use timestamp-based
+        if (options?.symbol) body.symbol = options.symbol;
+
+        const result = await makeAuthenticatedRequest<CoinDCXTrade[]>(
+            '/exchange/v1/orders/trade_history',
+            body,
+            credentials
+        );
+
+        if (!result.success) {
+            // If we already fetched some records, return what we have
+            if (allTrades.length > 0) {
+                console.warn(`[CoinDCX] Partial trade history fetched: ${allTrades.length} trades (page ${page} failed)`);
+                break;
+            }
+            return result;
+        }
+
+        const trades = result.data || [];
+        allTrades.push(...trades);
+
+        // Stop if we got fewer than limit (last page)
+        if (trades.length < limit) {
+            hasMore = false;
+        } else {
+            page++;
+            // Safety: max 20 pages (10,000 trades)
+            if (page >= 20) {
+                console.warn('[CoinDCX] Hit max pagination limit of 20 pages');
+                hasMore = false;
+            }
+        }
+    }
+
+    return { success: true, data: allTrades };
+}
+
+/**
+ * Fetch completed orders (filled orders) 
+ */
+export async function fetchCoinDCXOrders(
+    credentials: CoinDCXCredentials
+): Promise<{ success: boolean; data?: CoinDCXOrder[]; error?: string }> {
+    const body = {
+        timestamp: Date.now(),
+        limit: 500,
     };
-
-    if (options?.fromTimestamp) {
-        body.from_timestamp = options.fromTimestamp;
-    }
-
-    if (options?.toTimestamp) {
-        body.to_timestamp = options.toTimestamp;
-    }
-
-    if (options?.symbol) {
-        body.symbol = options.symbol;
-    }
-
-    return makeAuthenticatedRequest<CoinDCXTrade[]>(
-        '/exchange/v1/orders/trade_history',
+    return makeAuthenticatedRequest<CoinDCXOrder[]>(
+        '/exchange/v1/orders/active_orders_count',
         body,
         credentials
     );
 }
 
 /**
- * Sync all data from CoinDCX account
- * Fetches both balances and trade history
- */
-export async function syncCoinDCXAccount(
-    credentials: CoinDCXCredentials,
-    financialYear: '2024-25' | '2025-26' = '2025-26'
-): Promise<CoinDCXSyncResult> {
-    try {
-        // Define financial year date range
-        const fyRanges = {
-            '2024-25': {
-                from: new Date('2024-04-01').getTime(),
-                to: new Date('2025-03-31 23:59:59').getTime(),
-            },
-            '2025-26': {
-                from: new Date('2025-04-01').getTime(),
-                to: new Date('2026-03-31 23:59:59').getTime(),
-            },
-        };
-
-        const range = fyRanges[financialYear];
-
-        // Fetch balances
-        const balancesResult = await fetchCoinDCXBalances(credentials);
-        if (!balancesResult.success) {
-            return { success: false, error: balancesResult.error };
-        }
-
-        // Fetch trade history for the financial year
-        const tradesResult = await fetchCoinDCXTradeHistory(credentials, {
-            fromTimestamp: range.from,
-            toTimestamp: range.to,
-            limit: 1000,
-        });
-
-        if (!tradesResult.success) {
-            return { success: false, error: tradesResult.error };
-        }
-
-        return {
-            success: true,
-            balances: balancesResult.data,
-            trades: tradesResult.data,
-            tradesCount: tradesResult.data?.length || 0,
-        };
-    } catch (error) {
-        return {
-            success: false,
-            error: `Sync failed: ${(error as Error).message}`,
-        };
-    }
-}
-
-/**
- * Convert CoinDCX trades to our internal Transaction format
- */
-export function convertCoinDCXTradesToTransactions(
-    trades: CoinDCXTrade[],
-    userId: string
-): {
-    token_symbol: string;
-    trade_type: string;
-    quantity: number;
-    buy_price: number;
-    trade_date: string;
-    exchange: string;
-    metadata: Record<string, any>;
-}[] {
-    return trades.map(trade => {
-        // Extract token from symbol (e.g., BTCINR -> BTC)
-        let token = trade.symbol;
-        if (token.endsWith('INR')) {
-            token = token.replace('INR', '');
-        } else if (token.endsWith('USDT')) {
-            token = token.replace('USDT', '');
-        } else if (token.endsWith('BTC')) {
-            token = token.replace('BTC', '');
-        }
-
-        // Calculate price in INR
-        // For INR pairs, price is already in INR
-        // For BTC/USDT pairs, would need conversion (simplified here)
-        const priceInINR = trade.symbol.endsWith('INR')
-            ? trade.price
-            : trade.price * 90; // Approximate USDT to INR
-
-        return {
-            token_symbol: token.toUpperCase(),
-            trade_type: trade.side,
-            quantity: trade.quantity,
-            buy_price: priceInINR,
-            trade_date: new Date(trade.timestamp).toISOString().split('T')[0],
-            exchange: 'CoinDCX',
-            metadata: {
-                original_id: trade.id,
-                order_id: trade.order_id,
-                fee: parseFloat(trade.fee_amount),
-                original_symbol: trade.symbol,
-                original_price: trade.price,
-            },
-        };
-    });
-}
-
-/**
- * Validate CoinDCX API credentials
- * Makes a simple balance request to verify credentials work
+ * Validate API credentials with a lightweight balance call
  */
 export async function validateCoinDCXCredentials(
     credentials: CoinDCXCredentials
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; balances?: CoinDCXBalance[] }> {
     const result = await fetchCoinDCXBalances(credentials);
-
     if (result.success) {
-        return { valid: true };
+        return { valid: true, balances: result.data };
     }
-
     return {
         valid: false,
         error: result.error || 'Invalid credentials'
     };
+}
+
+// ============= MARKET DATA (public, no auth) =============
+
+interface MarketDetail {
+    coindcx_name: string;
+    base_currency_short_name: string;
+    target_currency_short_name: string;
+    target_currency_name: string;
+    min_quantity: number;
+    max_quantity: number;
+    step: number;
+    order_types: string[];
+    pair: string;
+    ecode: string;
+}
+
+let cachedMarkets: MarketDetail[] | null = null;
+
+async function getMarketDetails(): Promise<Record<string, { base: string; quote: string }>> {
+    if (!cachedMarkets) {
+        const result = await makePublicRequest<MarketDetail[]>('/exchange/v1/markets_details');
+        if (result.success && result.data) {
+            cachedMarkets = result.data;
+        }
+    }
+
+    const map: Record<string, { base: string; quote: string }> = {};
+    if (cachedMarkets) {
+        for (const m of cachedMarkets) {
+            map[m.pair] = {
+                base: m.base_currency_short_name,
+                quote: m.target_currency_short_name,
+            };
+            // Also map by coindcx_name for alternative lookups
+            map[m.coindcx_name] = {
+                base: m.base_currency_short_name,
+                quote: m.target_currency_short_name,
+            };
+        }
+    }
+    return map;
+}
+
+// ============= CONVERSION TO NormalizedTransaction =============
+
+function getFY(date: Date): string {
+    const month = date.getMonth(); // 0-11
+    const year = date.getFullYear();
+    if (month < 3) {
+        return `${year - 1}-${String(year).slice(2)}`;
+    }
+    return `${year}-${String(year + 1).slice(2)}`;
+}
+
+function getAY(fy: string): string {
+    const start = parseInt(fy.split('-')[0]);
+    return `${start + 1}-${((start + 2) % 100).toString().padStart(2, '0')}`;
+}
+
+function hashContent(s: string): string {
+    return CryptoJS.MD5(s).toString();
+}
+
+function parseAssetFromSymbol(
+    symbol: string,
+    marketMap: Record<string, { base: string; quote: string }>
+): { base: string; quote: string } {
+    // Try market map first
+    if (marketMap[symbol]) return marketMap[symbol];
+
+    // Fallback: manual parsing
+    const quoteAssets = ['INR', 'USDT', 'BUSD', 'BTC', 'ETH', 'BNB'];
+    for (const q of quoteAssets) {
+        if (symbol.endsWith(q) && symbol.length > q.length) {
+            return { base: symbol.replace(q, ''), quote: q };
+        }
+    }
+    // Separator-based: BTC/INR, BTC_INR
+    const parts = symbol.split(/[/_-]/);
+    if (parts.length === 2) return { base: parts[0], quote: parts[1] };
+
+    return { base: symbol, quote: 'INR' };
+}
+
+function convertTradesToNormalized(
+    trades: CoinDCXTrade[],
+    marketMap: Record<string, { base: string; quote: string }>
+): NormalizedTransaction[] {
+    return trades.map((trade, i) => {
+        const { base, quote } = parseAssetFromSymbol(trade.symbol, marketMap);
+        const tradeDate = new Date(trade.timestamp);
+        const fy = getFY(tradeDate);
+        const fee = parseFloat(trade.fee_amount) || 0;
+        const qty = trade.quantity || 0;
+        const price = trade.price || 0;
+        const grossAmount = qty * price;
+        const isINRQuote = quote === 'INR';
+        const priceInr = isINRQuote ? price : price * 90; // Approximate USDT → INR
+        const grossInr = qty * priceInr;
+        const feeInr = fee; // CoinDCX fees are typically in quote currency
+
+        // TDS: 1% of consideration for sells (Section 194S)
+        const tdsAmount = trade.side === 'sell' ? grossInr * 0.01 : 0;
+
+        return {
+            externalId: `cdx-trade-${trade.id || trade.order_id}-${i}`,
+            exchange: 'CoinDCX',
+            transactionType: trade.side,
+            isTaxableEvent: trade.side === 'sell',
+            assetSymbol: base.toUpperCase(),
+            quoteAsset: quote.toUpperCase(),
+            pair: `${base}/${quote}`.toUpperCase(),
+            quantity: qty,
+            pricePerUnit: price,
+            priceInr: priceInr,
+            grossAmountQuote: grossAmount,
+            grossAmountInr: grossInr,
+            feeAmount: fee,
+            feeAsset: quote,
+            feeInr: feeInr,
+            tdsAmount,
+            tdsRate: trade.side === 'sell' ? 0.01 : 0,
+            tradeTimestamp: tradeDate,
+            financialYear: fy,
+            assessmentYear: getAY(fy),
+            description: `${trade.side.toUpperCase()} ${qty} ${base} @ ${price} ${quote}`,
+            orderId: trade.order_id,
+            rawData: {
+                source: 'api',
+                trade_id: String(trade.id),
+                symbol: trade.symbol,
+                ecode: trade.ecode || '',
+            },
+            contentHash: hashContent(`${trade.id}-${trade.order_id}-${trade.timestamp}-${trade.side}-${qty}`),
+        } as NormalizedTransaction;
+    });
+}
+
+function convertBalanceDepositsToNormalized(
+    type: 'deposit' | 'withdrawal',
+    records: Array<{ id: string; currency: string; amount: string; fee?: string; status: string; created_at: string | number; tx_hash?: string }>
+): NormalizedTransaction[] {
+    return records
+        .filter(r => r.status?.toLowerCase() === 'confirmed' || r.status?.toLowerCase() === 'completed' || r.status?.toLowerCase() === 'done')
+        .map((r, i) => {
+            const date = new Date(r.created_at);
+            const fy = getFY(date);
+            const qty = parseFloat(r.amount) || 0;
+            const fee = parseFloat(r.fee || '0') || 0;
+
+            return {
+                externalId: `cdx-${type}-${r.id || i}`,
+                exchange: 'CoinDCX',
+                transactionType: type,
+                isTaxableEvent: false,
+                assetSymbol: r.currency?.toUpperCase() || 'UNKNOWN',
+                quoteAsset: 'INR',
+                pair: `${r.currency}/INR`.toUpperCase(),
+                quantity: qty,
+                pricePerUnit: 0,
+                priceInr: 0,
+                grossAmountQuote: 0,
+                grossAmountInr: 0,
+                feeAmount: fee,
+                feeAsset: r.currency || 'INR',
+                feeInr: 0,
+                tdsAmount: 0,
+                tdsRate: 0,
+                tradeTimestamp: date,
+                financialYear: fy,
+                assessmentYear: getAY(fy),
+                description: `${type.toUpperCase()} ${qty} ${r.currency}`,
+                txHash: r.tx_hash,
+                rawData: {
+                    source: 'api',
+                    status: r.status,
+                    original_id: r.id,
+                },
+                contentHash: hashContent(`${type}-${r.id}-${r.amount}-${r.created_at}`),
+            } as NormalizedTransaction;
+        });
+}
+
+function convertRewardsToNormalized(
+    records: CoinDCXLendingHistory[]
+): NormalizedTransaction[] {
+    return records
+        .filter(r => r.status?.toLowerCase() !== 'pending')
+        .map((r, i) => {
+            const date = new Date(r.created_at);
+            const fy = getFY(date);
+            const qty = parseFloat(r.amount) || 0;
+            const interestEarned = parseFloat(r.interest_earned || '0') || 0;
+            const amount = interestEarned > 0 ? interestEarned : qty;
+
+            // Map type
+            let txType = 'reward_staking';
+            if (r.type?.toLowerCase().includes('interest')) txType = 'reward_interest';
+            else if (r.type?.toLowerCase().includes('airdrop')) txType = 'reward_airdrop';
+            else if (r.type?.toLowerCase().includes('promo')) txType = 'reward_airdrop';
+            else if (r.type?.toLowerCase().includes('lend')) txType = 'reward_interest';
+
+            return {
+                externalId: `cdx-reward-${r.id || i}`,
+                exchange: 'CoinDCX',
+                transactionType: txType,
+                isTaxableEvent: true, // Rewards are taxable as other income
+                assetSymbol: r.currency?.toUpperCase() || 'UNKNOWN',
+                quoteAsset: 'INR',
+                pair: `${r.currency}/INR`.toUpperCase(),
+                quantity: amount,
+                pricePerUnit: 0, // Will need market price lookup
+                priceInr: 0,
+                grossAmountQuote: 0,
+                grossAmountInr: 0,
+                feeAmount: 0,
+                feeAsset: 'INR',
+                feeInr: 0,
+                tdsAmount: 0,
+                tdsRate: 0,
+                tradeTimestamp: date,
+                financialYear: fy,
+                assessmentYear: getAY(fy),
+                description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${r.currency}`,
+                rawData: {
+                    source: 'api',
+                    type: r.type,
+                    status: r.status,
+                    original_id: r.id,
+                    interest_earned: r.interest_earned || '',
+                },
+                contentHash: hashContent(`reward-${r.id}-${r.amount}-${r.created_at}`),
+            } as NormalizedTransaction;
+        });
+}
+
+// ============= FULL SYNC =============
+
+/**
+ * Complete CoinDCX data sync — fetches ALL data types and converts to NormalizedTransaction[].
+ * This is the main function called from the UI.
+ * 
+ * @param credentials   API Key + Secret
+ * @param onProgress    Callback for progress updates in the UI
+ */
+export async function fullCoinDCXSync(
+    credentials: CoinDCXCredentials,
+    onProgress?: (progress: SyncProgress) => void
+): Promise<FullSyncResult> {
+    const allTransactions: NormalizedTransaction[] = [];
+    const allTDSRecords: TDSRecord[] = [];
+    let balances: CoinDCXBalance[] = [];
+
+    const report = (stage: string, detail: string, current: number, total: number) => {
+        onProgress?.({
+            stage,
+            detail,
+            current,
+            total,
+            pctComplete: Math.round((current / total) * 100)
+        });
+    };
+
+    try {
+        // ── Step 1: Validate credentials by fetching balances ──
+        report('Connecting', 'Validating API credentials...', 1, 6);
+        const balResult = await fetchCoinDCXBalances(credentials);
+        if (!balResult.success) {
+            return {
+                success: false,
+                error: `Authentication failed: ${balResult.error}. Please check your API Key and Secret.`,
+                transactions: [],
+                tdsRecords: [],
+                balances: [],
+                summary: { totalTrades: 0, totalDeposits: 0, totalWithdrawals: 0, totalRewards: 0, totalTransactions: 0, uniqueAssets: [], fyBreakdown: {} }
+            };
+        }
+        balances = (balResult.data || []).filter(b => b.balance > 0 || b.locked_balance > 0);
+        console.log(`[CoinDCX Sync] ✅ Auth OK. ${balances.length} non-zero balances found.`);
+
+        // ── Step 2: Fetch market details for symbol mapping ──
+        report('Markets', 'Loading market pair data...', 2, 6);
+        const marketMap = await getMarketDetails();
+        console.log(`[CoinDCX Sync] 📊 ${Object.keys(marketMap).length} market pairs loaded.`);
+
+        // ── Step 3: Fetch ALL trade history (paginated) ──
+        report('Trades', 'Fetching complete trade history...', 3, 6);
+        const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
+        let tradeCount = 0;
+        if (tradesResult.success && tradesResult.data) {
+            const normalized = convertTradesToNormalized(tradesResult.data, marketMap);
+            allTransactions.push(...normalized);
+            tradeCount = normalized.length;
+            console.log(`[CoinDCX Sync] 📈 ${tradeCount} trades fetched.`);
+        } else {
+            console.warn(`[CoinDCX Sync] ⚠️ Trade history fetch failed: ${tradesResult.error}`);
+        }
+
+        // ── Step 4: Fetch deposits ──
+        report('Deposits', 'Fetching deposit history...', 4, 6);
+        let depositCount = 0;
+        try {
+            const depResult = await makeAuthenticatedRequest<CoinDCXDeposit[]>(
+                '/exchange/v1/users/deposits',
+                { timestamp: Date.now() },
+                credentials
+            );
+            if (depResult.success && depResult.data && Array.isArray(depResult.data)) {
+                const normalized = convertBalanceDepositsToNormalized('deposit', depResult.data);
+                allTransactions.push(...normalized);
+                depositCount = normalized.length;
+                console.log(`[CoinDCX Sync] 📥 ${depositCount} deposits fetched.`);
+            }
+        } catch (e) {
+            console.warn('[CoinDCX Sync] Deposits endpoint not available:', e);
+        }
+
+        // ── Step 5: Fetch withdrawals ──
+        report('Withdrawals', 'Fetching withdrawal history...', 5, 6);
+        let withdrawalCount = 0;
+        try {
+            const witResult = await makeAuthenticatedRequest<CoinDCXWithdrawal[]>(
+                '/exchange/v1/users/withdrawals',
+                { timestamp: Date.now() },
+                credentials
+            );
+            if (witResult.success && witResult.data && Array.isArray(witResult.data)) {
+                const normalized = convertBalanceDepositsToNormalized('withdrawal', witResult.data);
+                allTransactions.push(...normalized);
+                withdrawalCount = normalized.length;
+                console.log(`[CoinDCX Sync] 📤 ${withdrawalCount} withdrawals fetched.`);
+            }
+        } catch (e) {
+            console.warn('[CoinDCX Sync] Withdrawals endpoint not available:', e);
+        }
+
+        // ── Step 6: Fetch lending/staking rewards ──
+        report('Rewards', 'Fetching staking & lending rewards...', 6, 6);
+        let rewardCount = 0;
+        try {
+            const lendResult = await makeAuthenticatedRequest<CoinDCXLendingHistory[]>(
+                '/exchange/v1/lending/history',
+                { timestamp: Date.now() },
+                credentials
+            );
+            if (lendResult.success && lendResult.data && Array.isArray(lendResult.data)) {
+                const normalized = convertRewardsToNormalized(lendResult.data);
+                allTransactions.push(...normalized);
+                rewardCount = normalized.length;
+                console.log(`[CoinDCX Sync] 🎁 ${rewardCount} rewards fetched.`);
+            }
+        } catch (e) {
+            console.warn('[CoinDCX Sync] Lending/staking endpoint not available:', e);
+        }
+
+        // ── Deduplicate ──
+        const seen = new Set<string>();
+        const dedupedTxs = allTransactions.filter(tx => {
+            if (seen.has(tx.contentHash)) return false;
+            seen.add(tx.contentHash);
+            return true;
+        });
+
+        // ── Compute FY breakdown ──
+        const fyBreakdown: Record<string, number> = {};
+        const assetSet = new Set<string>();
+        for (const tx of dedupedTxs) {
+            fyBreakdown[tx.financialYear] = (fyBreakdown[tx.financialYear] || 0) + 1;
+            assetSet.add(tx.assetSymbol);
+        }
+
+        // ── Sort by timestamp ──
+        dedupedTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
+
+        console.log(`[CoinDCX Sync] ✅ COMPLETE: ${dedupedTxs.length} total transactions, ${assetSet.size} unique assets`);
+        console.log(`[CoinDCX Sync] FY breakdown:`, fyBreakdown);
+
+        return {
+            success: true,
+            transactions: dedupedTxs,
+            tdsRecords: allTDSRecords,
+            balances,
+            summary: {
+                totalTrades: tradeCount,
+                totalDeposits: depositCount,
+                totalWithdrawals: withdrawalCount,
+                totalRewards: rewardCount,
+                totalTransactions: dedupedTxs.length,
+                uniqueAssets: Array.from(assetSet).sort(),
+                fyBreakdown,
+            },
+        };
+
+    } catch (error) {
+        console.error('[CoinDCX Sync] Fatal error:', error);
+        return {
+            success: false,
+            error: `Sync failed: ${(error as Error).message}`,
+            transactions: allTransactions,
+            tdsRecords: [],
+            balances,
+            summary: {
+                totalTrades: 0,
+                totalDeposits: 0,
+                totalWithdrawals: 0,
+                totalRewards: 0,
+                totalTransactions: allTransactions.length,
+                uniqueAssets: [],
+                fyBreakdown: {},
+            },
+        };
+    }
+}
+
+// ============= CREDENTIALS STORAGE (localStorage, base64 encoded) =============
+
+const CREDS_KEY = 'taxmitra_coindcx_creds';
+
+export function saveCredentials(credentials: CoinDCXCredentials): void {
+    const encoded = btoa(JSON.stringify(credentials));
+    localStorage.setItem(CREDS_KEY, encoded);
+}
+
+export function loadCredentials(): CoinDCXCredentials | null {
+    try {
+        const encoded = localStorage.getItem(CREDS_KEY);
+        if (!encoded) return null;
+        return JSON.parse(atob(encoded));
+    } catch {
+        return null;
+    }
+}
+
+export function clearCredentials(): void {
+    localStorage.removeItem(CREDS_KEY);
+}
+
+export function hasStoredCredentials(): boolean {
+    return !!localStorage.getItem(CREDS_KEY);
 }

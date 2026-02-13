@@ -43,6 +43,16 @@ import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as Rec
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
 import { generateComprehensiveReport, buildComprehensiveReportData } from "@/lib/comprehensive-report-generator";
 import { PlanGate } from "@/hooks/usePlanGuard";
+import {
+  fullCoinDCXSync,
+  validateCoinDCXCredentials,
+  saveCredentials,
+  loadCredentials,
+  clearCredentials,
+  hasStoredCredentials,
+  type SyncProgress,
+  type FullSyncResult
+} from "@/lib/coindcx-api";
 
 // Types
 interface Trade {
@@ -156,6 +166,16 @@ export default function CryptoTaxPage() {
 
   // File input ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // CoinDCX API Connect state
+  const [apiKey, setApiKey] = useState(() => loadCredentials()?.apiKey || '');
+  const [apiSecret, setApiSecret] = useState(() => loadCredentials()?.apiSecret || '');
+  const [apiConnected, setApiConnected] = useState(() => hasStoredCredentials());
+  const [apiSyncing, setApiSyncing] = useState(false);
+  const [apiSyncProgress, setApiSyncProgress] = useState<SyncProgress | null>(null);
+  const [apiSyncResult, setApiSyncResult] = useState<FullSyncResult | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showApiSecret, setShowApiSecret] = useState(false);
 
   // Financial Year state and helper
   const [selectedFY, setSelectedFY] = useState<string>('2025-26');
@@ -1116,11 +1136,239 @@ export default function CryptoTaxPage() {
             {/* ============= IMPORT TAB ============= */}
             {activeTab === 'import' && (
               <div className="space-y-6">
+                {/* ===== CONNECT COINDCX API — PRIMARY METHOD ===== */}
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-slate-900 to-indigo-900 text-white overflow-hidden relative">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center font-bold text-sm">⚡</div>
+                      <div>
+                        <CardTitle className="text-lg font-bold text-white">Connect CoinDCX API</CardTitle>
+                        <CardDescription className="text-indigo-200">One-click import • All trades + staking + rewards • Like KoinX</CardDescription>
+                      </div>
+                      {apiConnected && (
+                        <Badge className="ml-auto bg-emerald-500/20 text-emerald-300 border-emerald-400/30">✅ Connected</Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 relative z-10">
+                    {!apiConnected ? (
+                      <>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-indigo-200 text-xs">API Key</Label>
+                            <div className="relative">
+                              <Input
+                                type={showApiKey ? 'text' : 'password'}
+                                value={apiKey}
+                                onChange={e => setApiKey(e.target.value)}
+                                placeholder="Paste your CoinDCX API key"
+                                className="bg-white/10 border-white/20 text-white placeholder:text-indigo-300/50 pr-10"
+                              />
+                              <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-2 top-1/2 -translate-y-1/2">
+                                {showApiKey ? <EyeOff className="h-4 w-4 text-indigo-300" /> : <Eye className="h-4 w-4 text-indigo-300" />}
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-indigo-200 text-xs">API Secret</Label>
+                            <div className="relative">
+                              <Input
+                                type={showApiSecret ? 'text' : 'password'}
+                                value={apiSecret}
+                                onChange={e => setApiSecret(e.target.value)}
+                                placeholder="Paste your CoinDCX API secret"
+                                className="bg-white/10 border-white/20 text-white placeholder:text-indigo-300/50 pr-10"
+                              />
+                              <button onClick={() => setShowApiSecret(!showApiSecret)} className="absolute right-2 top-1/2 -translate-y-1/2">
+                                {showApiSecret ? <EyeOff className="h-4 w-4 text-indigo-300" /> : <Eye className="h-4 w-4 text-indigo-300" />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                          <p className="text-xs text-indigo-200">🔒 Your keys are stored locally in your browser only. We never send them to our servers.</p>
+                          <p className="text-xs text-indigo-300 mt-1">📋 Get your API key from: <strong>coindcx.com → API Dashboard → Create New Key</strong></p>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <Button
+                            onClick={async () => {
+                              if (!apiKey || !apiSecret) {
+                                toast.error('Please enter both API Key and Secret');
+                                return;
+                              }
+                              setApiSyncing(true);
+                              setApiSyncProgress({ stage: 'Validating', detail: 'Checking credentials...', current: 0, total: 1, pctComplete: 0 });
+                              const creds = { apiKey, apiSecret };
+                              const validation = await validateCoinDCXCredentials(creds);
+                              if (!validation.valid) {
+                                toast.error(`Invalid API credentials: ${validation.error}`);
+                                setApiSyncing(false);
+                                setApiSyncProgress(null);
+                                return;
+                              }
+                              saveCredentials(creds);
+                              setApiConnected(true);
+                              toast.success('CoinDCX connected! Starting data sync...');
+
+                              // Auto-sync after connect
+                              try {
+                                const result = await fullCoinDCXSync(creds, setApiSyncProgress);
+                                setApiSyncResult(result);
+                                if (result.success && result.transactions.length > 0) {
+                                  setParsedTransactions(prev => {
+                                    const existing = new Set(prev.map(t => t.contentHash));
+                                    const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
+                                    return [...prev, ...newTxs];
+                                  });
+                                  setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
+                                  const allTxs = [...parsedTransactions, ...result.transactions];
+                                  const allTds = [...parsedTDSRecords, ...result.tdsRecords];
+                                  const taxResult = computeVdaTaxForFinancialYear(allTxs, allTds, selectedFY, settings.accountingMethod as any);
+                                  setTaxComputation(taxResult);
+                                  setTrades(mapTransactionsToTrades(allTxs));
+                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax computed.`);
+                                } else if (!result.success) {
+                                  toast.error(result.error || 'Sync failed');
+                                } else {
+                                  toast.info('No transactions found for this account');
+                                }
+                              } catch (e) {
+                                toast.error('Sync error: ' + (e as Error).message);
+                              }
+                              setApiSyncing(false);
+                              setApiSyncProgress(null);
+                            }}
+                            disabled={apiSyncing || !apiKey || !apiSecret}
+                            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-lg"
+                          >
+                            {apiSyncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
+                            {apiSyncing ? 'Connecting...' : 'Connect & Fetch All Data'}
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                          {[
+                            { icon: '📈', label: 'All Trades' },
+                            { icon: '🥩', label: 'Staking Rewards' },
+                            { icon: '📥', label: 'Deposits' },
+                            { icon: '📤', label: 'Withdrawals' },
+                          ].map((f, i) => (
+                            <div key={i} className="p-2 rounded-lg bg-white/5 border border-white/10">
+                              <span className="text-lg">{f.icon}</span>
+                              <p className="text-[10px] text-indigo-200 mt-0.5">{f.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Connected state */}
+                        {apiSyncProgress && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-indigo-200">{apiSyncProgress.stage}: {apiSyncProgress.detail}</span>
+                              <span className="text-white font-semibold">{apiSyncProgress.pctComplete}%</span>
+                            </div>
+                            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all duration-500"
+                                style={{ width: `${apiSyncProgress.pctComplete}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {apiSyncResult?.success && (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3 rounded-lg bg-white/10">
+                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalTrades}</p>
+                              <p className="text-xs text-indigo-200">Trades</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/10">
+                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalRewards}</p>
+                              <p className="text-xs text-indigo-200">Rewards</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/10">
+                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalDeposits}</p>
+                              <p className="text-xs text-indigo-200">Deposits</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/10">
+                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.uniqueAssets.length}</p>
+                              <p className="text-xs text-indigo-200">Assets</p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex gap-3">
+                          <Button
+                            onClick={async () => {
+                              const creds = loadCredentials();
+                              if (!creds) { toast.error('No stored credentials'); return; }
+                              setApiSyncing(true);
+                              try {
+                                const result = await fullCoinDCXSync(creds, setApiSyncProgress);
+                                setApiSyncResult(result);
+                                if (result.success && result.transactions.length > 0) {
+                                  setParsedTransactions(prev => {
+                                    const existing = new Set(prev.map(t => t.contentHash));
+                                    const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
+                                    return [...prev, ...newTxs];
+                                  });
+                                  const allTxs = [...parsedTransactions, ...result.transactions];
+                                  const taxResult = computeVdaTaxForFinancialYear(allTxs, parsedTDSRecords, selectedFY, settings.accountingMethod as any);
+                                  setTaxComputation(taxResult);
+                                  setTrades(mapTransactionsToTrades(allTxs));
+                                  toast.success(`Synced ${result.summary.totalTransactions} transactions`);
+                                } else {
+                                  toast.error(result.error || 'No transactions found');
+                                }
+                              } catch (e) {
+                                toast.error('Sync error: ' + (e as Error).message);
+                              }
+                              setApiSyncing(false);
+                              setApiSyncProgress(null);
+                            }}
+                            disabled={apiSyncing}
+                            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold"
+                          >
+                            {apiSyncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                            {apiSyncing ? 'Syncing...' : 'Sync Now'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              clearCredentials();
+                              setApiConnected(false);
+                              setApiKey('');
+                              setApiSecret('');
+                              setApiSyncResult(null);
+                              toast.success('CoinDCX disconnected');
+                            }}
+                            className="border-white/20 text-white hover:bg-white/10"
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Divider */}
+                <div className="flex items-center gap-4">
+                  <Separator className="flex-1" />
+                  <span className="text-xs text-slate-400 font-medium">OR IMPORT CSV MANUALLY</span>
+                  <Separator className="flex-1" />
+                </div>
+
                 {/* Exchange Selection */}
                 <Card className="border-0 shadow-sm">
                   <CardHeader>
                     <CardTitle className="text-base font-semibold text-slate-900">Select Exchange</CardTitle>
-                    <CardDescription>Choose your crypto exchange to import trades</CardDescription>
+                    <CardDescription>Choose your crypto exchange to import trades via CSV</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
