@@ -25,14 +25,15 @@ import {
   Calendar, CheckCircle2, FileCheck
 } from "lucide-react";
 import {
-  runFullImport,
-  computeTaxForFY,
-  getImportSessions,
-  getPnLSummary,
-  exportScheduleVDA,
-  exportTDSReconciliation,
+  // Client-side engine (no DB required)
+  processImportSession,
+  computeVdaTaxForFinancialYear,
+  generateScheduleVDACSV,
+  generateTDSReconciliationCSV,
   formatPnLSummary,
   type TaxComputationResult,
+  type NormalizedTransaction,
+  type TDSRecord,
   type ImportProgress
 } from "@/lib/taxmitra";
 import { supabase } from "@/integrations/supabase/client";
@@ -57,6 +58,19 @@ interface Trade {
   metadata?: { fee?: number; tds_deducted?: number };
 }
 
+// Tax calculation settings
+interface TaxSettings {
+  accountingMethod: string;
+  treatAirdropsAsIncome: boolean;
+  treatRewardsAsIncome: boolean;
+  treatStakingAsIncome: boolean;
+  treatInterestAsIncome: boolean;
+  treatMiningAsIncome: boolean;
+  baseCurrency: string;
+  country: string;
+  assessmentYear: string;
+}
+
 // Default tax settings
 const DEFAULT_TAX_SETTINGS: TaxSettings = {
   accountingMethod: 'FIFO',
@@ -77,9 +91,12 @@ export default function CryptoTaxPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings'>('overview');
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
+  // Client-side parsed data (no DB required)
+  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
+  const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
 
   // Initialize from localStorage if available
   const [settings, setSettings] = useState<TaxSettings>(() => {
@@ -153,19 +170,47 @@ export default function CryptoTaxPage() {
     return counts;
   }, [trades]);
 
-  // FETCH TRADES from NEW ENGINE TABLE
+  // Convert NormalizedTransaction[] to Trade[] for UI display
+  const mapTransactionsToTrades = useCallback((txs: NormalizedTransaction[]): Trade[] => {
+    return txs.map((tx, i) => ({
+      id: tx.externalId || `tx-${i}`,
+      user_id: user?.id || '',
+      token_symbol: tx.assetSymbol,
+      trade_type: tx.transactionType,
+      quantity: tx.quantity,
+      buy_price: tx.priceInr,
+      trade_date: tx.tradeTimestamp.toISOString(),
+      exchange: tx.exchange,
+      fee: tx.feeInr,
+      metadata: {
+        fee: tx.feeInr,
+        tds_deducted: tx.tdsAmount
+      }
+    }));
+  }, [user]);
+
+  // RECOMPUTE TAX from in-memory transactions whenever FY or data changes
+  const recomputeTax = useCallback((txs: NormalizedTransaction[], tds: TDSRecord[], fy: string) => {
+    if (txs.length === 0) return;
+    try {
+      const result = computeVdaTaxForFinancialYear(txs, tds, fy, settings.accountingMethod as any);
+      setTaxComputation(result);
+    } catch (err) {
+      console.error('Tax computation error:', err);
+    }
+  }, [settings.accountingMethod]);
+
+  // FETCH TRADES from DB (graceful — won't fail if tables don't exist)
   const fetchTrades = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('crypto_transactions')
         .select('*')
         .eq('user_id', user.id)
         .order('trade_timestamp', { ascending: false });
 
-      if (!error && data) {
-        // Map new schema to old UI interface
+      if (!error && data && data.length > 0) {
         const mappedTrades: Trade[] = data.map(d => ({
           id: d.id,
           user_id: d.user_id,
@@ -182,41 +227,47 @@ export default function CryptoTaxPage() {
           }
         }));
         setTrades(mappedTrades);
-      } else if (error) {
-        console.error('Error fetching trades:', error);
-        toast.error('Failed to fetch trades');
       }
+      // Silently ignore errors (table may not exist)
     } catch (err) {
-      console.error('Error fetching crypto:', err);
-    } finally {
-      setLoading(false);
+      console.log('DB tables not available, using client-side mode');
     }
   }, [user]);
 
-  // FETCH TAX COMPUTATION
+  // FETCH TAX COMPUTATION — recompute from client-side parsed data
   const fetchTaxComputation = useCallback(async () => {
-    if (!user) return;
-    const cache = await getPnLSummary(selectedFY); // Using summary first for speed
-    // Actually we need the full result for the UI
-    const result = await computeTaxForFY(selectedFY, settings.accountingMethod as any);
-    if (result.success && result.data) {
-      setTaxComputation(result.data);
+    if (parsedTransactions.length > 0) {
+      recomputeTax(parsedTransactions, parsedTDSRecords, selectedFY);
     }
-  }, [user, selectedFY, settings.accountingMethod]);
+  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax]);
 
-  // Fetch Import Sessions
+  // Fetch Import Sessions (graceful)
   const fetchSessions = useCallback(async () => {
-    const res = await getImportSessions();
-    if (res.success && res.data) setImportSessions(res.data);
+    try {
+      const { data, error } = await (supabase as any)
+        .from('crypto_import_sessions')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) setImportSessions(data);
+    } catch (err) {
+      // Silently ignore — table may not exist
+    }
   }, []);
+
+  // Recompute tax whenever parsed data or FY changes
+  useEffect(() => {
+    if (parsedTransactions.length > 0) {
+      recomputeTax(parsedTransactions, parsedTDSRecords, selectedFY);
+      setTrades(mapTransactionsToTrades(parsedTransactions));
+    }
+  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades]);
 
   useEffect(() => {
     if (user) {
       fetchTrades();
-      fetchTaxComputation();
       fetchSessions();
     }
-  }, [user, fetchTrades, fetchTaxComputation, fetchSessions]);
+  }, [user, fetchTrades, fetchSessions]);
 
   // ============= CSV IMPORT HANDLER =============
   const handleCSVUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,41 +279,95 @@ export default function CryptoTaxPage() {
 
     setImporting(true);
     setImportResult(null);
-    setUploadProgress({
-      sessionId: '', status: 'processing', totalFiles: files.length, processedFiles: 0,
-      totalRows: 0, parsedRows: 0, duplicatesSkipped: 0, errors: []
-    });
 
     try {
-      const filePayloads = [];
+      // 1. Read all files
+      const filePayloads: { name: string; content: string }[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const content = await file.text();
         filePayloads.push({ name: file.name, content });
       }
 
-      const result = await runFullImport(selectedFY, filePayloads, (p) => setUploadProgress(p));
+      // 2. Parse CSVs CLIENT-SIDE (no database required)
+      const sessionId = `client-${Date.now()}`;
+      const importResult = await processImportSession(
+        sessionId,
+        selectedFY,
+        filePayloads
+      );
 
-      if (result.success && result.data) {
-        toast.success(`Imported ${result.data.totalTransactions} transactions successfully!`);
+      // 3. Collect all parsed transactions and TDS records
+      const allTransactions: NormalizedTransaction[] = [];
+      const allTDSRecords: TDSRecord[] = [];
+      const messages: string[] = [];
 
-        if (result.warnings && result.warnings.length > 0) {
-          setImportResult({
-            success: result.data.totalTransactions,
-            errors: result.warnings.length,
-            messages: result.warnings
-          });
+      for (const fileResult of importResult.files) {
+        allTransactions.push(...fileResult.transactions);
+        allTDSRecords.push(...fileResult.tdsRecords);
+        if (fileResult.successCount > 0) {
+          messages.push(`✅ ${fileResult.fileName}: ${fileResult.successCount} transactions parsed`);
         }
-
-        fetchTrades();
-        fetchTaxComputation();
-        fetchSessions();
-      } else {
-        toast.error('Import failed: ' + result.error);
-        if (result.warnings?.length) {
-          setImportResult({ success: 0, errors: result.warnings.length, messages: result.warnings });
+        if (fileResult.errorCount > 0) {
+          messages.push(`⚠️ ${fileResult.fileName}: ${fileResult.errorCount} rows had errors`);
+        }
+        if (fileResult.duplicateCount > 0) {
+          messages.push(`ℹ️ ${fileResult.fileName}: ${fileResult.duplicateCount} duplicates skipped`);
         }
       }
+
+      if (allTransactions.length === 0) {
+        toast.error('No valid transactions found in the uploaded file(s)');
+        setImportResult({
+          success: 0,
+          errors: 1,
+          messages: ['No transactions could be parsed. Check the CSV format and try again.', ...importResult.warnings]
+        });
+        return;
+      }
+
+      // 4. Store parsed data in state
+      setParsedTransactions(prev => [...prev, ...allTransactions]);
+      setParsedTDSRecords(prev => [...prev, ...allTDSRecords]);
+
+      // 5. Map to Trade[] for UI display
+      const newTrades = mapTransactionsToTrades(allTransactions);
+      setTrades(prev => [...prev, ...newTrades]);
+
+      // 6. Compute tax immediately
+      const allTxs = [...parsedTransactions, ...allTransactions];
+      const allTds = [...parsedTDSRecords, ...allTDSRecords];
+      const taxResult = computeVdaTaxForFinancialYear(allTxs, allTds, selectedFY, settings.accountingMethod as any);
+      setTaxComputation(taxResult);
+
+      // 7. Show success
+      toast.success(`Imported ${allTransactions.length} transactions! Tax computed.`);
+      messages.push(`📊 Capital Gains: ₹${taxResult.grossCapitalGains.toLocaleString('en-IN')}`);
+      messages.push(`💰 Tax Liability: ₹${taxResult.totalTaxLiability.toLocaleString('en-IN')}`);
+      if (taxResult.totalTDSCredit > 0) {
+        messages.push(`🔖 TDS Credit: ₹${taxResult.totalTDSCredit.toLocaleString('en-IN')}`);
+      }
+      if (taxResult.warnings.length > 0) {
+        messages.push(...taxResult.warnings.slice(0, 5)); // Show first 5 engine warnings
+      }
+
+      setImportResult({
+        success: allTransactions.length,
+        errors: importResult.totalErrors,
+        messages
+      });
+
+      // 8. Add import session to local state
+      setImportSessions(prev => [{
+        id: sessionId,
+        exchange: selectedExchange,
+        financial_year: selectedFY,
+        status: 'completed',
+        total_files: files.length,
+        total_transactions: allTransactions.length,
+        created_at: new Date().toISOString()
+      }, ...prev]);
+
     } catch (err) {
       console.error('Import error:', err);
       setImportResult({
@@ -276,7 +381,7 @@ export default function CryptoTaxPage() {
       setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [user, selectedFY, fetchTrades, fetchTaxComputation, fetchSessions]);
+  }, [user, selectedFY, selectedExchange, parsedTransactions, parsedTDSRecords, settings.accountingMethod, mapTransactionsToTrades]);
 
   // ============= MANUAL TRADE ADD =============
   const handleAddTrade = async () => {
@@ -290,7 +395,7 @@ export default function CryptoTaxPage() {
 
   // ============= DELETE TRADE =============
   const handleDeleteTrade = async (id: string) => {
-    const { error } = await supabase.from('crypto_transactions').delete().eq('id', id);
+    const { error } = await (supabase as any).from('crypto_transactions').delete().eq('id', id);
     if (!error) {
       toast.success('Trade deleted');
       fetchTrades();
@@ -305,14 +410,16 @@ export default function CryptoTaxPage() {
     if (!user) return;
     if (!confirm('Are you sure you want to delete all trades? This cannot be undone.')) return;
 
-    const { error } = await supabase.from('crypto_transactions').delete().eq('user_id', user.id);
-    const { error: sessError } = await supabase.from('crypto_import_sessions').delete().eq('user_id', user.id);
+    const { error } = await (supabase as any).from('crypto_transactions').delete().eq('user_id', user.id);
+    const { error: sessError } = await (supabase as any).from('crypto_import_sessions').delete().eq('user_id', user.id);
 
     if (!error) {
       toast.success('All trades deleted');
       setTaxComputation(null);
-      fetchTrades();
-      fetchSessions();
+      setParsedTransactions([]);
+      setParsedTDSRecords([]);
+      setTrades([]);
+      setImportSessions([]);
     } else {
       toast.error('Failed to delete trades');
     }
@@ -581,14 +688,7 @@ export default function CryptoTaxPage() {
             </div>
           </div>
 
-          {/* Database Fix Alert */}
-          <Alert className="mb-6 bg-emerald-50 border-emerald-200 text-emerald-800">
-            <CheckCircle className="h-4 w-4 text-emerald-600" />
-            <AlertTitle className="font-bold">System Update: Database Synchronization Fixed</AlertTitle>
-            <AlertDescription className="text-sm">
-              We've resolved the "value too long" error encountered during CoinDCX imports. You can now safely upload your trade reports.
-            </AlertDescription>
-          </Alert>
+
 
           {/* Content */}
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1010,7 +1110,7 @@ export default function CryptoTaxPage() {
             {activeTab === 'reports' && (
               <ReportsSection
                 trades={trades}
-                portfolio={portfolio}
+                portfolio={null}
                 taxComputation={taxComputation}
                 user={user}
                 formatCurrency={formatCurrency}
@@ -1132,23 +1232,20 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
   const [showPreview, setShowPreview] = useState(true);
 
   const handleDownloadScheduleVDA = async () => {
-    if (!selectedFY) return;
+    if (!taxComputation) { toast.error('No tax computation available. Import your CSV first.'); return; }
     setGenerating('vda');
     try {
-      const res = await exportScheduleVDA(selectedFY);
-      if (res.success && res.data) {
-        const blob = new Blob([res.data.csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.data.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        toast.success('Schedule VDA CSV downloaded!');
-      } else {
-        toast.error('Failed to generate Schedule VDA: ' + res.error);
-      }
+      const csv = generateScheduleVDACSV(taxComputation);
+      const filename = `Schedule_VDA_${selectedFY || 'unknown'}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success('Schedule VDA CSV downloaded!');
     } catch (e) {
       console.error(e);
       toast.error('Export failed');
@@ -1158,23 +1255,20 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
   };
 
   const handleDownloadTDS = async () => {
-    if (!selectedFY) return;
+    if (!taxComputation) { toast.error('No tax computation available. Import your CSV first.'); return; }
     setGenerating('tds');
     try {
-      const res = await exportTDSReconciliation(selectedFY);
-      if (res.success && res.data) {
-        const blob = new Blob([res.data.csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.data.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        toast.success('TDS Reconciliation CSV downloaded!');
-      } else {
-        toast.error('Failed to generate TDS Report: ' + res.error);
-      }
+      const csv = generateTDSReconciliationCSV(taxComputation);
+      const filename = `TDS_Reconciliation_${selectedFY || 'unknown'}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success('TDS Reconciliation CSV downloaded!');
     } catch (e) {
       console.error(e);
       toast.error('Export failed');
@@ -1183,11 +1277,11 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
     }
   };
 
-  // Preview Data Source: TaxComputation or Portfolio (Fallback)
-  const taxableGains = taxComputation?.taxableCapitalGains ?? (portfolio?.totalTaxableGains || 0);
-  const totalLosses = taxComputation?.grossCapitalLosses ?? (portfolio?.totalLosses || 0);
-  const totalTax = taxComputation?.totalTaxLiability ?? (portfolio?.totalTaxAt30 * 1.04 || 0);
-  const tdsPaid = taxComputation?.totalTDSCredit ?? (portfolio?.totalTDSPaid || 0);
+  // Preview Data Source: TaxComputation (no portfolio fallback needed)
+  const taxableGains = taxComputation?.taxableCapitalGains ?? 0;
+  const totalLosses = taxComputation?.grossCapitalLosses ?? 0;
+  const totalTax = taxComputation?.totalTaxLiability ?? 0;
+  const tdsPaid = taxComputation?.totalTDSCredit ?? 0;
   const netTax = taxComputation?.netTaxPayable ?? Math.max(0, totalTax - tdsPaid);
 
   const sellCount = taxComputation?.assetSummaries?.reduce((acc, curr) => acc + curr.totalSold, 0) ?? trades.filter(t => t.trade_type === 'sell').length;
