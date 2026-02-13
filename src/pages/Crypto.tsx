@@ -1302,6 +1302,16 @@ export default function CryptoTaxPage() {
                           </div>
                         )}
 
+                        {/* Debug: show API step results */}
+                        {apiSyncResult?.warnings && apiSyncResult.warnings.length > 0 && (
+                          <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-1">
+                            <p className="text-xs font-semibold text-indigo-200 mb-1">API Sync Log:</p>
+                            {apiSyncResult.warnings.map((w, i) => (
+                              <p key={i} className="text-[11px] text-indigo-300 font-mono">{w}</p>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex gap-3">
                           <Button
                             onClick={async () => {

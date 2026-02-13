@@ -102,6 +102,7 @@ export interface FullSyncResult {
     transactions: NormalizedTransaction[];
     tdsRecords: TDSRecord[];
     balances: CoinDCXBalance[];
+    warnings: string[];
     summary: {
         totalTrades: number;
         totalDeposits: number;
@@ -522,9 +523,6 @@ function convertRewardsToNormalized(
 /**
  * Complete CoinDCX data sync — fetches ALL data types and converts to NormalizedTransaction[].
  * This is the main function called from the UI.
- * 
- * @param credentials   API Key + Secret
- * @param onProgress    Callback for progress updates in the UI
  */
 export async function fullCoinDCXSync(
     credentials: CoinDCXCredentials,
@@ -532,6 +530,7 @@ export async function fullCoinDCXSync(
 ): Promise<FullSyncResult> {
     const allTransactions: NormalizedTransaction[] = [];
     const allTDSRecords: TDSRecord[] = [];
+    const warnings: string[] = [];
     let balances: CoinDCXBalance[] = [];
 
     const report = (stage: string, detail: string, current: number, total: number) => {
@@ -555,85 +554,154 @@ export async function fullCoinDCXSync(
                 transactions: [],
                 tdsRecords: [],
                 balances: [],
+                warnings: [`Auth failed: ${balResult.error}`],
                 summary: { totalTrades: 0, totalDeposits: 0, totalWithdrawals: 0, totalRewards: 0, totalTransactions: 0, uniqueAssets: [], fyBreakdown: {} }
             };
         }
         balances = (balResult.data || []).filter(b => b.balance > 0 || b.locked_balance > 0);
         console.log(`[CoinDCX Sync] ✅ Auth OK. ${balances.length} non-zero balances found.`);
+        console.log(`[CoinDCX Sync] Balances raw:`, balResult.data?.slice(0, 5));
+        warnings.push(`✅ Auth OK — ${balances.length} non-zero balances`);
 
         // ── Step 2: Fetch market details for symbol mapping ──
         report('Markets', 'Loading market pair data...', 2, 6);
-        const marketMap = await getMarketDetails();
-        console.log(`[CoinDCX Sync] 📊 ${Object.keys(marketMap).length} market pairs loaded.`);
+        let marketMap: Record<string, { base: string; quote: string }> = {};
+        try {
+            marketMap = await getMarketDetails();
+            console.log(`[CoinDCX Sync] 📊 ${Object.keys(marketMap).length} market pairs loaded.`);
+        } catch (e) {
+            warnings.push(`⚠️ Market data failed: ${(e as Error).message}`);
+            console.warn('[CoinDCX Sync] Market details failed:', e);
+        }
 
-        // ── Step 3: Fetch ALL trade history (paginated) ──
+        // ── Step 3: Fetch ALL trade history ──
         report('Trades', 'Fetching complete trade history...', 3, 6);
         const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
         let tradeCount = 0;
+        console.log(`[CoinDCX Sync] Trade history response:`, {
+            success: tradesResult.success,
+            error: tradesResult.error,
+            dataType: typeof tradesResult.data,
+            isArray: Array.isArray(tradesResult.data),
+            dataLength: Array.isArray(tradesResult.data) ? tradesResult.data.length : 'N/A',
+            sample: Array.isArray(tradesResult.data) ? tradesResult.data.slice(0, 2) : tradesResult.data,
+        });
         if (tradesResult.success && tradesResult.data) {
-            const normalized = convertTradesToNormalized(tradesResult.data, marketMap);
-            allTransactions.push(...normalized);
-            tradeCount = normalized.length;
-            console.log(`[CoinDCX Sync] 📈 ${tradeCount} trades fetched.`);
+            if (Array.isArray(tradesResult.data)) {
+                const normalized = convertTradesToNormalized(tradesResult.data, marketMap);
+                allTransactions.push(...normalized);
+                tradeCount = normalized.length;
+                warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${tradesResult.data.length})`);
+            } else {
+                // Data might be wrapped in an object
+                const dataObj = tradesResult.data as any;
+                const possibleArrays = ['orders', 'trades', 'data', 'results'];
+                let found = false;
+                for (const key of possibleArrays) {
+                    if (dataObj[key] && Array.isArray(dataObj[key])) {
+                        const normalized = convertTradesToNormalized(dataObj[key], marketMap);
+                        allTransactions.push(...normalized);
+                        tradeCount = normalized.length;
+                        warnings.push(`📈 Trades: ${tradeCount} fetched (from .${key})`);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    warnings.push(`⚠️ Trades: unexpected response format — ${JSON.stringify(tradesResult.data).substring(0, 200)}`);
+                }
+            }
         } else {
-            console.warn(`[CoinDCX Sync] ⚠️ Trade history fetch failed: ${tradesResult.error}`);
+            warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }
 
         // ── Step 4: Fetch deposits ──
         report('Deposits', 'Fetching deposit history...', 4, 6);
         let depositCount = 0;
         try {
-            const depResult = await makeAuthenticatedRequest<CoinDCXDeposit[]>(
+            const depResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/users/deposits',
                 { timestamp: Date.now() },
                 credentials
             );
-            if (depResult.success && depResult.data && Array.isArray(depResult.data)) {
-                const normalized = convertBalanceDepositsToNormalized('deposit', depResult.data);
-                allTransactions.push(...normalized);
-                depositCount = normalized.length;
-                console.log(`[CoinDCX Sync] 📥 ${depositCount} deposits fetched.`);
+            console.log(`[CoinDCX Sync] Deposits response:`, {
+                success: depResult.success,
+                error: depResult.error,
+                dataType: typeof depResult.data,
+                isArray: Array.isArray(depResult.data),
+                sample: Array.isArray(depResult.data) ? depResult.data.slice(0, 2) : depResult.data,
+            });
+            if (depResult.success && depResult.data) {
+                const depArray = Array.isArray(depResult.data) ? depResult.data : (depResult.data?.data || []);
+                if (Array.isArray(depArray) && depArray.length > 0) {
+                    const normalized = convertBalanceDepositsToNormalized('deposit', depArray);
+                    allTransactions.push(...normalized);
+                    depositCount = normalized.length;
+                }
+                warnings.push(`📥 Deposits: ${depositCount} (raw: ${depArray.length || 0})`);
+            } else {
+                warnings.push(`⚠️ Deposits: ${depResult.error || 'not available'}`);
             }
         } catch (e) {
-            console.warn('[CoinDCX Sync] Deposits endpoint not available:', e);
+            warnings.push(`❌ Deposits: ${(e as Error).message}`);
         }
 
         // ── Step 5: Fetch withdrawals ──
         report('Withdrawals', 'Fetching withdrawal history...', 5, 6);
         let withdrawalCount = 0;
         try {
-            const witResult = await makeAuthenticatedRequest<CoinDCXWithdrawal[]>(
+            const witResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/users/withdrawals',
                 { timestamp: Date.now() },
                 credentials
             );
-            if (witResult.success && witResult.data && Array.isArray(witResult.data)) {
-                const normalized = convertBalanceDepositsToNormalized('withdrawal', witResult.data);
-                allTransactions.push(...normalized);
-                withdrawalCount = normalized.length;
-                console.log(`[CoinDCX Sync] 📤 ${withdrawalCount} withdrawals fetched.`);
+            console.log(`[CoinDCX Sync] Withdrawals response:`, {
+                success: witResult.success,
+                error: witResult.error,
+                sample: Array.isArray(witResult.data) ? witResult.data.slice(0, 2) : witResult.data,
+            });
+            if (witResult.success && witResult.data) {
+                const witArray = Array.isArray(witResult.data) ? witResult.data : (witResult.data?.data || []);
+                if (Array.isArray(witArray) && witArray.length > 0) {
+                    const normalized = convertBalanceDepositsToNormalized('withdrawal', witArray);
+                    allTransactions.push(...normalized);
+                    withdrawalCount = normalized.length;
+                }
+                warnings.push(`📤 Withdrawals: ${withdrawalCount}`);
+            } else {
+                warnings.push(`⚠️ Withdrawals: ${witResult.error || 'not available'}`);
             }
         } catch (e) {
-            console.warn('[CoinDCX Sync] Withdrawals endpoint not available:', e);
+            warnings.push(`❌ Withdrawals: ${(e as Error).message}`);
         }
 
         // ── Step 6: Fetch lending/staking rewards ──
         report('Rewards', 'Fetching staking & lending rewards...', 6, 6);
         let rewardCount = 0;
         try {
-            const lendResult = await makeAuthenticatedRequest<CoinDCXLendingHistory[]>(
+            const lendResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/lending/history',
                 { timestamp: Date.now() },
                 credentials
             );
-            if (lendResult.success && lendResult.data && Array.isArray(lendResult.data)) {
-                const normalized = convertRewardsToNormalized(lendResult.data);
-                allTransactions.push(...normalized);
-                rewardCount = normalized.length;
-                console.log(`[CoinDCX Sync] 🎁 ${rewardCount} rewards fetched.`);
+            console.log(`[CoinDCX Sync] Rewards response:`, {
+                success: lendResult.success,
+                error: lendResult.error,
+                sample: Array.isArray(lendResult.data) ? lendResult.data.slice(0, 2) : lendResult.data,
+            });
+            if (lendResult.success && lendResult.data) {
+                const lendArray = Array.isArray(lendResult.data) ? lendResult.data : (lendResult.data?.data || []);
+                if (Array.isArray(lendArray) && lendArray.length > 0) {
+                    const normalized = convertRewardsToNormalized(lendArray);
+                    allTransactions.push(...normalized);
+                    rewardCount = normalized.length;
+                }
+                warnings.push(`🎁 Rewards: ${rewardCount}`);
+            } else {
+                warnings.push(`⚠️ Rewards: ${lendResult.error || 'not available'}`);
             }
         } catch (e) {
-            console.warn('[CoinDCX Sync] Lending/staking endpoint not available:', e);
+            warnings.push(`❌ Rewards: ${(e as Error).message}`);
         }
 
         // ── Deduplicate ──
@@ -657,12 +725,14 @@ export async function fullCoinDCXSync(
 
         console.log(`[CoinDCX Sync] ✅ COMPLETE: ${dedupedTxs.length} total transactions, ${assetSet.size} unique assets`);
         console.log(`[CoinDCX Sync] FY breakdown:`, fyBreakdown);
+        console.log(`[CoinDCX Sync] Warnings:`, warnings);
 
         return {
             success: true,
             transactions: dedupedTxs,
             tdsRecords: allTDSRecords,
             balances,
+            warnings,
             summary: {
                 totalTrades: tradeCount,
                 totalDeposits: depositCount,
@@ -676,12 +746,14 @@ export async function fullCoinDCXSync(
 
     } catch (error) {
         console.error('[CoinDCX Sync] Fatal error:', error);
+        warnings.push(`💀 Fatal: ${(error as Error).message}`);
         return {
             success: false,
             error: `Sync failed: ${(error as Error).message}`,
             transactions: allTransactions,
             tdsRecords: [],
             balances,
+            warnings,
             summary: {
                 totalTrades: 0,
                 totalDeposits: 0,
