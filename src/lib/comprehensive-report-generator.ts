@@ -561,7 +561,7 @@ export function generateComprehensiveReport(data: ComprehensiveReportData): void
                 t.datePurchased,
                 t.dateSold,
                 t.asset,
-                t.quantity.toFixed(6),
+                Number(t.quantity || 0).toFixed(6),
                 formatINRExact(t.purchaseValue),
                 formatINRExact(t.saleValue),
                 t.gainOrLoss >= 0 ? formatINRExact(t.gainOrLoss) : `-${formatINRExact(Math.abs(t.gainOrLoss))}`,

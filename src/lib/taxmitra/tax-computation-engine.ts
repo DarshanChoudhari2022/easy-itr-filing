@@ -188,6 +188,30 @@ export function computeVdaTaxForFinancialYear(
     const assessmentYear = getAY(financialYear);
     const warnings: string[] = [];
 
+    // ── Sanitize inputs: coerce strings→numbers, strings→Dates ──
+    // Data may arrive from localStorage/JSON where types are lost
+    const sanitizeTx = (tx: NormalizedTransaction): NormalizedTransaction => ({
+        ...tx,
+        quantity: Number(tx.quantity) || 0,
+        pricePerUnit: Number(tx.pricePerUnit) || 0,
+        priceInr: Number(tx.priceInr) || 0,
+        grossAmountQuote: Number(tx.grossAmountQuote) || 0,
+        grossAmountInr: Number(tx.grossAmountInr) || 0,
+        feeAmount: Number(tx.feeAmount) || 0,
+        feeInr: Number(tx.feeInr) || 0,
+        tdsAmount: Number(tx.tdsAmount) || 0,
+        tdsRate: Number(tx.tdsRate) || 0,
+        tradeTimestamp: tx.tradeTimestamp instanceof Date ? tx.tradeTimestamp : new Date(tx.tradeTimestamp),
+    });
+    transactions = transactions.map(sanitizeTx);
+    tdsRecords = tdsRecords.map(r => ({
+        ...r,
+        grossConsiderationInr: Number(r.grossConsiderationInr) || 0,
+        tdsAmountInr: Number(r.tdsAmountInr) || 0,
+        tdsRate: Number(r.tdsRate) || 0,
+        tdsDate: r.tdsDate instanceof Date ? r.tdsDate : new Date(r.tdsDate),
+    }));
+
     // ─── Step 1: Filter to FY & separate by category ───
     const fyTransactions = transactions.filter(tx => tx.financialYear === financialYear);
 
@@ -675,7 +699,7 @@ export function formatPnLSummary(result: TaxComputationResult): {
             gains: fmt(a.grossGains),
             losses: fmt(a.grossLosses),
             taxable: fmt(a.taxableGain),
-            holding: a.currentHolding.toFixed(8),
+            holding: Number(a.currentHolding || 0).toFixed(8),
         })),
         tds: [
             { label: 'TDS from Trades (estimated)', value: fmt(result.tdsReconciliation.totalTDSFromTrades) },

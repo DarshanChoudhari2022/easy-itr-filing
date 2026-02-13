@@ -225,11 +225,11 @@ export function generateCompleteTaxReport(data: TaxReportData): void {
             head: [['Token', 'Qty Bought', 'Qty Sold', 'Avg Buy (INR)', 'Realized (INR)', 'Holding']],
             body: data.tokenWiseSummary.map(row => [
                 row.token,
-                row.totalBought.toFixed(6),
-                row.totalSold.toFixed(6),
-                `${row.avgBuyPrice.toLocaleString('en-IN')}`,
-                `${row.realizedGain.toLocaleString('en-IN')}`,
-                row.currentHolding.toFixed(6)
+                Number(row.totalBought || 0).toFixed(6),
+                Number(row.totalSold || 0).toFixed(6),
+                `${Number(row.avgBuyPrice || 0).toLocaleString('en-IN')}`,
+                `${Number(row.realizedGain || 0).toLocaleString('en-IN')}`,
+                Number(row.currentHolding || 0).toFixed(6)
             ]),
             theme: 'grid',
             headStyles: {
@@ -457,7 +457,7 @@ export function generateFIFOAuditTrailPDF(
             body: fifoMatches.map(m => [
                 m.sellDate,
                 m.token,
-                m.sellQty.toFixed(6),
+                Number(m.sellQty || 0).toFixed(6),
                 m.sellPrice.toLocaleString('en-IN'),
                 m.buyDate,
                 m.buyPrice.toLocaleString('en-IN'),

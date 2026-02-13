@@ -49,15 +49,10 @@ BEGIN
     END IF;
 
     -- Crypto / VDA (used by Crypto Tax page → Filing Wizard bridge)
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'has_crypto') THEN
-        ALTER TABLE public.income_sources ADD COLUMN has_crypto boolean default false;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'crypto_gains') THEN
-        ALTER TABLE public.income_sources ADD COLUMN crypto_gains numeric default 0;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'income_sources' AND column_name = 'crypto_tds') THEN
-        ALTER TABLE public.income_sources ADD COLUMN crypto_tds numeric default 0;
-    END IF;
+    -- Crypto / VDA (used by Crypto Tax page → Filing Wizard bridge)
+    ALTER TABLE public.income_sources ADD COLUMN IF NOT EXISTS has_crypto boolean default false;
+    ALTER TABLE public.income_sources ADD COLUMN IF NOT EXISTS crypto_gains numeric default 0;
+    ALTER TABLE public.income_sources ADD COLUMN IF NOT EXISTS crypto_tds numeric default 0;
     
     -- 3. REMOVE Unique Constraint if it exists
     -- This constraint blocks adding multiple income sources (e.g. 2 salaries or Salary + Business).

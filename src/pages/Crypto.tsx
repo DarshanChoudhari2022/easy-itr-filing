@@ -111,8 +111,20 @@ export default function CryptoTaxPage() {
       const saved = localStorage.getItem('taxmitra_transactions');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Revive Date objects from ISO strings
-        return parsed.map((tx: any) => ({ ...tx, tradeTimestamp: new Date(tx.tradeTimestamp) }));
+        // Revive Date objects AND coerce numeric fields (JSON.parse may leave them as strings)
+        return parsed.map((tx: any) => ({
+          ...tx,
+          tradeTimestamp: new Date(tx.tradeTimestamp),
+          quantity: Number(tx.quantity) || 0,
+          pricePerUnit: Number(tx.pricePerUnit) || 0,
+          priceInr: Number(tx.priceInr) || 0,
+          grossAmountQuote: Number(tx.grossAmountQuote) || 0,
+          grossAmountInr: Number(tx.grossAmountInr) || 0,
+          feeAmount: Number(tx.feeAmount) || 0,
+          feeInr: Number(tx.feeInr) || 0,
+          tdsAmount: Number(tx.tdsAmount) || 0,
+          tdsRate: Number(tx.tdsRate) || 0,
+        }));
       }
     } catch (e) { console.log('Failed to restore transactions from localStorage'); }
     return [];
@@ -227,16 +239,16 @@ export default function CryptoTaxPage() {
     return txs.map((tx, i) => ({
       id: tx.externalId || `tx-${i}`,
       user_id: user?.id || '',
-      token_symbol: tx.assetSymbol,
-      trade_type: tx.transactionType,
-      quantity: tx.quantity,
-      buy_price: tx.priceInr,
-      trade_date: tx.tradeTimestamp.toISOString(),
-      exchange: tx.exchange,
-      fee: tx.feeInr,
+      token_symbol: tx.assetSymbol || 'UNKNOWN',
+      trade_type: tx.transactionType || 'buy',
+      quantity: Number(tx.quantity) || 0,
+      buy_price: Number(tx.priceInr) || 0,
+      trade_date: tx.tradeTimestamp instanceof Date ? tx.tradeTimestamp.toISOString() : new Date(tx.tradeTimestamp).toISOString(),
+      exchange: tx.exchange || '',
+      fee: Number(tx.feeInr) || 0,
       metadata: {
-        fee: tx.feeInr,
-        tds_deducted: tx.tdsAmount
+        fee: Number(tx.feeInr) || 0,
+        tds_deducted: Number(tx.tdsAmount) || 0
       }
     }));
   }, [user]);
@@ -691,11 +703,12 @@ export default function CryptoTaxPage() {
   }, [filteredTrades]);
 
   // ============= HELPERS =============
-  const formatCurrency = (value: number): string => {
-    if (Math.abs(value) >= 10000000) return `₹${(value / 10000000).toFixed(2)} Cr`;
-    if (Math.abs(value) >= 100000) return `₹${(value / 100000).toFixed(2)} L`;
-    if (Math.abs(value) >= 1000) return `₹${(value / 1000).toFixed(1)} K`;
-    return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  const formatCurrency = (value: number | string | undefined | null): string => {
+    const v = Number(value) || 0;
+    if (Math.abs(v) >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
+    if (Math.abs(v) >= 100000) return `₹${(v / 100000).toFixed(2)} L`;
+    if (Math.abs(v) >= 1000) return `₹${(v / 1000).toFixed(1)} K`;
+    return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
   // ============= SAMPLE CSV GENERATOR =============
@@ -1145,9 +1158,9 @@ export default function CryptoTaxPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="font-medium text-slate-900">{trade.token_symbol}</TableCell>
-                              <TableCell className="text-right text-slate-600">{trade.quantity.toFixed(6)}</TableCell>
+                              <TableCell className="text-right text-slate-600">{Number(trade.quantity || 0).toFixed(6)}</TableCell>
                               <TableCell className="text-right text-slate-600">{formatCurrency(trade.buy_price)}</TableCell>
-                              <TableCell className="text-right font-medium text-slate-900">{formatCurrency(trade.quantity * trade.buy_price)}</TableCell>
+                              <TableCell className="text-right font-medium text-slate-900">{formatCurrency(Number(trade.quantity || 0) * Number(trade.buy_price || 0))}</TableCell>
                               <TableCell className="text-slate-500">{trade.exchange || '-'}</TableCell>
                               <TableCell>
                                 <Button variant="ghost" size="sm" onClick={() => handleDeleteTrade(trade.id)}>
