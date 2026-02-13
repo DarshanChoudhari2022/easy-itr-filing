@@ -1,7 +1,9 @@
 /**
  * CoinDCX API Integration Service — Complete Data Fetcher
  * 
- * Uses HMAC-SHA256 API Key + Secret authentication.
+ * Routes all requests through /api/coindcx-proxy (Vercel Serverless Function)
+ * to avoid CORS issues. HMAC-SHA256 signing happens server-side.
+ * 
  * Fetches ALL transaction types: trades, deposits, withdrawals, lending/staking.
  * Converts to NormalizedTransaction[] for the tax computation engine.
  */
@@ -10,8 +12,8 @@ import CryptoJS from 'crypto-js';
 import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
 
 // ============= CONFIG =============
-// API Base URL (with CORS proxy to bypass browser restrictions)
-const COINDCX_API_BASE = 'https://api.allorigins.win/raw?url=https://api.coindcx.com';
+// Proxy URL — our own Vercel serverless function (same domain = no CORS)
+const PROXY_URL = '/api/coindcx-proxy';
 
 // ============= TYPES =============
 export interface CoinDCXCredentials {
@@ -111,29 +113,27 @@ export interface FullSyncResult {
     };
 }
 
-// ============= CORE AUTH =============
+// ============= CORE — PROXY-BASED REQUEST =============
 
-function generateSignature(body: Record<string, any>, secret: string): string {
-    const payload = JSON.stringify(body);
-    return CryptoJS.HmacSHA256(payload, secret).toString(CryptoJS.enc.Hex);
-}
-
+/**
+ * Make authenticated request to CoinDCX via our Vercel proxy.
+ * The proxy handles HMAC-SHA256 signing server-side.
+ */
 async function makeAuthenticatedRequest<T>(
     endpoint: string,
     body: Record<string, any>,
     credentials: CoinDCXCredentials
 ): Promise<{ success: boolean; data?: T; error?: string }> {
     try {
-        const signature = generateSignature(body, credentials.apiSecret);
-
-        const response = await fetch(`${COINDCX_API_BASE}${endpoint}`, {
+        const response = await fetch(PROXY_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-AUTH-APIKEY': credentials.apiKey,
-                'X-AUTH-SIGNATURE': signature,
-            },
-            body: JSON.stringify(body),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                endpoint,
+                body,
+                apiKey: credentials.apiKey,
+                apiSecret: credentials.apiSecret,
+            }),
         });
 
         if (!response.ok) {
@@ -160,7 +160,7 @@ async function makePublicRequest<T>(
     endpoint: string
 ): Promise<{ success: boolean; data?: T; error?: string }> {
     try {
-        const response = await fetch(`${COINDCX_API_BASE}${endpoint}`, {
+        const response = await fetch(`https://api.coindcx.com${endpoint}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
         });
