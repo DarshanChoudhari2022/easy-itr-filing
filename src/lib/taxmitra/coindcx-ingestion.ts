@@ -185,10 +185,15 @@ function parseDate(dateStr: string): Date {
     // Unix s
     if (/^\d{10}$/.test(s)) return new Date(parseInt(s) * 1000);
 
-    // ISO: YYYY-MM-DD...
+    // ISO: YYYY-MM-DD... (handle 'UTC' suffix from CoinDCX)
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-        const d = new Date(s);
+        // Replace ' UTC' with 'Z' and spaces before time with 'T' for reliable parsing
+        let normalized = s.replace(/\s+UTC\s*$/i, 'Z').replace(/\s+/, 'T');
+        const d = new Date(normalized);
         if (!isNaN(d.getTime())) return d;
+        // Fallback: try original string
+        const d2 = new Date(s);
+        if (!isNaN(d2.getTime())) return d2;
     }
 
     // DD-MM-YYYY or DD/MM/YYYY
@@ -234,16 +239,22 @@ function parseDate(dateStr: string): Date {
  */
 function extractBaseAsset(pair: string): string {
     if (!pair) return 'UNKNOWN';
-    const cleaned = pair.toUpperCase().trim();
+    let cleaned = pair.toUpperCase().trim();
 
-    // Handle slash/dash separated pairs
-    for (const sep of ['/', '-', '_']) {
+    // CoinDCX internal format: strip "I-" prefix (e.g., "I-DOGE_INR" → "DOGE_INR")
+    if (/^[A-Z]-/.test(cleaned)) {
+        cleaned = cleaned.substring(2);
+    }
+
+    // Handle slash/dash/underscore separated pairs
+    for (const sep of ['/', '_', '-']) {
         if (cleaned.includes(sep)) {
-            return cleaned.split(sep)[0];
+            const parts = cleaned.split(sep);
+            if (parts[0].length >= 2) return parts[0];
         }
     }
 
-    // Handle concatenated pairs (BTCINR, ETHUSDT)
+    // Handle concatenated pairs (BTCINR, ETHUSDT, DOGEINR)
     for (const quote of KNOWN_QUOTE_ASSETS) {
         if (cleaned.endsWith(quote)) {
             const base = cleaned.slice(0, -quote.length);
@@ -259,9 +270,14 @@ function extractBaseAsset(pair: string): string {
  */
 function extractQuoteAsset(pair: string): string {
     if (!pair) return 'INR';
-    const cleaned = pair.toUpperCase().trim();
+    let cleaned = pair.toUpperCase().trim();
 
-    for (const sep of ['/', '-', '_']) {
+    // CoinDCX internal format: strip "I-" prefix (e.g., "I-DOGE_INR" → "DOGE_INR")
+    if (/^[A-Z]-/.test(cleaned)) {
+        cleaned = cleaned.substring(2);
+    }
+
+    for (const sep of ['/', '_', '-']) {
         if (cleaned.includes(sep)) {
             return cleaned.split(sep).pop() || 'INR';
         }
@@ -364,7 +380,7 @@ export function parseCoinDCXTradesCSV(
     // Map columns — supports both CoinDCX "Trade History" AND "Order History" formats
     const col = {
         date: findColumn(headers, 'time', 'date', 'created_at', 'trade_time', 'timestamp', 'order_time', 'order_date'),
-        pair: findColumn(headers, 'pair', 'symbol', 'market', 'coin_pair', 'instrument', 'trading_pair'),
+        pair: findColumn(headers, 'market', 'pair', 'symbol', 'coin_pair', 'instrument', 'trading_pair'),
         side: findColumn(headers, 'side', 'action', 'type', 'order_type', 'buy_sell', 'direction', 'trade_type'),
         qty: findColumn(headers, 'filled_quantity', 'filled_qty', 'quantity', 'qty', 'amount', 'volume', 'executed_qty', 'traded_quantity'),
         price: findColumn(headers, 'average_price', 'avg_price', 'price', 'rate', 'execution_price', 'price_per_unit'),
@@ -401,6 +417,7 @@ export function parseCoinDCXTradesCSV(
             seenHashes.add(rowHash);
 
             // Skip non-filled orders (cancelled, open, rejected)
+            // BUT keep partially_cancelled and partially_filled (they have filled qty)
             if (col.status >= 0) {
                 const statusVal = values[col.status]?.toLowerCase().trim() || '';
                 if (statusVal === 'cancelled' || statusVal === 'rejected' || statusVal === 'open' || statusVal === 'init' || statusVal === 'untriggered') {
@@ -412,11 +429,28 @@ export function parseCoinDCXTradesCSV(
             const dateStr = col.date >= 0 ? values[col.date] : '';
             const pairStr = col.pair >= 0 ? values[col.pair] : '';
             const sideStr = col.side >= 0 ? values[col.side] : 'buy';
-            const qtyStr = col.qty >= 0 ? values[col.qty] : '0';
+            let qtyStr = col.qty >= 0 ? values[col.qty] : '0';
             const priceStr = col.price >= 0 ? values[col.price] : '0';
             const feeStr = col.fee >= 0 ? values[col.fee] : '0';
             const feeCurrStr = col.feeCurrency >= 0 ? values[col.feeCurrency] : 'INR';
             const orderIdStr = col.orderId >= 0 ? values[col.orderId] : `coindcx-${i}`;
+
+            // For partially_cancelled orders: filled qty = total qty - remaining qty
+            if (col.status >= 0 && col.remainingQty >= 0) {
+                const statusVal = values[col.status]?.toLowerCase().trim() || '';
+                if (statusVal.includes('partial')) {
+                    const totalQty = Math.abs(parseFloat(qtyStr) || 0);
+                    const remainQty = Math.abs(parseFloat(values[col.remainingQty]) || 0);
+                    const filledQty = totalQty - remainQty;
+                    if (filledQty > 0) {
+                        qtyStr = filledQty.toString();
+                        result.warnings.push(`Row ${i + 1}: Partially filled — using filled qty ${filledQty} (total ${totalQty} - remaining ${remainQty})`);
+                    } else {
+                        result.warnings.push(`Row ${i + 1}: Skipped partially_cancelled order with 0 filled qty`);
+                        continue;
+                    }
+                }
+            }
             const tdsStr = col.tds >= 0 ? values[col.tds] : '0';
 
             // Parse fields
@@ -1231,20 +1265,39 @@ export async function processImportSession(
         }
         parseResult.contentHash = fileHash;
 
-        // Filter transactions: keep target FY + prior-FY buys (needed for FIFO cost basis)
-        // The tax engine's computeVdaTaxForFinancialYear needs prior-FY buys to build
-        // accurate cost basis. Without them, sells would show zero cost → inflated gains.
-        const fyPrefix = financialYear; // e.g., '2024-25'
+        // Detect actual FY from transaction data
+        const fyPrefix = financialYear; // e.g., '2024-25' (user's selected FY)
         const fyStartYear = parseInt(fyPrefix.split('-')[0]);
 
+        // Count how many transactions belong to each FY
+        const fyCounts: Record<string, number> = {};
+        for (const tx of parseResult.transactions) {
+            fyCounts[tx.financialYear] = (fyCounts[tx.financialYear] || 0) + 1;
+        }
+
+        // Auto-detect: if NO transactions match selected FY, use the most common FY from data
+        const hasMatchingFY = fyCounts[fyPrefix] > 0;
+        let effectiveFY = fyPrefix;
+        if (!hasMatchingFY && Object.keys(fyCounts).length > 0) {
+            // Find the FY with the most transactions
+            const detectedFY = Object.entries(fyCounts).sort((a, b) => b[1] - a[1])[0][0];
+            session.warnings.push(
+                `⚠️ FY mismatch: Your CSV data is from FY ${detectedFY}, but you selected FY ${fyPrefix}. Auto-using FY ${detectedFY} from the data.`
+            );
+            effectiveFY = detectedFY;
+        }
+
+        const effectiveFYStart = parseInt(effectiveFY.split('-')[0]);
+
+        // Filter: keep target FY + prior-FY buys (for FIFO cost basis)
         parseResult.transactions = parseResult.transactions.filter(tx => {
             const txFYStart = parseInt(tx.financialYear.split('-')[0]);
 
-            // Keep transactions from target FY
-            if (tx.financialYear === fyPrefix) return true;
+            // Keep transactions from effective FY
+            if (tx.financialYear === effectiveFY) return true;
 
             // Keep prior-FY buy-side transactions (needed for FIFO cost basis)
-            if (txFYStart < fyStartYear) {
+            if (txFYStart < effectiveFYStart) {
                 const isBuySide = tx.transactionType === 'buy' || tx.transactionType === 'swap_in' ||
                     tx.transactionType === 'deposit' || tx.transactionType.startsWith('reward_');
                 if (isBuySide) {
@@ -1256,9 +1309,6 @@ export async function processImportSession(
             }
 
             // Skip future-FY and prior-FY sells (not relevant)
-            session.warnings.push(
-                `${file.name}: Skipped row dated ${tx.tradeTimestamp.toISOString()} — belongs to FY ${tx.financialYear}, not ${fyPrefix}`
-            );
             return false;
         });
 
