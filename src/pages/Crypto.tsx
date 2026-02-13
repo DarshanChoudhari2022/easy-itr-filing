@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { saveIncomeSources } from "@/lib/supabase-data-service";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Plus, History,
@@ -241,15 +242,49 @@ export default function CryptoTaxPage() {
   }, [user]);
 
   // RECOMPUTE TAX from in-memory transactions whenever FY or data changes
+  // Also persists result to localStorage + Supabase for the filing wizard
   const recomputeTax = useCallback((txs: NormalizedTransaction[], tds: TDSRecord[], fy: string) => {
     if (txs.length === 0) return;
     try {
       const result = computeVdaTaxForFinancialYear(txs, tds, fy, settings.accountingMethod as any);
       setTaxComputation(result);
+
+      // ── Persist to localStorage so the Filing Wizard can auto-read ──
+      const cryptoTaxSummary = {
+        taxableCapitalGains: result.taxableCapitalGains,
+        totalTaxLiability: result.totalTaxLiability,
+        totalTDSCredit: result.totalTDSCredit,
+        totalConsiderationInr: result.totalConsiderationInr,
+        totalCostOfAcquisitionInr: result.totalCostOfAcquisitionInr,
+        grossCapitalGains: result.grossCapitalGains,
+        netTaxPayable: result.netTaxPayable,
+        uniqueAssets: result.uniqueAssets,
+        totalVDAEntries: result.totalVDAEntries,
+        financialYear: result.financialYear,
+        assessmentYear: result.assessmentYear,
+        computedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('taxmitra_crypto_tax_summary', JSON.stringify(cryptoTaxSummary));
+      console.log('[CryptoTax] Saved tax summary to localStorage:', cryptoTaxSummary);
+
+      // ── Persist to Supabase income_sources so it appears in Filing Wizard ──
+      if (user) {
+        const ay = result.assessmentYear || '2026-27';
+        saveIncomeSources({
+          assessment_year: ay,
+          has_crypto: true,
+          crypto_gains: Math.round(result.taxableCapitalGains),
+          crypto_tds: Math.round(result.totalTDSCredit),
+        }).then(() => {
+          console.log('[CryptoTax] ✅ Saved crypto data to income_sources for filing wizard');
+        }).catch(err => {
+          console.warn('[CryptoTax] Could not save to income_sources:', err.message);
+        });
+      }
     } catch (err) {
       console.error('Tax computation error:', err);
     }
-  }, [settings.accountingMethod]);
+  }, [settings.accountingMethod, user]);
 
   // FETCH TRADES from DB (graceful — won't fail if tables don't exist)
   const fetchTrades = useCallback(async () => {
@@ -1218,18 +1253,17 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
+                                  // Merge into parsed transactions — the useEffect will handle
+                                  // tax recomputation, trade mapping, and persistence automatically
                                   setParsedTransactions(prev => {
                                     const existing = new Set(prev.map(t => t.contentHash));
                                     const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
                                     return [...prev, ...newTxs];
                                   });
-                                  setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
-                                  const allTxs = [...parsedTransactions, ...result.transactions];
-                                  const allTds = [...parsedTDSRecords, ...result.tdsRecords];
-                                  const taxResult = computeVdaTaxForFinancialYear(allTxs, allTds, selectedFY, settings.accountingMethod as any);
-                                  setTaxComputation(taxResult);
-                                  setTrades(mapTransactionsToTrades(allTxs));
-                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax computed.`);
+                                  if (result.tdsRecords.length > 0) {
+                                    setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
+                                  }
+                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax will compute automatically.`);
                                 } else if (!result.success) {
                                   toast.error(result.error || 'Sync failed');
                                 } else {
@@ -1322,15 +1356,15 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
+                                  // Merge into parsed transactions — useEffect handles the rest
                                   setParsedTransactions(prev => {
                                     const existing = new Set(prev.map(t => t.contentHash));
                                     const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
                                     return [...prev, ...newTxs];
                                   });
-                                  const allTxs = [...parsedTransactions, ...result.transactions];
-                                  const taxResult = computeVdaTaxForFinancialYear(allTxs, parsedTDSRecords, selectedFY, settings.accountingMethod as any);
-                                  setTaxComputation(taxResult);
-                                  setTrades(mapTransactionsToTrades(allTxs));
+                                  if (result.tdsRecords.length > 0) {
+                                    setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
+                                  }
                                   toast.success(`Synced ${result.summary.totalTransactions} transactions`);
                                 } else {
                                   toast.error(result.error || 'No transactions found');

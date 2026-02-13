@@ -437,6 +437,7 @@ export function SmartFilingWizard() {
         loadAllData();
     }, [user]);
 
+
     // Keep track of maximum step reached
     useEffect(() => {
         if (step > maxStepReached) {
@@ -444,18 +445,65 @@ export function SmartFilingWizard() {
         }
     }, [step, maxStepReached]);
 
-    // Fetch crypto data from database
+    // Fetch crypto data from localStorage (primary) or database (fallback)
     const fetchCryptoData = useCallback(async () => {
-        if (!user) return;
+        // 1. Primary: Read from localStorage (saved by Crypto Tax page)
+        try {
+            const saved = localStorage.getItem('taxmitra_crypto_tax_summary');
+            if (saved) {
+                const summary = JSON.parse(saved);
+                if (summary.taxableCapitalGains !== undefined) {
+                    setIncome(prev => ({
+                        ...prev,
+                        hasCrypto: true,
+                        cryptoGains: Math.round(summary.taxableCapitalGains || 0),
+                        cryptoTDS: Math.round(summary.totalTDSCredit || 0)
+                    }));
+                    console.log('[Wizard] ✅ Loaded crypto tax from localStorage:', {
+                        gains: summary.taxableCapitalGains,
+                        tds: summary.totalTDSCredit,
+                        fy: summary.financialYear,
+                        computedAt: summary.computedAt
+                    });
+                    return; // Found it, no need for DB fallback
+                }
+            }
+        } catch (e) {
+            console.log('[Wizard] No localStorage crypto data, trying DB...');
+        }
 
+        // 2. Fallback: Read from income_sources in Supabase
+        if (!user) return;
+        try {
+            const { data } = await supabase
+                .from('income_sources' as any)
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('has_crypto', true);
+
+            if (data && data.length > 0) {
+                const row = data[0] as any;
+                setIncome(prev => ({
+                    ...prev,
+                    hasCrypto: true,
+                    cryptoGains: Math.round(row.crypto_gains || 0),
+                    cryptoTDS: Math.round(row.crypto_tds || 0)
+                }));
+                console.log('[Wizard] ✅ Loaded crypto data from income_sources DB:', row);
+                return;
+            }
+        } catch (err) {
+            console.log('[Wizard] income_sources lookup failed:', err);
+        }
+
+        // 3. Legacy fallback: Read from crypto_trades table
         try {
             const { data: trades } = await supabase
                 .from('crypto_trades')
                 .select('*')
-                .eq('user_id', user.id);
+                .eq('user_id', user!.id);
 
             if (trades && trades.length > 0) {
-                // Map to engine transactions
                 const engineTx = trades.map(t => {
                     const metadata = t.metadata as any || {};
                     return {
@@ -486,12 +534,17 @@ export function SmartFilingWizard() {
                     cryptoGains: Math.round(summary.totalTaxableGains),
                     cryptoTDS: Math.round(summary.totalTDSPaid)
                 }));
-                console.log('Wizard Crypto Summary:', summary);
+                console.log('[Wizard] ✅ Loaded crypto from crypto_trades DB:', summary);
             }
         } catch (err) {
-            console.error('Error fetching crypto:', err);
+            console.error('[Wizard] Error fetching crypto:', err);
         }
     }, [user]);
+
+    // Auto-fetch crypto tax data when wizard loads
+    useEffect(() => {
+        fetchCryptoData();
+    }, [fetchCryptoData]);
 
     // Detect recommended ITR form
     const recommendedForm = useMemo(() => {
