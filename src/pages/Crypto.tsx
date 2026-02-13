@@ -586,35 +586,39 @@ export default function CryptoTaxPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   {/* FY Selector */}
-                  <Select value={selectedFY} onValueChange={setSelectedFY}>
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue placeholder="Select FY" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FINANCIAL_YEARS.map(fy => (
-                        <SelectItem key={fy.value} value={fy.value}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{fy.label}</span>
-                            {fyTradeCounts[fy.value] && (
-                              <Badge variant="secondary" className="ml-2 text-xs">
-                                {fyTradeCounts[fy.value]}
-                              </Badge>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-all hover:border-indigo-300">
+                    <Calendar className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-slate-600 whitespace-nowrap">FY</span>
+                    <Select value={selectedFY} onValueChange={setSelectedFY}>
+                      <SelectTrigger className="w-[120px] h-8 border-0 shadow-none focus:ring-0 p-0 hover:bg-transparent">
+                        <SelectValue placeholder="Select FY" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FINANCIAL_YEARS.map(fy => (
+                          <SelectItem key={fy.value} value={fy.value} textValue={fy.value}>
+                            <div className="flex items-center justify-between gap-4 w-full">
+                              <span className="truncate">{fy.label}</span>
+                              {fyTradeCounts[fy.value] > 0 && (
+                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px] min-w-[1.25rem] flex items-center justify-center">
+                                  {fyTradeCounts[fy.value]}
+                                </Badge>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                  <Button variant="outline" size="sm" onClick={fetchTrades} disabled={loading}>
+                  <Button variant="outline" size="sm" onClick={fetchTrades} disabled={loading} className="h-[38px]">
                     <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                     Refresh
                   </Button>
                   <Dialog open={showAddTrade} onOpenChange={setShowAddTrade}>
                     <DialogTrigger asChild>
-                      <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+                      <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 h-[38px]">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Trade
                       </Button>
