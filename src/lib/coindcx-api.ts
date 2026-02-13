@@ -309,7 +309,73 @@ interface MarketDetail {
     ecode: string;
 }
 
+interface TickerData {
+    market: string;
+    last_price: string;
+    bid: string;
+    ask: string;
+    high: string;
+    low: string;
+    volume: string;
+    timestamp: number;
+}
+
 let cachedMarkets: MarketDetail[] | null = null;
+let cachedQuoteToINR: Record<string, number> = {};
+
+/**
+ * Fetch real-time quote→INR conversion rates from CoinDCX ticker.
+ * This gives us USDT/INR, BTC/INR, ETH/INR etc. rates.
+ */
+async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
+    if (Object.keys(cachedQuoteToINR).length > 0) return cachedQuoteToINR;
+
+    try {
+        const result = await makePublicRequest<TickerData[]>('/exchange/ticker');
+        if (result.success && result.data && Array.isArray(result.data)) {
+            // Find all {QUOTE}INR pairs to get quote→INR rates
+            const inrPairs: Record<string, number> = { 'INR': 1 };
+            for (const ticker of result.data) {
+                const market = ticker.market?.toUpperCase() || '';
+                const price = parseFloat(ticker.last_price) || 0;
+                if (price <= 0) continue;
+
+                // Match patterns like USDTINR, BTCINR, ETHINR
+                if (market.endsWith('INR') && market.length > 3) {
+                    const quote = market.replace(/INR$/, '');
+                    // Only store if it looks like a major quote currency
+                    if (['USDT', 'USDC', 'BUSD', 'BTC', 'ETH', 'BNB', 'DAI', 'TUSD'].includes(quote)) {
+                        inrPairs[quote] = price;
+                    }
+                }
+                // Also check B-USDT_INR style CoinDCX names
+                if (market.includes('USDT') && market.includes('INR')) {
+                    if (!inrPairs['USDT']) inrPairs['USDT'] = price;
+                }
+            }
+
+            console.log('[CoinDCX] Quote→INR rates fetched:', inrPairs);
+            cachedQuoteToINR = inrPairs;
+            return inrPairs;
+        }
+    } catch (e) {
+        console.warn('[CoinDCX] Failed to fetch ticker for FX rates:', e);
+    }
+
+    // Fallback rates (close to FY 2024-25 averages)
+    cachedQuoteToINR = {
+        'INR': 1,
+        'USDT': 83.5,
+        'USDC': 83.5,
+        'BUSD': 83.5,
+        'DAI': 83.5,
+        'BTC': 7200000,
+        'ETH': 280000,
+        'BNB': 52000,
+    };
+    console.log('[CoinDCX] Using fallback FX rates');
+    return cachedQuoteToINR;
+}
 
 async function getMarketDetails(): Promise<Record<string, { base: string; quote: string }>> {
     if (!cachedMarkets) {
@@ -379,7 +445,8 @@ function parseAssetFromSymbol(
 
 function convertTradesToNormalized(
     trades: CoinDCXTrade[],
-    marketMap: Record<string, { base: string; quote: string }>
+    marketMap: Record<string, { base: string; quote: string }>,
+    quoteToINR: Record<string, number> = {}
 ): NormalizedTransaction[] {
     return trades.map((trade, i) => {
         const { base, quote } = parseAssetFromSymbol(trade.symbol, marketMap);
@@ -387,14 +454,48 @@ function convertTradesToNormalized(
         const fy = getFY(tradeDate);
         const fee = parseFloat(trade.fee_amount) || 0;
         const qty = trade.quantity || 0;
-        const price = trade.price || 0;
-        const grossAmount = qty * price;
-        const isINRQuote = quote === 'INR';
-        const priceInr = isINRQuote ? price : price * 90; // Approximate USDT → INR
-        const grossInr = qty * priceInr;
-        const feeInr = fee; // CoinDCX fees are typically in quote currency
+        const price = trade.price || 0;        // price is in quote currency
+        const grossAmountQuote = qty * price;   // total in quote currency
 
-        // TDS: 1% of consideration for sells (Section 194S)
+        // ── INR Conversion ──
+        // The trade price is denominated in the quote currency.
+        // For INR-quoted pairs (e.g., BTCINR): price IS already INR
+        // For USDT-quoted pairs (e.g., ENAUSDT): price is in USDT, need * USDT/INR rate
+        // For BTC-quoted pairs (e.g., SNTBTC): price is in BTC, need * BTC/INR rate
+        const quoteKey = quote.toUpperCase();
+        const isINRQuote = quoteKey === 'INR';
+
+        // Get the quote→INR rate from real ticker data
+        let quoteINRRate = 1;
+        if (!isINRQuote) {
+            quoteINRRate = quoteToINR[quoteKey] || quoteToINR[quote] || 1;
+            if (quoteINRRate === 1 && quoteKey !== 'INR') {
+                // Fallback: if we still don't have a rate, use reasonable defaults
+                const fallbackRates: Record<string, number> = {
+                    'USDT': 83.5, 'USDC': 83.5, 'BUSD': 83.5, 'DAI': 83.5,
+                    'BTC': 7200000, 'ETH': 280000, 'BNB': 52000,
+                };
+                quoteINRRate = fallbackRates[quoteKey] || 83.5;
+                console.warn(`[CoinDCX] No live rate for ${quoteKey}/INR, using fallback: ${quoteINRRate}`);
+            }
+        }
+
+        const priceInr = price * quoteINRRate;  // trade price in INR per unit
+        const grossInr = qty * priceInr;        // total trade value in INR
+
+        // ── Fee conversion ──
+        // CoinDCX fee_amount is in the quote currency (or fee_currency if specified)
+        const feeCurrency = (trade.fee_currency || quote).toUpperCase();
+        let feeInr = fee;
+        if (feeCurrency !== 'INR') {
+            const feeRate = quoteToINR[feeCurrency] || quoteINRRate;
+            feeInr = fee * feeRate;
+        }
+
+        // ── TDS ──
+        // Section 194S: 1% TDS on consideration for sell trades
+        // Only applies above ₹50,000 threshold for specified persons (retail)
+        // CoinDCX deducts TDS on ALL sells, so we estimate at 1% of gross consideration
         const tdsAmount = trade.side === 'sell' ? grossInr * 0.01 : 0;
 
         return {
@@ -408,23 +509,25 @@ function convertTradesToNormalized(
             quantity: qty,
             pricePerUnit: price,
             priceInr: priceInr,
-            grossAmountQuote: grossAmount,
+            grossAmountQuote: grossAmountQuote,
             grossAmountInr: grossInr,
             feeAmount: fee,
-            feeAsset: quote,
+            feeAsset: feeCurrency,
             feeInr: feeInr,
             tdsAmount,
             tdsRate: trade.side === 'sell' ? 0.01 : 0,
             tradeTimestamp: tradeDate,
             financialYear: fy,
             assessmentYear: getAY(fy),
-            description: `${trade.side.toUpperCase()} ${qty} ${base} @ ${price} ${quote}`,
+            description: `${trade.side.toUpperCase()} ${qty} ${base} @ ${priceInr.toFixed(2)} INR (${price} ${quote})`,
             orderId: trade.order_id,
             rawData: {
                 source: 'api',
                 trade_id: String(trade.id),
                 symbol: trade.symbol,
                 ecode: trade.ecode || '',
+                quote_currency: quote,
+                quote_inr_rate: String(quoteINRRate),
             },
             contentHash: hashContent(`${trade.id}-${trade.order_id}-${trade.timestamp}-${trade.side}-${qty}`),
         } as NormalizedTransaction;
@@ -556,7 +659,7 @@ export async function fullCoinDCXSync(
 
     try {
         // ── Step 1: Validate credentials by fetching balances ──
-        report('Connecting', 'Validating API credentials...', 1, 5);
+        report('Connecting', 'Validating API credentials...', 1, 6);
         const balResult = await fetchCoinDCXBalances(credentials);
         if (!balResult.success) {
             return {
@@ -575,7 +678,7 @@ export async function fullCoinDCXSync(
         warnings.push(`✅ Auth OK — ${balances.length} non-zero balances`);
 
         // ── Step 2: Fetch market details for symbol mapping ──
-        report('Markets', 'Loading market pair data...', 2, 5);
+        report('Markets', 'Loading market pair data...', 2, 6);
         let marketMap: Record<string, { base: string; quote: string }> = {};
         try {
             marketMap = await getMarketDetails();
@@ -585,8 +688,19 @@ export async function fullCoinDCXSync(
             console.warn('[CoinDCX Sync] Market details failed:', e);
         }
 
-        // ── Step 3: Fetch ALL trade history ──
-        report('Trades', 'Fetching complete trade history...', 3, 5);
+        // ── Step 3: Fetch real-time FX rates (USDT/INR, BTC/INR, etc.) ──
+        report('FX Rates', 'Fetching quote→INR conversion rates...', 3, 6);
+        let quoteToINR: Record<string, number> = {};
+        try {
+            quoteToINR = await fetchQuoteToINRRates();
+            const rateKeys = Object.keys(quoteToINR).filter(k => k !== 'INR');
+            warnings.push(`💱 FX Rates: ${rateKeys.map(k => `${k}=${quoteToINR[k]}`).join(', ')}`);
+        } catch (e) {
+            warnings.push(`⚠️ FX rates failed, using fallback: ${(e as Error).message}`);
+        }
+
+        // ── Step 4: Fetch ALL trade history ──
+        report('Trades', 'Fetching complete trade history...', 4, 6);
         const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
         let tradeCount = 0;
         console.log(`[CoinDCX Sync] Trade history response:`, {
@@ -599,7 +713,7 @@ export async function fullCoinDCXSync(
         });
         if (tradesResult.success && tradesResult.data) {
             if (Array.isArray(tradesResult.data)) {
-                const normalized = convertTradesToNormalized(tradesResult.data, marketMap);
+                const normalized = convertTradesToNormalized(tradesResult.data, marketMap, quoteToINR);
                 allTransactions.push(...normalized);
                 tradeCount = normalized.length;
                 warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${tradesResult.data.length})`);
@@ -610,7 +724,7 @@ export async function fullCoinDCXSync(
                 let found = false;
                 for (const key of possibleArrays) {
                     if (dataObj[key] && Array.isArray(dataObj[key])) {
-                        const normalized = convertTradesToNormalized(dataObj[key], marketMap);
+                        const normalized = convertTradesToNormalized(dataObj[key], marketMap, quoteToINR);
                         allTransactions.push(...normalized);
                         tradeCount = normalized.length;
                         warnings.push(`📈 Trades: ${tradeCount} fetched (from .${key})`);
@@ -626,17 +740,17 @@ export async function fullCoinDCXSync(
             warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }
 
-        // ── Step 4: Deposits & Withdrawals ──
+        // ── Step 5: Deposits & Withdrawals ──
         // NOTE: CoinDCX API does NOT provide separate deposit/withdrawal endpoints.
         // These must be imported via CSV. We skip them here.
-        report('Deposits', 'Checking deposit/withdrawal data...', 4, 5);
+        report('Deposits', 'Checking deposit/withdrawal data...', 5, 6);
         let depositCount = 0;
         let withdrawalCount = 0;
         warnings.push(`ℹ️ Deposits/Withdrawals: Not available via CoinDCX API — use CSV import`);
 
-        // ── Step 5: Fetch lending/staking rewards ──
+        // ── Step 6: Fetch lending/staking rewards ──
         // Correct endpoint: POST /exchange/v1/funding/fetch_orders
-        report('Rewards', 'Fetching lending & staking rewards...', 5, 5);
+        report('Rewards', 'Fetching lending & staking rewards...', 6, 6);
         let rewardCount = 0;
         try {
             const lendResult = await makeAuthenticatedRequest<any>(
