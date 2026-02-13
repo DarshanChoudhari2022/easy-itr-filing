@@ -190,7 +190,9 @@ export async function fetchCoinDCXBalances(
 
 /**
  * Fetch trade history with pagination support.
- * CoinDCX trade_history returns max 500 per call.
+ * Uses from_id for pagination as per CoinDCX API docs.
+ * Endpoint: POST /exchange/v1/orders/trade_history
+ * Valid params: timestamp, limit, sort, from_id, from_timestamp, to_timestamp, symbol
  */
 export async function fetchCoinDCXTradeHistory(
     credentials: CoinDCXCredentials,
@@ -202,19 +204,25 @@ export async function fetchCoinDCXTradeHistory(
     }
 ): Promise<{ success: boolean; data?: CoinDCXTrade[]; error?: string }> {
     const allTrades: CoinDCXTrade[] = [];
-    let page = 0;
     const limit = options?.limit || 500;
     let hasMore = true;
+    let lastFromId: number | undefined = undefined;
+    let pageCount = 0;
 
     while (hasMore) {
         const body: Record<string, any> = {
             timestamp: Date.now(),
             limit,
-            page,
             sort: 'asc',
         };
-        if (options?.fromTimestamp) body.from_id = undefined; // Use timestamp-based
+        // Pagination via from_id (start after last trade ID)
+        if (lastFromId !== undefined) body.from_id = lastFromId;
+        // Optional timestamp filters
+        if (options?.fromTimestamp) body.from_timestamp = options.fromTimestamp;
+        if (options?.toTimestamp) body.to_timestamp = options.toTimestamp;
         if (options?.symbol) body.symbol = options.symbol;
+
+        console.log(`[CoinDCX] Fetching trades page ${pageCount + 1}, from_id=${lastFromId || 'start'}, body:`, body);
 
         const result = await makeAuthenticatedRequest<CoinDCXTrade[]>(
             '/exchange/v1/orders/trade_history',
@@ -223,24 +231,27 @@ export async function fetchCoinDCXTradeHistory(
         );
 
         if (!result.success) {
-            // If we already fetched some records, return what we have
             if (allTrades.length > 0) {
-                console.warn(`[CoinDCX] Partial trade history fetched: ${allTrades.length} trades (page ${page} failed)`);
+                console.warn(`[CoinDCX] Partial trade history: ${allTrades.length} trades (page ${pageCount + 1} failed: ${result.error})`);
                 break;
             }
             return result;
         }
 
         const trades = result.data || [];
+        console.log(`[CoinDCX] Page ${pageCount + 1}: got ${trades.length} trades`);
         allTrades.push(...trades);
 
         // Stop if we got fewer than limit (last page)
         if (trades.length < limit) {
             hasMore = false;
         } else {
-            page++;
+            // Use the last trade's ID for next page
+            const lastTrade = trades[trades.length - 1];
+            lastFromId = lastTrade?.id;
+            pageCount++;
             // Safety: max 20 pages (10,000 trades)
-            if (page >= 20) {
+            if (pageCount >= 20) {
                 console.warn('[CoinDCX] Hit max pagination limit of 20 pages');
                 hasMore = false;
             }
@@ -545,7 +556,7 @@ export async function fullCoinDCXSync(
 
     try {
         // ── Step 1: Validate credentials by fetching balances ──
-        report('Connecting', 'Validating API credentials...', 1, 6);
+        report('Connecting', 'Validating API credentials...', 1, 5);
         const balResult = await fetchCoinDCXBalances(credentials);
         if (!balResult.success) {
             return {
@@ -564,7 +575,7 @@ export async function fullCoinDCXSync(
         warnings.push(`✅ Auth OK — ${balances.length} non-zero balances`);
 
         // ── Step 2: Fetch market details for symbol mapping ──
-        report('Markets', 'Loading market pair data...', 2, 6);
+        report('Markets', 'Loading market pair data...', 2, 5);
         let marketMap: Record<string, { base: string; quote: string }> = {};
         try {
             marketMap = await getMarketDetails();
@@ -575,7 +586,7 @@ export async function fullCoinDCXSync(
         }
 
         // ── Step 3: Fetch ALL trade history ──
-        report('Trades', 'Fetching complete trade history...', 3, 6);
+        report('Trades', 'Fetching complete trade history...', 3, 5);
         const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
         let tradeCount = 0;
         console.log(`[CoinDCX Sync] Trade history response:`, {
@@ -615,93 +626,54 @@ export async function fullCoinDCXSync(
             warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }
 
-        // ── Step 4: Fetch deposits ──
-        report('Deposits', 'Fetching deposit history...', 4, 6);
+        // ── Step 4: Deposits & Withdrawals ──
+        // NOTE: CoinDCX API does NOT provide separate deposit/withdrawal endpoints.
+        // These must be imported via CSV. We skip them here.
+        report('Deposits', 'Checking deposit/withdrawal data...', 4, 5);
         let depositCount = 0;
-        try {
-            const depResult = await makeAuthenticatedRequest<any>(
-                '/exchange/v1/users/deposits',
-                { timestamp: Date.now() },
-                credentials
-            );
-            console.log(`[CoinDCX Sync] Deposits response:`, {
-                success: depResult.success,
-                error: depResult.error,
-                dataType: typeof depResult.data,
-                isArray: Array.isArray(depResult.data),
-                sample: Array.isArray(depResult.data) ? depResult.data.slice(0, 2) : depResult.data,
-            });
-            if (depResult.success && depResult.data) {
-                const depArray = Array.isArray(depResult.data) ? depResult.data : (depResult.data?.data || []);
-                if (Array.isArray(depArray) && depArray.length > 0) {
-                    const normalized = convertBalanceDepositsToNormalized('deposit', depArray);
-                    allTransactions.push(...normalized);
-                    depositCount = normalized.length;
-                }
-                warnings.push(`📥 Deposits: ${depositCount} (raw: ${depArray.length || 0})`);
-            } else {
-                warnings.push(`⚠️ Deposits: ${depResult.error || 'not available'}`);
-            }
-        } catch (e) {
-            warnings.push(`❌ Deposits: ${(e as Error).message}`);
-        }
-
-        // ── Step 5: Fetch withdrawals ──
-        report('Withdrawals', 'Fetching withdrawal history...', 5, 6);
         let withdrawalCount = 0;
-        try {
-            const witResult = await makeAuthenticatedRequest<any>(
-                '/exchange/v1/users/withdrawals',
-                { timestamp: Date.now() },
-                credentials
-            );
-            console.log(`[CoinDCX Sync] Withdrawals response:`, {
-                success: witResult.success,
-                error: witResult.error,
-                sample: Array.isArray(witResult.data) ? witResult.data.slice(0, 2) : witResult.data,
-            });
-            if (witResult.success && witResult.data) {
-                const witArray = Array.isArray(witResult.data) ? witResult.data : (witResult.data?.data || []);
-                if (Array.isArray(witArray) && witArray.length > 0) {
-                    const normalized = convertBalanceDepositsToNormalized('withdrawal', witArray);
-                    allTransactions.push(...normalized);
-                    withdrawalCount = normalized.length;
-                }
-                warnings.push(`📤 Withdrawals: ${withdrawalCount}`);
-            } else {
-                warnings.push(`⚠️ Withdrawals: ${witResult.error || 'not available'}`);
-            }
-        } catch (e) {
-            warnings.push(`❌ Withdrawals: ${(e as Error).message}`);
-        }
+        warnings.push(`ℹ️ Deposits/Withdrawals: Not available via CoinDCX API — use CSV import`);
 
-        // ── Step 6: Fetch lending/staking rewards ──
-        report('Rewards', 'Fetching staking & lending rewards...', 6, 6);
+        // ── Step 5: Fetch lending/staking rewards ──
+        // Correct endpoint: POST /exchange/v1/funding/fetch_orders
+        report('Rewards', 'Fetching lending & staking rewards...', 5, 5);
         let rewardCount = 0;
         try {
             const lendResult = await makeAuthenticatedRequest<any>(
-                '/exchange/v1/lending/history',
+                '/exchange/v1/funding/fetch_orders',
                 { timestamp: Date.now() },
                 credentials
             );
-            console.log(`[CoinDCX Sync] Rewards response:`, {
+            console.log(`[CoinDCX Sync] Lending/Funding response:`, {
                 success: lendResult.success,
                 error: lendResult.error,
+                isArray: Array.isArray(lendResult.data),
+                count: Array.isArray(lendResult.data) ? lendResult.data.length : 'N/A',
                 sample: Array.isArray(lendResult.data) ? lendResult.data.slice(0, 2) : lendResult.data,
             });
             if (lendResult.success && lendResult.data) {
                 const lendArray = Array.isArray(lendResult.data) ? lendResult.data : (lendResult.data?.data || []);
                 if (Array.isArray(lendArray) && lendArray.length > 0) {
-                    const normalized = convertRewardsToNormalized(lendArray);
+                    // CoinDCX funding response has: currency_short_name, amount, interest, side, status, created_at
+                    const mapped = lendArray.map((item: any) => ({
+                        id: item.id,
+                        currency: item.currency_short_name || item.currency,
+                        amount: String(item.amount),
+                        interest_earned: String(item.interest || 0),
+                        type: item.side || 'lend',
+                        status: item.status || 'close',
+                        created_at: item.created_at,
+                    }));
+                    const normalized = convertRewardsToNormalized(mapped);
                     allTransactions.push(...normalized);
                     rewardCount = normalized.length;
                 }
-                warnings.push(`🎁 Rewards: ${rewardCount}`);
+                warnings.push(`🎁 Lending/Staking: ${rewardCount} (raw: ${lendArray.length || 0})`);
             } else {
-                warnings.push(`⚠️ Rewards: ${lendResult.error || 'not available'}`);
+                warnings.push(`⚠️ Lending: ${lendResult.error || 'not available'}`);
             }
         } catch (e) {
-            warnings.push(`❌ Rewards: ${(e as Error).message}`);
+            warnings.push(`❌ Lending: ${(e as Error).message}`);
         }
 
         // ── Deduplicate ──
