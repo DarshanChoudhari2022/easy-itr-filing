@@ -1167,6 +1167,20 @@ export function parseWazirXTradesCSV(
 export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
     const firstLine = csvContent.split('\n')[0]?.toLowerCase() || '';
 
+    // Check for TRADE indicators FIRST — this is critical because CoinDCX Order History
+    // CSV has a "Tds" column that would falsely match the TDS check below.
+    const hasTradeIndicators = firstLine.includes('side') || firstLine.includes('pair') ||
+        firstLine.includes('market') || firstLine.includes('action') ||
+        firstLine.includes('avg price') || firstLine.includes('average_price') ||
+        firstLine.includes('filled_quantity') || firstLine.includes('total quantity') ||
+        firstLine.includes('price per unit') || firstLine.includes('order id') ||
+        firstLine.includes('volume') || firstLine.includes('quantity');
+
+    if (hasTradeIndicators) {
+        return 'trades';
+    }
+
+    // Only classify as TDS if NO trade indicators present
     if (firstLine.includes('tds') || firstLine.includes('deduct') || firstLine.includes('certificate')) {
         return 'tds';
     }
@@ -1178,12 +1192,6 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
     }
     if (firstLine.includes('withdrawal') || firstLine.includes('withdraw')) {
         return 'withdrawals';
-    }
-    // CoinDCX Order History: has 'action' and/or 'status' columns
-    if (firstLine.includes('side') || firstLine.includes('pair') || firstLine.includes('trade') ||
-        firstLine.includes('buy') || firstLine.includes('action') || firstLine.includes('average_price') ||
-        firstLine.includes('filled_quantity') || firstLine.includes('market') || firstLine.includes('volume')) {
-        return 'trades';
     }
 
     // Fallback: treat unknown files as trades (most common download)

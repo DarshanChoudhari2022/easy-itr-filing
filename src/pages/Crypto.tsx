@@ -318,12 +318,38 @@ export default function CryptoTaxPage() {
         }
       }
 
+      // Log parsing details for debugging
+      console.log('[CryptoImport] Import result:', {
+        exchange: selectedExchange,
+        selectedFY,
+        totalFiles: importResult.files.length,
+        totalTransactions: importResult.totalTransactions,
+        totalErrors: importResult.totalErrors,
+        totalDuplicates: importResult.totalDuplicates,
+        warnings: importResult.warnings,
+      });
+      for (const f of importResult.files) {
+        console.log(`[CryptoImport] File "${f.fileName}": type=${f.fileType}, rows=${f.totalRows}, success=${f.successCount}, errors=${f.errorCount}, dups=${f.duplicateCount}`);
+        if (f.errors.length > 0) console.log(`[CryptoImport] File errors:`, f.errors.slice(0, 10));
+        if (f.warnings.length > 0) console.log(`[CryptoImport] File warnings:`, f.warnings.slice(0, 10));
+      }
+
       if (allTransactions.length === 0) {
+        // Collect all file-level errors for display
+        const errorDetails: string[] = ['No transactions could be parsed. Check the CSV format and try again.'];
+        for (const f of importResult.files) {
+          if (f.errors.length > 0) {
+            errorDetails.push(...f.errors.slice(0, 5).map(e => `Row ${e.line}: ${e.message}`));
+          }
+        }
+        if (importResult.warnings.length > 0) {
+          errorDetails.push(...importResult.warnings.slice(0, 5));
+        }
         toast.error('No valid transactions found in the uploaded file(s)');
         setImportResult({
           success: 0,
           errors: 1,
-          messages: ['No transactions could be parsed. Check the CSV format and try again.', ...importResult.warnings]
+          messages: errorDetails
         });
         return;
       }
