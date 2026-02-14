@@ -1395,17 +1395,18 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
-                                  // Merge into parsed transactions — the useEffect will handle
-                                  // tax recomputation, trade mapping, and persistence automatically
+                                  // FULL REPLACE: Remove old CoinDCX API data, insert fresh
+                                  // This ensures updated FX rates and valuations take effect
                                   setParsedTransactions(prev => {
-                                    const existing = new Set(prev.map(t => t.contentHash));
-                                    const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
-                                    return [...prev, ...newTxs];
+                                    const nonCoinDCXApi = prev.filter(t =>
+                                      !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
+                                    );
+                                    return [...nonCoinDCXApi, ...result.transactions];
                                   });
                                   if (result.tdsRecords.length > 0) {
-                                    setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
+                                    setParsedTDSRecords(result.tdsRecords); // Full replace TDS too
                                   }
-                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax will compute automatically.`);
+                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax will recompute automatically.`);
                                 } else if (!result.success) {
                                   toast.error(result.error || 'Sync failed');
                                 } else {
@@ -1498,16 +1499,17 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
-                                  // Merge into parsed transactions — useEffect handles the rest
+                                  // FULL REPLACE: Remove old CoinDCX API data, insert fresh
                                   setParsedTransactions(prev => {
-                                    const existing = new Set(prev.map(t => t.contentHash));
-                                    const newTxs = result.transactions.filter(t => !existing.has(t.contentHash));
-                                    return [...prev, ...newTxs];
+                                    const nonCoinDCXApi = prev.filter(t =>
+                                      !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
+                                    );
+                                    return [...nonCoinDCXApi, ...result.transactions];
                                   });
                                   if (result.tdsRecords.length > 0) {
-                                    setParsedTDSRecords(prev => [...prev, ...result.tdsRecords]);
+                                    setParsedTDSRecords(result.tdsRecords);
                                   }
-                                  toast.success(`Synced ${result.summary.totalTransactions} transactions`);
+                                  toast.success(`✅ Re-synced ${result.summary.totalTransactions} transactions with updated rates`);
                                 } else {
                                   toast.error(result.error || 'No transactions found');
                                 }
