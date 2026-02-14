@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,12 +15,33 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
+export interface FamilyMember {
+    id: number;
+    name: string;
+    role: string;
+    pan: string;
+    status: string;
+    active: boolean;
+}
+
 export default function FamilyDashboard() {
-    const [members, setMembers] = useState([
-        { id: 1, name: "Rahul Sharma", role: "Head", pan: "ABCDE1234F", status: "Submitted", active: true },
-        { id: 2, name: "Priya Sharma", role: "Spouse", pan: "FGHIJ5678K", status: "In Progress", active: false },
-        { id: 3, name: "Om Prakash Sharma", role: "Parent", pan: "KLMNO9012P", status: "Action Required", active: false },
-    ]);
+    const { user } = useAuth();
+    const [members, setMembers] = useState<FamilyMember[]>([]);
+
+    useEffect(() => {
+        if (user) {
+            setMembers([
+                {
+                    id: 1,
+                    name: user.user_metadata?.full_name || "You",
+                    role: "Self",
+                    pan: "XXXXX1234X",
+                    status: "Not Started",
+                    active: true
+                }
+            ]);
+        }
+    }, [user]);
 
     return (
         <AppLayout>
