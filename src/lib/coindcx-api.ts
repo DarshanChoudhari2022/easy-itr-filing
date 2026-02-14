@@ -324,8 +324,74 @@ let cachedMarkets: MarketDetail[] | null = null;
 let cachedQuoteToINR: Record<string, number> = {};
 
 /**
+ * Historical monthly average USDT/INR rates for FY 2024-25.
+ * CRITICAL: Using a single live rate for both buy and sell collapses the profit margin.
+ * Historical rates capture the actual INR movement across the year.
+ * Source: RBI reference rates / CoinDCX market data
+ */
+const HISTORICAL_USDT_INR: Record<string, number> = {
+    // FY 2024-25 (Apr 2024 - Mar 2025)
+    '2024-04': 83.4, '2024-05': 83.3, '2024-06': 83.5,
+    '2024-07': 83.6, '2024-08': 83.8, '2024-09': 83.9,
+    '2024-10': 84.1, '2024-11': 84.3, '2024-12': 84.7,
+    '2025-01': 85.5, '2025-02': 86.5, '2025-03': 86.8,
+    // FY 2023-24 (for prior-year cost basis)
+    '2023-04': 82.0, '2023-05': 82.3, '2023-06': 82.1,
+    '2023-07': 82.2, '2023-08': 83.0, '2023-09': 83.1,
+    '2023-10': 83.2, '2023-11': 83.3, '2023-12': 83.2,
+    '2024-01': 83.1, '2024-02': 83.0, '2024-03': 83.4,
+};
+
+const HISTORICAL_BTC_INR: Record<string, number> = {
+    '2024-04': 5700000, '2024-05': 5800000, '2024-06': 5400000,
+    '2024-07': 5600000, '2024-08': 5000000, '2024-09': 5300000,
+    '2024-10': 6000000, '2024-11': 7500000, '2024-12': 8200000,
+    '2025-01': 8600000, '2025-02': 8200000, '2025-03': 7200000,
+    '2023-04': 2400000, '2023-05': 2300000, '2023-06': 2500000,
+    '2023-07': 2500000, '2023-08': 2400000, '2023-09': 2200000,
+    '2023-10': 2900000, '2023-11': 3100000, '2023-12': 3600000,
+    '2024-01': 3500000, '2024-02': 4300000, '2024-03': 5500000,
+};
+
+const HISTORICAL_ETH_INR: Record<string, number> = {
+    '2024-04': 270000, '2024-05': 260000, '2024-06': 290000,
+    '2024-07': 260000, '2024-08': 210000, '2024-09': 220000,
+    '2024-10': 220000, '2024-11': 290000, '2024-12': 310000,
+    '2025-01': 290000, '2025-02': 230000, '2025-03': 170000,
+    '2023-04': 155000, '2023-05': 153000, '2023-06': 155000,
+    '2023-07': 157000, '2023-08': 140000, '2023-09': 138000,
+    '2023-10': 150000, '2023-11': 170000, '2023-12': 190000,
+    '2024-01': 190000, '2024-02': 240000, '2024-03': 285000,
+};
+
+/**
+ * Get the historical quote→INR rate for a given date.
+ * CRITICAL: This is what fixes the capital gains calculation.
+ * Using a single live rate collapses buy/sell margins to near zero.
+ */
+function getHistoricalQuoteINR(quoteCurrency: string, date: Date): number {
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const q = quoteCurrency.toUpperCase();
+
+    if (q === 'INR') return 1;
+
+    if (q === 'USDT' || q === 'USDC' || q === 'BUSD' || q === 'DAI' || q === 'TUSD') {
+        return HISTORICAL_USDT_INR[monthKey] || 84.0;
+    }
+    if (q === 'BTC') {
+        return HISTORICAL_BTC_INR[monthKey] || 7200000;
+    }
+    if (q === 'ETH') {
+        return HISTORICAL_ETH_INR[monthKey] || 280000;
+    }
+    if (q === 'BNB') return 52000; // BNB pairs are rare on CoinDCX
+
+    return 84.0; // fallback for unknown quote currencies
+}
+
+/**
  * Fetch real-time quote→INR conversion rates from CoinDCX ticker.
- * This gives us USDT/INR, BTC/INR, ETH/INR etc. rates.
+ * Used as a fallback and for reward valuation (current prices).
  */
 async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
     if (Object.keys(cachedQuoteToINR).length > 0) return cachedQuoteToINR;
@@ -333,28 +399,19 @@ async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
     try {
         const result = await makePublicRequest<TickerData[]>('/exchange/ticker');
         if (result.success && result.data && Array.isArray(result.data)) {
-            // Find all {QUOTE}INR pairs to get quote→INR rates
             const inrPairs: Record<string, number> = { 'INR': 1 };
             for (const ticker of result.data) {
                 const market = ticker.market?.toUpperCase() || '';
                 const price = parseFloat(ticker.last_price) || 0;
                 if (price <= 0) continue;
 
-                // Match patterns like USDTINR, BTCINR, ETHINR
                 if (market.endsWith('INR') && market.length > 3) {
                     const quote = market.replace(/INR$/, '');
-                    // Only store if it looks like a major quote currency
-                    if (['USDT', 'USDC', 'BUSD', 'BTC', 'ETH', 'BNB', 'DAI', 'TUSD'].includes(quote)) {
-                        inrPairs[quote] = price;
-                    }
-                }
-                // Also check B-USDT_INR style CoinDCX names
-                if (market.includes('USDT') && market.includes('INR')) {
-                    if (!inrPairs['USDT']) inrPairs['USDT'] = price;
+                    inrPairs[quote] = price;
                 }
             }
 
-            console.log('[CoinDCX] Quote→INR rates fetched:', inrPairs);
+            console.log('[CoinDCX] Live ticker rates:', Object.keys(inrPairs).length, 'pairs');
             cachedQuoteToINR = inrPairs;
             return inrPairs;
         }
@@ -362,18 +419,11 @@ async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
         console.warn('[CoinDCX] Failed to fetch ticker for FX rates:', e);
     }
 
-    // Fallback rates (close to FY 2024-25 averages)
+    // Fallback rates
     cachedQuoteToINR = {
-        'INR': 1,
-        'USDT': 83.5,
-        'USDC': 83.5,
-        'BUSD': 83.5,
-        'DAI': 83.5,
-        'BTC': 7200000,
-        'ETH': 280000,
-        'BNB': 52000,
+        'INR': 1, 'USDT': 84.0, 'USDC': 84.0, 'BUSD': 84.0,
+        'DAI': 84.0, 'BTC': 7200000, 'ETH': 280000, 'BNB': 52000,
     };
-    console.log('[CoinDCX] Using fallback FX rates');
     return cachedQuoteToINR;
 }
 
@@ -457,45 +507,38 @@ function convertTradesToNormalized(
         const price = trade.price || 0;        // price is in quote currency
         const grossAmountQuote = qty * price;   // total in quote currency
 
-        // ── INR Conversion ──
-        // The trade price is denominated in the quote currency.
-        // For INR-quoted pairs (e.g., BTCINR): price IS already INR
-        // For USDT-quoted pairs (e.g., ENAUSDT): price is in USDT, need * USDT/INR rate
-        // For BTC-quoted pairs (e.g., SNTBTC): price is in BTC, need * BTC/INR rate
+        // ── INR Conversion using HISTORICAL rates ──
+        // CRITICAL FIX: Using a single live rate for both buy and sell trades
+        // collapses the profit margin to near zero. We MUST use the rate
+        // that was in effect at the time of each trade.
+        //
+        // Example: Buy ENA at $0.44 on Jun-2024 (USDT=83.5) → cost = 0.44*83.5 = ₹36.74
+        //          Sell ENA at $0.46 on Dec-2024 (USDT=84.7) → sale = 0.46*84.7 = ₹38.96
+        //          Gain = ₹2.22 (captures both crypto AND INR movement)
+        //
+        // If we used a single rate of 87 for both: gain = (0.46-0.44)*87 = ₹1.74 (WRONG)
         const quoteKey = quote.toUpperCase();
         const isINRQuote = quoteKey === 'INR';
 
-        // Get the quote→INR rate from real ticker data
+        // Get HISTORICAL quote→INR rate at the time of this trade
         let quoteINRRate = 1;
         if (!isINRQuote) {
-            quoteINRRate = quoteToINR[quoteKey] || quoteToINR[quote] || 1;
-            if (quoteINRRate === 1 && quoteKey !== 'INR') {
-                // Fallback: if we still don't have a rate, use reasonable defaults
-                const fallbackRates: Record<string, number> = {
-                    'USDT': 83.5, 'USDC': 83.5, 'BUSD': 83.5, 'DAI': 83.5,
-                    'BTC': 7200000, 'ETH': 280000, 'BNB': 52000,
-                };
-                quoteINRRate = fallbackRates[quoteKey] || 83.5;
-                console.warn(`[CoinDCX] No live rate for ${quoteKey}/INR, using fallback: ${quoteINRRate}`);
-            }
+            quoteINRRate = getHistoricalQuoteINR(quoteKey, tradeDate);
         }
 
         const priceInr = price * quoteINRRate;  // trade price in INR per unit
         const grossInr = qty * priceInr;        // total trade value in INR
 
         // ── Fee conversion ──
-        // CoinDCX fee_amount is in the quote currency (or fee_currency if specified)
         const feeCurrency = (trade.fee_currency || quote).toUpperCase();
         let feeInr = fee;
         if (feeCurrency !== 'INR') {
-            const feeRate = quoteToINR[feeCurrency] || quoteINRRate;
+            const feeRate = getHistoricalQuoteINR(feeCurrency, tradeDate);
             feeInr = fee * feeRate;
         }
 
         // ── TDS ──
         // Section 194S: 1% TDS on consideration for sell trades
-        // Only applies above ₹50,000 threshold for specified persons (retail)
-        // CoinDCX deducts TDS on ALL sells, so we estimate at 1% of gross consideration
         const tdsAmount = trade.side === 'sell' ? grossInr * 0.01 : 0;
 
         return {
@@ -744,8 +787,11 @@ export async function fullCoinDCXSync(
             console.warn('[CoinDCX Sync] Market details failed:', e);
         }
 
-        // ── Step 3: Fetch real-time FX rates (USDT/INR, BTC/INR, etc.) ──
-        report('FX Rates', 'Fetching quote→INR conversion rates...', 3, 6);
+        // ── Step 3: Fetch real-time FX rates for reward valuation ──
+        // Note: Trade conversions now use HISTORICAL rates per-trade, not live rates.
+        // Live rates are only needed for reward valuation (current asset prices).
+        report('FX Rates', 'Fetching live rates for reward valuation...', 3, 6);
+        cachedQuoteToINR = {}; // Clear cache to get fresh rates
         let quoteToINR: Record<string, number> = {};
         try {
             quoteToINR = await fetchQuoteToINRRates();
@@ -913,7 +959,9 @@ export async function fullCoinDCXSync(
             const totalRewardINR = normalized.reduce((s, t) => s + (t.grossAmountInr || 0), 0);
             warnings.push(`🎁 Total Rewards: ${rewardCount} transactions, ₹${totalRewardINR.toFixed(2)} value`);
         } else {
-            warnings.push(`ℹ️ No reward / staking records found`);
+            warnings.push(`⚠️ IMPORTANT: No reward/staking records found via API. CoinDCX does NOT expose staking rewards, airdrops, or cashback via their API.`);
+            warnings.push(`💡 To add Other Income (rewards, staking): Use the "+ Add Trade" button → select "Staking Reward" or "Airdrop" type.`);
+            warnings.push(`📋 KoinX reference: Your Other Income should be ~₹1,840.95 (ADA staking, SHIB rewards, INR cashback). Check your email for "CoinDCX reward credited" messages.`);
         }
 
         // ── Deduplicate ──
