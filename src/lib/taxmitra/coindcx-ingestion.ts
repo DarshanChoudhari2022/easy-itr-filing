@@ -153,10 +153,16 @@ function computeRowHash(row: Record<string, string>): string {
 
 /**
  * Financial year for a given date (Indian FY: Apr→Mar)
+ * CRITICAL: Uses IST timezone for FY boundary detection.
+ * A trade at 2025-03-31T22:00 UTC = 2025-04-01T03:30 IST → FY 2025-26
  */
 function getFinancialYear(date: Date): string {
-    const m = date.getMonth(); // 0-indexed
-    const y = date.getFullYear();
+    // Convert to IST for accurate FY assignment
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const utcMs = date.getTime() + (date.getTimezoneOffset() * 60 * 1000);
+    const ist = new Date(utcMs + IST_OFFSET_MS);
+    const m = ist.getMonth(); // 0-indexed
+    const y = ist.getFullYear();
     if (m >= 3) {
         return `${y}-${(y + 1).toString().slice(-2)}`;
     }

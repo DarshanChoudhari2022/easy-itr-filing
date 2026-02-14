@@ -763,7 +763,8 @@ export default function CryptoTaxPage() {
         sellTrades: sellTrades.length,
         buyVolume: taxComputation.assetSummaries.reduce((s, a) => s + a.totalBuyValueInr, 0),
         sellVolume: taxComputation.totalConsiderationInr,
-        netGain: taxComputation.taxableCapitalGains,
+        netGain: taxComputation.netGainLossInfo, // True net P&L (gains - losses)
+        taxableGain: taxComputation.taxableCapitalGains, // 115BBH: only profits, no loss offset
         taxPayable: taxComputation.totalTaxLiability,
         tdsCredit: taxComputation.totalTDSCredit,
         uniqueTokens: taxComputation.uniqueAssets,
@@ -780,6 +781,7 @@ export default function CryptoTaxPage() {
       buyVolume: 0,
       sellVolume: 0,
       netGain: 0,
+      taxableGain: 0,
       taxPayable: 0,
       tdsCredit: 0,
       uniqueTokens: 0,
@@ -1118,7 +1120,7 @@ export default function CryptoTaxPage() {
                       <div>
                         <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
                         <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
-                        <p className="text-indigo-200 text-sm mt-1">on ₹{formatCurrency(stats.netGain + stats.otherIncome)} Taxable Income</p>
+                        <p className="text-indigo-200 text-sm mt-1">on ₹{formatCurrency(stats.taxableGain + stats.otherIncome)} Taxable Income (§115BBH)</p>
                         <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess</p>
                       </div>
                       <div className="flex flex-col sm:items-end gap-2">

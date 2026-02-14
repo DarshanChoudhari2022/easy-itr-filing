@@ -562,8 +562,12 @@ async function getMarketDetails(): Promise<Record<string, { base: string; quote:
 // ============= CONVERSION TO NormalizedTransaction =============
 
 function getFY(date: Date): string {
-    const month = date.getMonth(); // 0-11
-    const year = date.getFullYear();
+    // IST-aware FY detection: convert to IST before extracting month/year
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const utcMs = date.getTime() + (date.getTimezoneOffset() * 60 * 1000);
+    const ist = new Date(utcMs + IST_OFFSET_MS);
+    const month = ist.getMonth(); // 0-11
+    const year = ist.getFullYear();
     if (month < 3) {
         return `${year - 1}-${String(year).slice(2)}`;
     }
@@ -911,42 +915,31 @@ export async function fullCoinDCXSync(
         }
 
         // ── Step 4: Fetch ALL trade history ──
+        // fetchCoinDCXTradeHistory already handles pagination internally (up to 10,000 trades)
         report('Trades', 'Fetching complete trade history...', 4, 6);
-        const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
         let tradeCount = 0;
+        const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
+
         console.log(`[CoinDCX Sync] Trade history response:`, {
             success: tradesResult.success,
             error: tradesResult.error,
-            dataType: typeof tradesResult.data,
-            isArray: Array.isArray(tradesResult.data),
             dataLength: Array.isArray(tradesResult.data) ? tradesResult.data.length : 'N/A',
             sample: Array.isArray(tradesResult.data) ? tradesResult.data.slice(0, 2) : tradesResult.data,
         });
-        if (tradesResult.success && tradesResult.data) {
-            if (Array.isArray(tradesResult.data)) {
-                const normalized = convertTradesToNormalized(tradesResult.data, marketMap, quoteToINR);
-                allTransactions.push(...normalized);
-                tradeCount = normalized.length;
-                warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${tradesResult.data.length})`);
-            } else {
-                // Data might be wrapped in an object
-                const dataObj = tradesResult.data as any;
-                const possibleArrays = ['orders', 'trades', 'data', 'results'];
-                let found = false;
-                for (const key of possibleArrays) {
-                    if (dataObj[key] && Array.isArray(dataObj[key])) {
-                        const normalized = convertTradesToNormalized(dataObj[key], marketMap, quoteToINR);
-                        allTransactions.push(...normalized);
-                        tradeCount = normalized.length;
-                        warnings.push(`📈 Trades: ${tradeCount} fetched (from .${key})`);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    warnings.push(`⚠️ Trades: unexpected response format — ${JSON.stringify(tradesResult.data).substring(0, 200)}`);
-                }
-            }
+
+        if (tradesResult.success && tradesResult.data && Array.isArray(tradesResult.data)) {
+            // Deduplicate by trade ID
+            const seenIds = new Set<number>();
+            const uniqueTrades = tradesResult.data.filter(t => {
+                if (seenIds.has(t.id)) return false;
+                seenIds.add(t.id);
+                return true;
+            });
+
+            const normalized = convertTradesToNormalized(uniqueTrades, marketMap, quoteToINR);
+            allTransactions.push(...normalized);
+            tradeCount = normalized.length;
+            warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${uniqueTrades.length}, deduped from ${tradesResult.data.length})`);
         } else {
             warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }

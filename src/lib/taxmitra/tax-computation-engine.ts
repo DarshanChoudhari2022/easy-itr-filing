@@ -1,5 +1,5 @@
 /**
- * Tax Mitra — FIFO Tax Computation Engine v2
+ * Tax Mitra — FIFO Tax Computation Engine v3
  * ============================================
  * Production-ready Indian crypto tax computation under:
  *   - Section 115BBH: 30% flat tax on VDA gains
@@ -13,15 +13,137 @@
  *   ✓ TDS credit applied against total tax liability
  *   ✓ Surcharge + 4% H&E Cess layered on top
  *   ✓ Full FIFO audit trail for CA review
- *
- * Key difference from v1:
- *   - Works with NormalizedTransaction from the ingestion layer
- *   - Produces persistent-ready TaxLot, LotMatch, and VDAReportLine entities
- *   - Separate TDS reconciliation module
- *   - Surcharge calculation included
+ *   ✓ IST timezone for FY assignment (Indian FY: 1 Apr - 31 Mar IST)
+ *   ✓ Canonical event classifier (KoinX-compatible)
+ *   ✓ Fee handling per 115BBH (cost of acquisition only)
  */
 
 import type { NormalizedTransaction, TDSRecord } from './coindcx-ingestion';
+
+// ============= IST TIMEZONE HELPERS =============
+
+/** IST offset in minutes: UTC+5:30 */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/**
+ * Convert any Date to IST-equivalent Date object.
+ * CRITICAL: Indian FY is determined by IST date, NOT UTC.
+ * A trade at 2025-03-31T22:00 UTC is 2025-04-01T03:30 IST → FY 2025-26.
+ */
+function toIST(date: Date): Date {
+    const utcMs = date.getTime() + (date.getTimezoneOffset() * 60 * 1000);
+    return new Date(utcMs + IST_OFFSET_MS);
+}
+
+/**
+ * Pure function: Map any transaction timestamp to its Indian Financial Year.
+ * FY is 1 April to 31 March IST.
+ * Returns format: "2024-25"
+ */
+export function mapTxToFinancialYear(timestamp: Date): string {
+    const ist = toIST(timestamp);
+    const m = ist.getMonth(); // 0-indexed
+    const y = ist.getFullYear();
+    if (m >= 3) { // Apr (3) to Dec (11)
+        return `${y}-${(y + 1).toString().slice(-2)}`;
+    }
+    // Jan (0) to Mar (2) → previous calendar year's FY
+    return `${y - 1}-${y.toString().slice(-2)}`;
+}
+
+// ============= EVENT CLASSIFIER (KoinX-compatible) =============
+
+export type VdaEventType =
+    | 'SPOT_BUY' | 'SPOT_SELL'
+    | 'CRYPTO_TO_CRYPTO_BUY' | 'CRYPTO_TO_CRYPTO_SELL'
+    | 'TRANSFER_SELF'
+    | 'DEPOSIT_FIAT' | 'WITHDRAW_FIAT'
+    | 'DEPOSIT_CRYPTO' | 'WITHDRAW_CRYPTO'
+    | 'REWARD' | 'STAKING' | 'AIRDROP' | 'REFERRAL_BONUS'
+    | 'INTEREST_EARNED' | 'MINING'
+    | 'FEE_ONLY'
+    | 'P2P_INR_BUY' | 'P2P_INR_SELL'
+    | 'DERIVATIVE_TRADE'
+    | 'UNKNOWN';
+
+/**
+ * Canonical classifier — single source of truth for event type.
+ * Rules:
+ *   - TRANSFER_SELF is never a taxable disposal
+ *   - Only disposals of VDA are capital gains events
+ *   - Rewards/staking/airdrops are income at FMV on receipt
+ */
+export function classifyVdaEvent(tx: NormalizedTransaction): VdaEventType {
+    const t = (tx.transactionType || '').toLowerCase().trim();
+    const quote = (tx.quoteAsset || 'INR').toUpperCase();
+    const isFiatQuote = quote === 'INR';
+
+    // Rewards & income types
+    if (t.startsWith('reward_') || t === 'reward') return 'REWARD';
+    if (t === 'staking' || t === 'staking_reward') return 'STAKING';
+    if (t === 'airdrop') return 'AIRDROP';
+    if (t === 'referral_bonus' || t === 'referral') return 'REFERRAL_BONUS';
+    if (t === 'interest_earned' || t === 'interest') return 'INTEREST_EARNED';
+    if (t === 'mining') return 'MINING';
+
+    // Transfers
+    if (t === 'transfer' || t === 'transfer_self' || t === 'internal_transfer') return 'TRANSFER_SELF';
+
+    // Deposits & Withdrawals
+    if (t === 'deposit') {
+        return isFiatQuote || tx.assetSymbol === 'INR' ? 'DEPOSIT_FIAT' : 'DEPOSIT_CRYPTO';
+    }
+    if (t === 'withdrawal' || t === 'withdraw') {
+        return isFiatQuote || tx.assetSymbol === 'INR' ? 'WITHDRAW_FIAT' : 'WITHDRAW_CRYPTO';
+    }
+
+    // Spot trades
+    if (t === 'buy' || t === 'market_buy' || t === 'limit_buy') {
+        return isFiatQuote ? 'SPOT_BUY' : 'CRYPTO_TO_CRYPTO_BUY';
+    }
+    if (t === 'sell' || t === 'market_sell' || t === 'limit_sell') {
+        return isFiatQuote ? 'SPOT_SELL' : 'CRYPTO_TO_CRYPTO_SELL';
+    }
+
+    // Swaps (crypto-to-crypto)
+    if (t === 'swap_in') return 'CRYPTO_TO_CRYPTO_BUY';
+    if (t === 'swap_out') return 'CRYPTO_TO_CRYPTO_SELL';
+
+    // P2P
+    if (t === 'p2p_buy') return 'P2P_INR_BUY';
+    if (t === 'p2p_sell') return 'P2P_INR_SELL';
+
+    // Derivatives
+    if (t.includes('futures') || t.includes('margin') || t.includes('derivative')) return 'DERIVATIVE_TRADE';
+
+    // Fee-only
+    if (t === 'fee' || t === 'fee_only') return 'FEE_ONLY';
+
+    return 'UNKNOWN';
+}
+
+/** Is this event an acquisition (adds to inventory)? */
+function isAcquisitionEvent(eventType: VdaEventType): boolean {
+    return [
+        'SPOT_BUY', 'CRYPTO_TO_CRYPTO_BUY', 'P2P_INR_BUY',
+        'DEPOSIT_CRYPTO', // Deposits add to inventory at zero cost (or FMV if known)
+        'REWARD', 'STAKING', 'AIRDROP', 'REFERRAL_BONUS', 'INTEREST_EARNED', 'MINING',
+    ].includes(eventType);
+}
+
+/** Is this event a disposal (triggers capital gains)? */
+function isDisposalEvent(eventType: VdaEventType): boolean {
+    return [
+        'SPOT_SELL', 'CRYPTO_TO_CRYPTO_SELL', 'P2P_INR_SELL',
+    ].includes(eventType);
+}
+
+/** Is this event an income event (taxed at FMV on receipt)? */
+function isIncomeEvent(eventType: VdaEventType): boolean {
+    return [
+        'REWARD', 'STAKING', 'AIRDROP', 'REFERRAL_BONUS', 'INTEREST_EARNED', 'MINING',
+    ].includes(eventType);
+}
 
 // ============= TYPES =============
 
@@ -164,7 +286,7 @@ export interface TaxComputationResult {
 const VDA_TAX_RATE = 0.30;
 const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
-const ENGINE_VERSION = '2.1.0';
+const ENGINE_VERSION = '3.0.0';
 
 // Surcharge thresholds for AY 2026-27 (on total income basis)
 // For VDA income specifically, marginal surcharge caps may apply
@@ -215,31 +337,36 @@ export function computeVdaTaxForFinancialYear(
         tdsDate: r.tdsDate instanceof Date ? r.tdsDate : new Date(r.tdsDate),
     }));
 
-    // ─── Step 1: Filter to FY & separate by category ───
+    // ─── Step 1: Re-assign FY using IST-aware function (single source of truth) ───
+    // This ensures FY is always computed identically regardless of where it was first set
+    transactions = transactions.map(tx => ({
+        ...tx,
+        financialYear: mapTxToFinancialYear(tx.tradeTimestamp),
+    }));
+
     const fyTransactions = transactions.filter(tx => tx.financialYear === financialYear);
 
-    const trades = fyTransactions.filter(tx =>
-        tx.transactionType === 'buy' || tx.transactionType === 'sell' ||
-        tx.transactionType === 'swap_in' || tx.transactionType === 'swap_out'
-    );
+    // Classify every transaction using the canonical classifier
+    const classified = fyTransactions.map(tx => ({
+        tx,
+        event: classifyVdaEvent(tx),
+    }));
 
-    const rewards = fyTransactions.filter(tx =>
-        tx.transactionType.startsWith('reward_') ||
-        tx.transactionType === 'airdrop' ||
-        tx.transactionType === 'staking' ||
-        tx.transactionType === 'mining' ||
-        tx.transactionType === 'interest_earned'
-    );
+    const trades = classified.filter(c =>
+        isAcquisitionEvent(c.event) || isDisposalEvent(c.event)
+    ).map(c => c.tx);
 
-    // Also include prior-FY buys to build cost basis
-    const priorBuys = transactions.filter(tx =>
-        tx.financialYear !== financialYear &&
-        (tx.transactionType === 'buy' || tx.transactionType === 'swap_in' ||
-            tx.transactionType === 'deposit' || tx.transactionType.startsWith('reward_'))
-    );
+    const rewards = classified.filter(c => isIncomeEvent(c.event)).map(c => c.tx);
+
+    // Also include prior-FY acquisitions to build cost basis (FIFO needs full history)
+    const priorAcquisitions = transactions.filter(tx => {
+        if (tx.financialYear === financialYear) return false;
+        const event = classifyVdaEvent(tx);
+        return isAcquisitionEvent(event);
+    });
 
     // ─── Step 2: Group by asset ───
-    const allRelevantTx = [...priorBuys, ...trades, ...rewards].sort(
+    const allRelevantTx = [...priorAcquisitions, ...trades, ...rewards].sort(
         (a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime()
     );
 
@@ -443,25 +570,60 @@ function computeAssetFIFO(
     );
 
     for (const tx of sorted) {
-        const isBuy = tx.transactionType === 'buy' || tx.transactionType === 'swap_in' ||
-            tx.transactionType === 'deposit' || tx.transactionType.startsWith('reward_');
-        const isSell = tx.transactionType === 'sell' || tx.transactionType === 'swap_out';
+        const eventType = classifyVdaEvent(tx);
+        const isBuy = isAcquisitionEvent(eventType);
+        const isSell = isDisposalEvent(eventType);
+
+        // Skip non-taxable events (self-transfers, fiat deposits/withdrawals)
+        if (eventType === 'TRANSFER_SELF' || eventType === 'DEPOSIT_FIAT' ||
+            eventType === 'WITHDRAW_FIAT' || eventType === 'FEE_ONLY' ||
+            eventType === 'UNKNOWN') {
+            continue;
+        }
 
         if (isBuy) {
-            // Create a new tax lot
-            const costBasis = tx.priceInr || 0;
+            // ─── Fee handling per 115BBH ───
+            // If fee is in base asset (e.g., buying BTC, fee in BTC):
+            //   → Reduce acquired qty, keep cost/unit same
+            //   → Net qty = quantity - fee
+            // If fee is in quote asset (e.g., fee in INR/USDT):
+            //   → Add fee to total cost, increasing cost/unit
+            //   → This IS allowed as "cost of acquisition" per 115BBH
+            const feeAsset = (tx.feeAsset || '').toUpperCase();
+            const feeInBaseAsset = feeAsset === asset.toUpperCase();
+            const feeAmount = tx.feeAmount || 0;
+
+            let netQty = tx.quantity;
+            let costBasis = tx.priceInr || 0; // cost per unit in INR
+            let totalCost = netQty * costBasis;
+
+            if (feeInBaseAsset && feeAmount > 0) {
+                // Fee in base asset: reduce acquired quantity
+                netQty = Math.max(0, tx.quantity - feeAmount);
+            } else if (!feeInBaseAsset && (tx.feeInr || 0) > 0) {
+                // Fee in quote asset: add to cost of acquisition
+                totalCost += (tx.feeInr || 0);
+                costBasis = netQty > 0 ? totalCost / netQty : 0;
+            }
+
+            if (netQty <= 0) continue; // Nothing acquired after fees
+
+            // Map event type to acquisition type
+            let acquisitionType = 'purchase';
+            if (eventType === 'CRYPTO_TO_CRYPTO_BUY') acquisitionType = 'swap';
+            else if (isIncomeEvent(eventType)) acquisitionType = 'reward';
+            else if (eventType === 'DEPOSIT_CRYPTO') acquisitionType = 'transfer';
+
             const lot: TaxLot = {
                 id: `lot-${asset}-${++lotCounter}`,
                 buyTransactionId: tx.externalId,
                 assetSymbol: asset,
-                originalQuantity: tx.quantity,
-                remainingQuantity: tx.quantity,
+                originalQuantity: netQty,
+                remainingQuantity: netQty,
                 costBasisPerUnit: costBasis,
-                totalCostInr: tx.quantity * costBasis,
+                totalCostInr: totalCost,
                 acquisitionDate: tx.tradeTimestamp,
-                acquisitionType: tx.transactionType === 'buy' ? 'purchase' :
-                    tx.transactionType === 'swap_in' ? 'swap' :
-                        tx.transactionType.startsWith('reward_') ? 'reward' : 'transfer',
+                acquisitionType,
                 exchange: tx.exchange,
                 financialYear: tx.financialYear,
                 isFullyConsumed: false,
@@ -469,29 +631,33 @@ function computeAssetFIFO(
             inventory.push(lot);
 
             if (tx.financialYear === targetFY) {
-                totalBought += tx.quantity;
-                totalBuyValue += tx.quantity * costBasis;
+                totalBought += netQty;
+                totalBuyValue += totalCost;
             }
 
         } else if (isSell && tx.financialYear === targetFY) {
-            // FIFO matching
+            // ─── FIFO lot matching for disposals ───
             let remainingToSell = tx.quantity;
-            const salePrice = tx.priceInr;
+            const salePrice = tx.priceInr; // sale price per unit in INR
 
+            // Proceeds = quantity × sale price (no fee deduction per 115BBH)
+            // Under 115BBH, ONLY cost of acquisition is deductible
             totalSold += tx.quantity;
-            totalSellValue += tx.quantity * salePrice;
+            totalSellValue += tx.grossAmountInr || (tx.quantity * salePrice);
 
             while (remainingToSell > 0.00000001 && inventory.length > 0) {
                 const lotIdx = selectLotIndex(inventory, method);
                 if (lotIdx === -1) {
-                    warnings.push(`${asset}: Selling ${remainingToSell.toFixed(8)} without buy lot (possible deposit missing)`);
+                    warnings.push(`${asset}: Selling ${remainingToSell.toFixed(8)} without buy lot (possible deposit/transfer missing)`);
                     break;
                 }
 
                 const lot = inventory[lotIdx];
                 const matchedQty = Math.min(lot.remainingQuantity, remainingToSell);
 
+                // Proceeds: proportional share of total sale value
                 const proceeds = matchedQty * salePrice;
+                // Cost: from the lot (already includes fee adjustments from buy side)
                 const cost = matchedQty * lot.costBasisPerUnit;
                 const gain = proceeds - cost;
 
@@ -518,6 +684,7 @@ function computeAssetFIFO(
                 matches.push(match);
 
                 // 115BBH: Track gains AND losses separately
+                // Losses CANNOT offset gains — each is tracked independently
                 if (gain > 0) {
                     grossGains += gain;
                 } else {
@@ -535,7 +702,7 @@ function computeAssetFIFO(
             }
 
             if (remainingToSell > 0.00000001) {
-                warnings.push(`${asset}: ${remainingToSell.toFixed(8)} units could not be matched to any buy lot`);
+                warnings.push(`${asset}: ${remainingToSell.toFixed(8)} units could not be matched to any buy lot (missing cost basis)`);
             }
         }
     }
@@ -678,9 +845,11 @@ function getAY(fy: string): string {
 }
 
 function formatIndianDate(date: Date): string {
-    const d = date.getDate().toString().padStart(2, '0');
-    const m = (date.getMonth() + 1).toString().padStart(2, '0');
-    const y = date.getFullYear();
+    // Always format in IST for ITR filings
+    const ist = toIST(date);
+    const d = ist.getDate().toString().padStart(2, '0');
+    const m = (ist.getMonth() + 1).toString().padStart(2, '0');
+    const y = ist.getFullYear();
     return `${d}/${m}/${y}`;
 }
 

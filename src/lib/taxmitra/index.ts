@@ -78,8 +78,13 @@ export {
     generateScheduleVDACSV,
     generateTDSReconciliationCSV,
 
+    // Canonical helpers (single source of truth)
+    mapTxToFinancialYear,
+    classifyVdaEvent,
+
     // Types
     type AccountingMethod,
+    type VdaEventType,
     type TaxLot,
     type LotMatch,
     type VDAReportLine,
