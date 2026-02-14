@@ -1524,7 +1524,7 @@ export default function CryptoTaxPage() {
                             {apiSyncing ? 'Syncing...' : 'Sync Now'}
                           </Button>
                           <Button
-                            variant="outline"
+                            variant="default"
                             onClick={() => {
                               clearCredentials();
                               setApiConnected(false);
@@ -1533,9 +1533,9 @@ export default function CryptoTaxPage() {
                               setApiSyncResult(null);
                               toast.success('CoinDCX disconnected');
                             }}
-                            className="border-white/20 text-white hover:bg-white/10"
+                            className="bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 text-xs h-10 px-4"
                           >
-                            Disconnect
+                            <Trash2 className="h-4 w-4 mr-2" /> Disconnect
                           </Button>
                         </div>
                       </>
