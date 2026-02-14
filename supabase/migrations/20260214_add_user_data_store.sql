@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS public.ais_data (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     assessment_year TEXT NOT NULL, -- Used as a key for different data types (e.g. 'taxmitra_transactions', 'taxSettings')
     parsed_data JSONB,
+    file_path TEXT, -- Path to stored file in storage bucket
     source_type TEXT, -- e.g. 'user_data_store'
     status TEXT DEFAULT 'active',
     created_at TIMESTAMPTZ DEFAULT NOW(),
