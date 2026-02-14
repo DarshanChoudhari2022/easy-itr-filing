@@ -16,14 +16,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { saveIncomeSources } from "@/lib/supabase-data-service";
+import { saveIncomeSources, saveUserData, loadUserData, deleteUserData } from "@/lib/supabase-data-service";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Plus, History,
   BarChart3, Settings, Zap, Coins, RefreshCw, ShieldCheck, AlertTriangle,
   CheckCircle, Upload, Eye, EyeOff, Trash2, ArrowUpRight, ArrowDownRight,
   Filter, Sparkles, Target, Activity, Info, XCircle, FileText, Clock,
-  Calendar, CheckCircle2, FileCheck
+  Calendar, CheckCircle2, FileCheck, Gift, Receipt
 } from "lucide-react";
 import {
   // Client-side engine (no DB required)
@@ -105,63 +105,165 @@ export default function CryptoTaxPage() {
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
-  // Client-side parsed data — persisted to localStorage so data survives refresh
-  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>(() => {
-    try {
-      const saved = localStorage.getItem('taxmitra_transactions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Revive Date objects AND coerce numeric fields (JSON.parse may leave them as strings)
-        return parsed.map((tx: any) => ({
-          ...tx,
-          tradeTimestamp: new Date(tx.tradeTimestamp),
-          quantity: Number(tx.quantity) || 0,
-          pricePerUnit: Number(tx.pricePerUnit) || 0,
-          priceInr: Number(tx.priceInr) || 0,
-          grossAmountQuote: Number(tx.grossAmountQuote) || 0,
-          grossAmountInr: Number(tx.grossAmountInr) || 0,
-          feeAmount: Number(tx.feeAmount) || 0,
-          feeInr: Number(tx.feeInr) || 0,
-          tdsAmount: Number(tx.tdsAmount) || 0,
-          tdsRate: Number(tx.tdsRate) || 0,
-        }));
-      }
-    } catch (e) { console.log('Failed to restore transactions from localStorage'); }
-    return [];
-  });
-  const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem('taxmitra_tds');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.map((r: any) => ({ ...r, tdsDate: new Date(r.tdsDate) }));
-      }
-    } catch (e) { console.log('Failed to restore TDS from localStorage'); }
-    return [];
-  });
+  // Client-side parsed data — loaded from DB (primary) and localStorage (cache)
+  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
+  const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
+  const [settings, setSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
+  const [dataLoadedFromDB, setDataLoadedFromDB] = useState(false);
 
-  // Initialize from localStorage if available
-  const [settings, setSettings] = useState<TaxSettings>(() => {
-    const saved = localStorage.getItem('taxSettings');
-    return saved ? JSON.parse(saved) : DEFAULT_TAX_SETTINGS;
-  });
+  // Helper: revive transaction data from JSON (fix Date objects and numeric fields)
+  const reviveTransactions = (parsed: any[]): NormalizedTransaction[] => {
+    return parsed.map((tx: any) => ({
+      ...tx,
+      tradeTimestamp: new Date(tx.tradeTimestamp),
+      quantity: Number(tx.quantity) || 0,
+      pricePerUnit: Number(tx.pricePerUnit) || 0,
+      priceInr: Number(tx.priceInr) || 0,
+      grossAmountQuote: Number(tx.grossAmountQuote) || 0,
+      grossAmountInr: Number(tx.grossAmountInr) || 0,
+      feeAmount: Number(tx.feeAmount) || 0,
+      feeInr: Number(tx.feeInr) || 0,
+      tdsAmount: Number(tx.tdsAmount) || 0,
+      tdsRate: Number(tx.tdsRate) || 0,
+    }));
+  };
 
-  // Save settings to localStorage
+  const reviveTDSRecords = (parsed: any[]): TDSRecord[] => {
+    return parsed.map((r: any) => ({ ...r, tdsDate: new Date(r.tdsDate) }));
+  };
+
+  // ── LOAD DATA FROM SUPABASE (primary) → localStorage (fallback cache) ──
   useEffect(() => {
+    const loadDataFromDB = async () => {
+      if (!user) return;
+      try {
+        // Load all data from Supabase in parallel
+        const [dbTransactions, dbTDS, dbSettings] = await Promise.all([
+          loadUserData<any[]>('taxmitra_transactions'),
+          loadUserData<any[]>('taxmitra_tds'),
+          loadUserData<TaxSettings>('taxSettings'),
+        ]);
+
+        let hasDBData = false;
+
+        if (dbTransactions && Array.isArray(dbTransactions) && dbTransactions.length > 0) {
+          const revived = reviveTransactions(dbTransactions);
+          setParsedTransactions(revived);
+          localStorage.setItem('taxmitra_transactions', JSON.stringify(dbTransactions));
+          hasDBData = true;
+          console.log(`[CryptoTax] ✅ Loaded ${revived.length} transactions from database`);
+        }
+
+        if (dbTDS && Array.isArray(dbTDS) && dbTDS.length > 0) {
+          const revived = reviveTDSRecords(dbTDS);
+          setParsedTDSRecords(revived);
+          localStorage.setItem('taxmitra_tds', JSON.stringify(dbTDS));
+          hasDBData = true;
+          console.log(`[CryptoTax] ✅ Loaded ${revived.length} TDS records from database`);
+        }
+
+        if (dbSettings) {
+          setSettings(dbSettings);
+          localStorage.setItem('taxSettings', JSON.stringify(dbSettings));
+          console.log('[CryptoTax] ✅ Loaded settings from database');
+        }
+
+        // If no DB data, try localStorage as fallback
+        if (!hasDBData) {
+          console.log('[CryptoTax] No DB data found, checking localStorage...');
+          try {
+            const localTx = localStorage.getItem('taxmitra_transactions');
+            if (localTx) {
+              const parsed = JSON.parse(localTx);
+              const revived = reviveTransactions(parsed);
+              setParsedTransactions(revived);
+              // Migrate localStorage data to DB
+              saveUserData('taxmitra_transactions', parsed).catch(() => { });
+              console.log(`[CryptoTax] Migrated ${revived.length} transactions from localStorage to DB`);
+            }
+          } catch (e) { console.log('Failed to restore transactions from localStorage'); }
+          try {
+            const localTDS = localStorage.getItem('taxmitra_tds');
+            if (localTDS) {
+              const parsed = JSON.parse(localTDS);
+              const revived = reviveTDSRecords(parsed);
+              setParsedTDSRecords(revived);
+              // Migrate localStorage data to DB
+              saveUserData('taxmitra_tds', parsed).catch(() => { });
+              console.log(`[CryptoTax] Migrated ${revived.length} TDS records from localStorage to DB`);
+            }
+          } catch (e) { console.log('Failed to restore TDS from localStorage'); }
+        }
+
+        if (!dbSettings) {
+          try {
+            const localSettings = localStorage.getItem('taxSettings');
+            if (localSettings) {
+              const parsed = JSON.parse(localSettings);
+              setSettings(parsed);
+              saveUserData('taxSettings', parsed).catch(() => { });
+            }
+          } catch (e) { /* ignore */ }
+        }
+
+        setDataLoadedFromDB(true);
+      } catch (err) {
+        console.error('[CryptoTax] Error loading from DB:', err);
+        // Final fallback to localStorage
+        try {
+          const localTx = localStorage.getItem('taxmitra_transactions');
+          if (localTx) setParsedTransactions(reviveTransactions(JSON.parse(localTx)));
+          const localTDS = localStorage.getItem('taxmitra_tds');
+          if (localTDS) setParsedTDSRecords(reviveTDSRecords(JSON.parse(localTDS)));
+          const localSettings = localStorage.getItem('taxSettings');
+          if (localSettings) setSettings(JSON.parse(localSettings));
+        } catch (e) { /* ignore */ }
+        setDataLoadedFromDB(true);
+      }
+    };
+
+    loadDataFromDB();
+  }, [user]);
+
+  // ── PERSIST to Supabase + localStorage cache whenever data changes ──
+  useEffect(() => {
+    if (!dataLoadedFromDB || !user) return; // Don't save until initial load completes
     localStorage.setItem('taxSettings', JSON.stringify(settings));
-  }, [settings]);
+    // Debounce DB save
+    const timer = setTimeout(() => {
+      saveUserData('taxSettings', settings).catch(e =>
+        console.warn('[CryptoTax] Failed to save settings to DB:', e)
+      );
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [settings, dataLoadedFromDB, user]);
 
-  // Persist parsed transactions & TDS to localStorage whenever they change
   useEffect(() => {
+    if (!dataLoadedFromDB || !user) return;
     if (parsedTransactions.length > 0) {
       localStorage.setItem('taxmitra_transactions', JSON.stringify(parsedTransactions));
+      // Debounced save to DB
+      const timer = setTimeout(() => {
+        saveUserData('taxmitra_transactions', parsedTransactions).catch(e =>
+          console.warn('[CryptoTax] Failed to save transactions to DB:', e)
+        );
+      }, 2000);
+      return () => clearTimeout(timer);
     }
-  }, [parsedTransactions]);
+  }, [parsedTransactions, dataLoadedFromDB, user]);
+
   useEffect(() => {
+    if (!dataLoadedFromDB || !user) return;
     if (parsedTDSRecords.length > 0) {
       localStorage.setItem('taxmitra_tds', JSON.stringify(parsedTDSRecords));
+      const timer = setTimeout(() => {
+        saveUserData('taxmitra_tds', parsedTDSRecords).catch(e =>
+          console.warn('[CryptoTax] Failed to save TDS to DB:', e)
+        );
+      }, 2000);
+      return () => clearTimeout(timer);
     }
-  }, [parsedTDSRecords]);
+  }, [parsedTDSRecords, dataLoadedFromDB, user]);
 
   // Assessment Year state
   const [assessmentYear, setAssessmentYear] = useState('2026-27');
@@ -261,7 +363,7 @@ export default function CryptoTaxPage() {
       const result = computeVdaTaxForFinancialYear(txs, tds, fy, settings.accountingMethod as any);
       setTaxComputation(result);
 
-      // ── Persist to localStorage so the Filing Wizard can auto-read ──
+      // ── Persist to Supabase + localStorage so the Filing Wizard can auto-read ──
       const cryptoTaxSummary = {
         taxableCapitalGains: result.taxableCapitalGains,
         totalTaxLiability: result.totalTaxLiability,
@@ -277,7 +379,11 @@ export default function CryptoTaxPage() {
         computedAt: new Date().toISOString(),
       };
       localStorage.setItem('taxmitra_crypto_tax_summary', JSON.stringify(cryptoTaxSummary));
-      console.log('[CryptoTax] Saved tax summary to localStorage:', cryptoTaxSummary);
+      // Also save to Supabase for cross-device access
+      saveUserData('taxmitra_crypto_tax_summary', cryptoTaxSummary).catch(e =>
+        console.warn('[CryptoTax] Failed to save tax summary to DB:', e)
+      );
+      console.log('[CryptoTax] Saved tax summary to DB + localStorage:', cryptoTaxSummary);
 
       // ── Persist to Supabase income_sources so it appears in Filing Wizard ──
       if (user) {
@@ -626,9 +732,14 @@ export default function CryptoTaxPage() {
     setImportSessions([]);
     setImportResult(null);
 
-    // Clear localStorage
+    // Clear localStorage + database
     localStorage.removeItem('taxmitra_transactions');
     localStorage.removeItem('taxmitra_tds');
+    localStorage.removeItem('taxmitra_crypto_tax_summary');
+    // Also clear from Supabase
+    deleteUserData('taxmitra_transactions').catch(() => { });
+    deleteUserData('taxmitra_tds').catch(() => { });
+    deleteUserData('taxmitra_crypto_tax_summary').catch(() => { });
 
     // Also try DB delete (non-blocking)
     try {
@@ -655,7 +766,9 @@ export default function CryptoTaxPage() {
         netGain: taxComputation.taxableCapitalGains,
         taxPayable: taxComputation.totalTaxLiability,
         tdsCredit: taxComputation.totalTDSCredit,
-        uniqueTokens: taxComputation.uniqueAssets
+        uniqueTokens: taxComputation.uniqueAssets,
+        otherIncome: taxComputation.otherVDAIncome || 0,
+        brokerage: taxComputation.totalBrokerageFee || 0
       };
     }
 
@@ -669,7 +782,9 @@ export default function CryptoTaxPage() {
       netGain: 0,
       taxPayable: 0,
       tdsCredit: 0,
-      uniqueTokens: 0
+      uniqueTokens: 0,
+      otherIncome: 0,
+      brokerage: 0
     };
   }, [filteredTrades, taxComputation]);
 
@@ -955,7 +1070,7 @@ export default function CryptoTaxPage() {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* Stats Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   <StatCard
                     label="Total Trades"
                     value={stats.totalTrades.toString()}
@@ -981,6 +1096,19 @@ export default function CryptoTaxPage() {
                     icon={<Target className="h-5 w-5 text-purple-600" />}
                     highlight={stats.netGain >= 0 ? 'positive' : 'negative'}
                   />
+                  <StatCard
+                    label="Other Income"
+                    value={formatCurrency(stats.otherIncome)}
+                    subtext="Rewards, Staking, Airdrops"
+                    icon={<Gift className="h-5 w-5 text-pink-600" />}
+                    highlight="positive"
+                  />
+                  <StatCard
+                    label="Brokerage Fees"
+                    value={formatCurrency(stats.brokerage)}
+                    subtext="Trading expenses"
+                    icon={<Receipt className="h-5 w-5 text-gray-600" />}
+                  />
                 </div>
 
                 {/* Tax Summary Card */}
@@ -990,7 +1118,8 @@ export default function CryptoTaxPage() {
                       <div>
                         <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
                         <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
-                        <p className="text-indigo-200 text-sm mt-2">@ 30% flat rate + 4% cess</p>
+                        <p className="text-indigo-200 text-sm mt-1">on ₹{formatCurrency(stats.netGain + stats.otherIncome)} Taxable Income</p>
+                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess</p>
                       </div>
                       <div className="flex flex-col sm:items-end gap-2">
                         <div className="flex items-center gap-2">

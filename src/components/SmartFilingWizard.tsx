@@ -33,6 +33,7 @@ import { StepExplainer } from '@/components/filing/StepExplainer';
 import { EnhancedDeductionsStep } from '@/components/filing/EnhancedDeductionsStep';
 import { RegimeComparisonCard } from '@/components/filing/RegimeComparisonCard';
 import AISUploader from '@/components/AISUploader';
+import { loadUserData } from '@/lib/supabase-data-service';
 
 // ============= TYPES =============
 interface IncomeSource {
@@ -445,9 +446,33 @@ export function SmartFilingWizard() {
         }
     }, [step, maxStepReached]);
 
-    // Fetch crypto data from localStorage (primary) or database (fallback)
+    // Fetch crypto data from Supabase (primary) or localStorage (cache) or database (fallback)
     const fetchCryptoData = useCallback(async () => {
-        // 1. Primary: Read from localStorage (saved by Crypto Tax page)
+        if (!user) return;
+
+        // 1. Primary: Read from Supabase user data store (saved by Crypto Tax page)
+        try {
+            const summary = await loadUserData<any>('taxmitra_crypto_tax_summary');
+            if (summary && summary.taxableCapitalGains !== undefined) {
+                setIncome(prev => ({
+                    ...prev,
+                    hasCrypto: true,
+                    cryptoGains: Math.round(summary.taxableCapitalGains || 0),
+                    cryptoTDS: Math.round(summary.totalTDSCredit || 0)
+                }));
+                console.log('[Wizard] ✅ Loaded crypto tax from Supabase database:', {
+                    gains: summary.taxableCapitalGains,
+                    tds: summary.totalTDSCredit,
+                    fy: summary.financialYear,
+                    computedAt: summary.computedAt
+                });
+                return; // Found it in DB, no need for fallbacks
+            }
+        } catch (e) {
+            console.log('[Wizard] Supabase user data lookup failed, trying localStorage...');
+        }
+
+        // 2. Fallback: Read from localStorage (cache from same browser)
         try {
             const saved = localStorage.getItem('taxmitra_crypto_tax_summary');
             if (saved) {
@@ -472,8 +497,7 @@ export function SmartFilingWizard() {
             console.log('[Wizard] No localStorage crypto data, trying DB...');
         }
 
-        // 2. Fallback: Read from income_sources in Supabase
-        if (!user) return;
+        // 3. Fallback: Read from income_sources in Supabase
         try {
             const { data } = await supabase
                 .from('income_sources' as any)
@@ -496,7 +520,7 @@ export function SmartFilingWizard() {
             console.log('[Wizard] income_sources lookup failed:', err);
         }
 
-        // 3. Legacy fallback: Read from crypto_trades table
+        // 4. Legacy fallback: Read from crypto_trades table
         try {
             const { data: trades } = await supabase
                 .from('crypto_trades')

@@ -139,6 +139,9 @@ export interface TaxComputationResult {
     tdsReconciliation: TDSReconciliation;
     totalTDSCredit: number;
 
+    // Expenses
+    totalBrokerageFee: number;
+
     // Final
     netTaxPayable: number;           // Positive = pay, Negative = refund
     isRefund: boolean;
@@ -258,6 +261,7 @@ export function computeVdaTaxForFinancialYear(
     let grossGains = 0;
     let grossLosses = 0;
     let totalTDSFromTrades = 0;
+    let totalFee = 0;
 
     for (const [asset, txs] of Object.entries(byAsset)) {
         const result = computeAssetFIFO(asset, txs, financialYear, method);
@@ -273,8 +277,13 @@ export function computeVdaTaxForFinancialYear(
         grossGains += result.summary.grossGains;
         grossLosses += result.summary.grossLosses;
 
-        // Collect TDS from ALL sell-type trades (sell + swap_out are both taxable disposals)
+        // Collect TDS and Fees from ALL sell-type and buy-type trades
         for (const tx of txs) {
+            // Brokerage fee applies to all trades in this FY
+            if (tx.financialYear === financialYear) {
+                totalFee += tx.feeInr || 0;
+            }
+
             if ((tx.transactionType === 'sell' || tx.transactionType === 'swap_out') && tx.financialYear === financialYear) {
                 totalTDSFromTrades += tx.tdsAmount || 0;
             }
@@ -383,6 +392,8 @@ export function computeVdaTaxForFinancialYear(
 
         tdsReconciliation: tdsRecon,
         totalTDSCredit: Math.round(totalTDSCredit * 100) / 100,
+
+        totalBrokerageFee: Math.round(totalFee * 100) / 100,
 
         netTaxPayable: Math.round(netTaxPayable * 100) / 100,
         isRefund: netTaxPayable < 0,

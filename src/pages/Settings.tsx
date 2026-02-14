@@ -24,7 +24,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { isValidPAN, isValidMobile, isValidPincode, INDIAN_STATES } from '@/lib/validators';
-import { updateProfileKYC } from '@/lib/supabase-data-service';
+import { updateProfileKYC, saveUserData, loadUserData } from '@/lib/supabase-data-service';
 import BankDetailsManager from '@/components/BankDetailsManager';
 
 export default function SettingsPage() {
@@ -91,6 +91,24 @@ export default function SettingsPage() {
         dataSharing: false,
         analyticsTracking: true
     });
+
+    // Load notification & privacy settings from Supabase
+    useEffect(() => {
+        if (!user) return;
+        const loadSettings = async () => {
+            try {
+                const [dbNotif, dbPriv] = await Promise.all([
+                    loadUserData<typeof notifications>('notificationSettings'),
+                    loadUserData<typeof privacy>('privacySettings'),
+                ]);
+                if (dbNotif) setNotifications(dbNotif);
+                if (dbPriv) setPrivacy(dbPriv);
+            } catch (e) {
+                console.warn('[Settings] Failed to load settings from DB:', e);
+            }
+        };
+        loadSettings();
+    }, [user]);
 
     // Load user data
     useEffect(() => {
@@ -206,16 +224,26 @@ export default function SettingsPage() {
         setSaving(false);
     };
 
-    // Save notification settings
-    const handleSaveNotifications = () => {
+    // Save notification settings (DB + localStorage cache)
+    const handleSaveNotifications = async () => {
         localStorage.setItem('notificationSettings', JSON.stringify(notifications));
-        toast.success('Notification preferences saved');
+        try {
+            await saveUserData('notificationSettings', notifications);
+            toast.success('Notification preferences saved');
+        } catch {
+            toast.success('Notification preferences saved locally');
+        }
     };
 
-    // Save privacy settings
-    const handleSavePrivacy = () => {
+    // Save privacy settings (DB + localStorage cache)
+    const handleSavePrivacy = async () => {
         localStorage.setItem('privacySettings', JSON.stringify(privacy));
-        toast.success('Privacy settings saved');
+        try {
+            await saveUserData('privacySettings', privacy);
+            toast.success('Privacy settings saved');
+        } catch {
+            toast.success('Privacy settings saved locally');
+        }
     };
 
     // Save KYC

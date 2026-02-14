@@ -625,3 +625,120 @@ export async function getFileUrl(filePath: string) {
 
     return data.signedUrl;
 }
+
+// ============ USER DATA STORE (replaces localStorage) ============
+// Generic key-value store per user in Supabase.
+// Uses the existing `filing_steps_state` table's `answers` JSON column
+// with a composite key approach: user_id identifies the user,
+// and we store all user data as a JSON blob.
+// This ensures data is available from any browser/device.
+
+/**
+ * Save a piece of user data to Supabase.
+ * This stores data in a per-user JSON blob that persists across browsers.
+ * 
+ * Data keys used:
+ * - taxmitra_transactions: NormalizedTransaction[]
+ * - taxmitra_tds: TDSRecord[]
+ * - taxSettings: TaxSettings
+ * - taxmitra_crypto_tax_summary: crypto tax computation result
+ * - taxmitra_coindcx_creds: CoinDCX API credentials (base64 encoded)
+ * - notificationSettings: notification preferences
+ * - privacySettings: privacy preferences
+ */
+
+// We use a separate table approach with the 'ais_data' pattern — 
+// upsert keyed on (user_id, data_key).
+// Since we might not have a custom table, we'll use a generic approach
+// with the existing tables.
+
+export async function saveUserData(dataKey: string, value: any): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // Use ais_data table with assessment_year = data_key as a generic store
+    // This is a workaround — ideally we'd have a dedicated user_data table
+    const { error } = await supabase
+        .from('ais_data' as any)
+        .upsert({
+            user_id: user.id,
+            assessment_year: `__userdata__${dataKey}`,
+            parsed_data: value,
+            source_type: 'user_data_store',
+            status: 'active',
+            updated_at: new Date().toISOString(),
+        }, {
+            onConflict: 'user_id,assessment_year',
+        });
+
+    if (error) {
+        console.warn(`[UserDataStore] Failed to save '${dataKey}':`, error.message);
+        throw error;
+    }
+    console.log(`[UserDataStore] ✅ Saved '${dataKey}' to database`);
+}
+
+export async function loadUserData<T = any>(dataKey: string): Promise<T | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data, error } = await supabase
+        .from('ais_data' as any)
+        .select('parsed_data')
+        .eq('user_id', user.id)
+        .eq('assessment_year', `__userdata__${dataKey}`)
+        .maybeSingle();
+
+    if (error) {
+        console.warn(`[UserDataStore] Failed to load '${dataKey}':`, error.message);
+        return null;
+    }
+
+    if (!data) return null;
+    return (data as any).parsed_data as T;
+}
+
+export async function deleteUserData(dataKey: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+        .from('ais_data' as any)
+        .delete()
+        .eq('user_id', user.id)
+        .eq('assessment_year', `__userdata__${dataKey}`);
+
+    if (error) {
+        console.warn(`[UserDataStore] Failed to delete '${dataKey}':`, error.message);
+    }
+}
+
+/**
+ * Save multiple data keys at once (batch save).
+ * Each key-value pair is saved as a separate row.
+ */
+export async function saveUserDataBatch(entries: Record<string, any>): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const rows = Object.entries(entries).map(([key, value]) => ({
+        user_id: user.id,
+        assessment_year: `__userdata__${key}`,
+        parsed_data: value,
+        source_type: 'user_data_store',
+        status: 'active',
+        updated_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase
+        .from('ais_data' as any)
+        .upsert(rows, {
+            onConflict: 'user_id,assessment_year',
+        });
+
+    if (error) {
+        console.warn(`[UserDataStore] Batch save failed:`, error.message);
+        throw error;
+    }
+    console.log(`[UserDataStore] ✅ Batch saved ${rows.length} keys`);
+}

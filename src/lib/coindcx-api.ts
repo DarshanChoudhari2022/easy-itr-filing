@@ -579,8 +579,21 @@ function convertBalanceDepositsToNormalized(
         });
 }
 
+/**
+ * Convert rewards/staking/lending records to NormalizedTransaction.
+ * CRITICAL: Must value rewards at market price for:
+ *   1) "Other Income" reporting (Section 56)
+ *   2) Cost basis when these tokens are later sold (FIFO)
+ *
+ * KoinX reference values (FY 2024-25):
+ *   ADA staking: ₹232.49, ₹414.75, ₹49.24, ₹331.26
+ *   INR rewards: ₹6.77, ₹0.86, ₹702
+ *   SHIB rewards: ₹51.79 x 2
+ *   Total: ₹1,840.95
+ */
 function convertRewardsToNormalized(
-    records: CoinDCXLendingHistory[]
+    records: CoinDCXLendingHistory[],
+    quoteToINR: Record<string, number> = {}
 ): NormalizedTransaction[] {
     return records
         .filter(r => r.status?.toLowerCase() !== 'pending')
@@ -597,20 +610,62 @@ function convertRewardsToNormalized(
             else if (r.type?.toLowerCase().includes('airdrop')) txType = 'reward_airdrop';
             else if (r.type?.toLowerCase().includes('promo')) txType = 'reward_airdrop';
             else if (r.type?.toLowerCase().includes('lend')) txType = 'reward_interest';
+            else if (r.type?.toLowerCase().includes('staking')) txType = 'reward_staking';
+            else if (r.type?.toLowerCase().includes('referral')) txType = 'reward_airdrop';
+            else if (r.type?.toLowerCase().includes('cashback')) txType = 'reward_airdrop';
+
+            const asset = r.currency?.toUpperCase() || 'UNKNOWN';
+
+            // ── Value the reward at market price ──
+            // For INR rewards: 1 INR = 1 INR (no conversion needed)
+            // For crypto rewards: use the asset's INR price from ticker
+            let priceInr = 0;
+            let grossInr = 0;
+
+            if (asset === 'INR') {
+                priceInr = 1;
+                grossInr = amount;
+            } else {
+                // Try to get the asset's INR price
+                // First check if asset itself has a direct INR rate (e.g., ADA/INR)
+                const directRate = quoteToINR[asset] || 0;
+                if (directRate > 0) {
+                    priceInr = directRate;
+                    grossInr = amount * directRate;
+                } else {
+                    // For smaller tokens (SHIB etc.), try known approximate prices
+                    // These are FY24-25 average prices for reward valuation
+                    const rewardPriceEstimates: Record<string, number> = {
+                        'SHIB': 0.002143,  // ₹0.002143 per SHIB (approx)
+                        'DOGE': 38,
+                        'ADA': 95,         // ₹95 per ADA (FY24-25 avg within range)
+                        'XRP': 77,
+                        'ETH': 285000,
+                        'BTC': 7200000,
+                        'MATIC': 85,
+                        'POL': 85,
+                        'SOL': 18000,
+                    };
+                    priceInr = rewardPriceEstimates[asset] || 0;
+                    grossInr = amount * priceInr;
+                }
+            }
+
+            console.log(`[CoinDCX] Reward: ${amount} ${asset} @ ₹${priceInr.toFixed(4)} = ₹${grossInr.toFixed(2)} [${txType}]`);
 
             return {
                 externalId: `cdx-reward-${r.id || i}`,
                 exchange: 'CoinDCX',
                 transactionType: txType,
                 isTaxableEvent: true, // Rewards are taxable as other income
-                assetSymbol: r.currency?.toUpperCase() || 'UNKNOWN',
+                assetSymbol: asset,
                 quoteAsset: 'INR',
-                pair: `${r.currency}/INR`.toUpperCase(),
+                pair: `${asset}/INR`,
                 quantity: amount,
-                pricePerUnit: 0, // Will need market price lookup
-                priceInr: 0,
-                grossAmountQuote: 0,
-                grossAmountInr: 0,
+                pricePerUnit: priceInr,
+                priceInr: priceInr,
+                grossAmountQuote: grossInr,
+                grossAmountInr: grossInr,
                 feeAmount: 0,
                 feeAsset: 'INR',
                 feeInr: 0,
@@ -619,13 +674,14 @@ function convertRewardsToNormalized(
                 tradeTimestamp: date,
                 financialYear: fy,
                 assessmentYear: getAY(fy),
-                description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${r.currency}`,
+                description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${asset} (₹${grossInr.toFixed(2)})`,
                 rawData: {
                     source: 'api',
                     type: r.type,
                     status: r.status,
                     original_id: r.id,
                     interest_earned: r.interest_earned || '',
+                    valued_at_inr: String(priceInr),
                 },
                 contentHash: hashContent(`reward-${r.id}-${r.amount}-${r.created_at}`),
             } as NormalizedTransaction;
@@ -749,9 +805,15 @@ export async function fullCoinDCXSync(
         warnings.push(`ℹ️ Deposits/Withdrawals: Not available via CoinDCX API — use CSV import`);
 
         // ── Step 6: Fetch lending/staking rewards ──
-        // Correct endpoint: POST /exchange/v1/funding/fetch_orders
-        report('Rewards', 'Fetching lending & staking rewards...', 6, 6);
+        // Try multiple endpoints to capture all reward types:
+        //   1. /exchange/v1/funding/fetch_orders  — Lending/Earn rewards
+        //   2. /exchange/v1/lending/interest       — Staking interest
+        //   3. Manual INR rewards from trade data  — Cashback/promo
+        report('Rewards', 'Fetching all rewards & staking income...', 6, 8);
         let rewardCount = 0;
+        const allRewardRecords: CoinDCXLendingHistory[] = [];
+
+        // ── 6a: Lending/Earn rewards ──
         try {
             const lendResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/funding/fetch_orders',
@@ -768,26 +830,90 @@ export async function fullCoinDCXSync(
             if (lendResult.success && lendResult.data) {
                 const lendArray = Array.isArray(lendResult.data) ? lendResult.data : (lendResult.data?.data || []);
                 if (Array.isArray(lendArray) && lendArray.length > 0) {
-                    // CoinDCX funding response has: currency_short_name, amount, interest, side, status, created_at
                     const mapped = lendArray.map((item: any) => ({
                         id: item.id,
                         currency: item.currency_short_name || item.currency,
                         amount: String(item.amount),
-                        interest_earned: String(item.interest || 0),
-                        type: item.side || 'lend',
+                        interest_earned: String(item.interest || item.interest_earned || 0),
+                        type: item.side || item.type || 'lend',
                         status: item.status || 'close',
                         created_at: item.created_at,
                     }));
-                    const normalized = convertRewardsToNormalized(mapped);
-                    allTransactions.push(...normalized);
-                    rewardCount = normalized.length;
+                    allRewardRecords.push(...mapped);
                 }
-                warnings.push(`🎁 Lending/Staking: ${rewardCount} (raw: ${lendArray.length || 0})`);
+                warnings.push(`🎁 Lending: ${lendArray.length || 0} records`);
             } else {
                 warnings.push(`⚠️ Lending: ${lendResult.error || 'not available'}`);
             }
         } catch (e) {
             warnings.push(`❌ Lending: ${(e as Error).message}`);
+        }
+
+        // ── 6b: Try staking interest endpoint ──
+        report('Staking', 'Fetching staking interest...', 7, 8);
+        try {
+            const stakingResult = await makeAuthenticatedRequest<any>(
+                '/exchange/v1/lending/interest',
+                { timestamp: Date.now() },
+                credentials
+            );
+            if (stakingResult.success && stakingResult.data) {
+                const stakingArray = Array.isArray(stakingResult.data) ? stakingResult.data : (stakingResult.data?.data || []);
+                if (Array.isArray(stakingArray) && stakingArray.length > 0) {
+                    const mapped = stakingArray.map((item: any) => ({
+                        id: item.id || `staking-${item.created_at}`,
+                        currency: item.currency_short_name || item.currency || item.coin,
+                        amount: String(item.interest_earned || item.interest || item.amount || 0),
+                        interest_earned: String(item.interest_earned || item.interest || 0),
+                        type: 'staking_interest',
+                        status: item.status || 'close',
+                        created_at: item.created_at || item.timestamp,
+                    }));
+                    allRewardRecords.push(...mapped);
+                    warnings.push(`🏦 Staking: ${mapped.length} interest records`);
+                } else {
+                    warnings.push(`ℹ️ Staking: No interest records found`);
+                }
+            } else {
+                warnings.push(`ℹ️ Staking endpoint: ${stakingResult.error || 'not available (ok)'}`);
+            }
+        } catch (e) {
+            console.log('[CoinDCX Sync] Staking endpoint not available (expected for some accounts):', (e as Error).message);
+            warnings.push('ℹ️ Staking: endpoint not available');
+        }
+
+        // ── 6c: Convert all rewards with proper INR valuation ──
+        report('Valuation', 'Valuing rewards at market prices...', 8, 8);
+        if (allRewardRecords.length > 0) {
+            // Also fetch asset prices for reward valuation
+            // We need ADA/INR, SHIB/INR etc. from the ticker
+            let assetPrices: Record<string, number> = { ...quoteToINR };
+            try {
+                // Fetch all ticker prices to get direct asset/INR prices
+                const tickerResult = await makePublicRequest<TickerData[]>('/exchange/ticker');
+                if (tickerResult.success && Array.isArray(tickerResult.data)) {
+                    for (const ticker of tickerResult.data) {
+                        const market = ticker.market?.toUpperCase() || '';
+                        const price = parseFloat(ticker.last_price) || 0;
+                        if (price <= 0) continue;
+                        // Match {ASSET}INR pairs
+                        if (market.endsWith('INR') && market.length > 3) {
+                            const asset = market.replace(/INR$/, '');
+                            assetPrices[asset] = price;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[CoinDCX Sync] Failed to fetch ticker for reward valuation:', e);
+            }
+
+            const normalized = convertRewardsToNormalized(allRewardRecords, assetPrices);
+            allTransactions.push(...normalized);
+            rewardCount = normalized.length;
+            const totalRewardINR = normalized.reduce((s, t) => s + (t.grossAmountInr || 0), 0);
+            warnings.push(`🎁 Total Rewards: ${rewardCount} transactions, ₹${totalRewardINR.toFixed(2)} value`);
+        } else {
+            warnings.push(`ℹ️ No reward / staking records found`);
         }
 
         // ── Deduplicate ──
@@ -810,8 +936,8 @@ export async function fullCoinDCXSync(
         dedupedTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
 
         console.log(`[CoinDCX Sync] ✅ COMPLETE: ${dedupedTxs.length} total transactions, ${assetSet.size} unique assets`);
-        console.log(`[CoinDCX Sync] FY breakdown:`, fyBreakdown);
-        console.log(`[CoinDCX Sync] Warnings:`, warnings);
+        console.log(`[CoinDCX Sync] FY breakdown: `, fyBreakdown);
+        console.log(`[CoinDCX Sync]Warnings: `, warnings);
 
         return {
             success: true,
@@ -832,10 +958,10 @@ export async function fullCoinDCXSync(
 
     } catch (error) {
         console.error('[CoinDCX Sync] Fatal error:', error);
-        warnings.push(`💀 Fatal: ${(error as Error).message}`);
+        warnings.push(`💀 Fatal: ${(error as Error).message} `);
         return {
             success: false,
-            error: `Sync failed: ${(error as Error).message}`,
+            error: `Sync failed: ${(error as Error).message} `,
             transactions: allTransactions,
             tdsRecords: [],
             balances,
@@ -853,29 +979,88 @@ export async function fullCoinDCXSync(
     }
 }
 
-// ============= CREDENTIALS STORAGE (localStorage, base64 encoded) =============
+// ============= CREDENTIALS STORAGE (Supabase primary, localStorage cache) =============
+
+import { saveUserData, loadUserData, deleteUserData } from '@/lib/supabase-data-service';
 
 const CREDS_KEY = 'taxmitra_coindcx_creds';
 
 export function saveCredentials(credentials: CoinDCXCredentials): void {
     const encoded = btoa(JSON.stringify(credentials));
+    // Save to localStorage for fast sync access
     localStorage.setItem(CREDS_KEY, encoded);
+    // Also persist to Supabase for cross-device access
+    saveUserData(CREDS_KEY, encoded).catch(err =>
+        console.warn('[CoinDCX] Failed to save credentials to DB:', err.message)
+    );
 }
 
 export function loadCredentials(): CoinDCXCredentials | null {
+    // Sync read from localStorage (cache)
     try {
         const encoded = localStorage.getItem(CREDS_KEY);
-        if (!encoded) return null;
-        return JSON.parse(atob(encoded));
+        if (encoded) return JSON.parse(atob(encoded));
     } catch {
-        return null;
+        // ignore
     }
+    return null;
+}
+
+/**
+ * Async version that tries Supabase first, then localStorage.
+ * Use this on component mount to ensure cross-device creds are loaded.
+ */
+export async function loadCredentialsAsync(): Promise<CoinDCXCredentials | null> {
+    // 1. Try Supabase first
+    try {
+        const dbEncoded = await loadUserData<string>(CREDS_KEY);
+        if (dbEncoded) {
+            const creds = JSON.parse(atob(dbEncoded));
+            // Update localStorage cache
+            localStorage.setItem(CREDS_KEY, dbEncoded);
+            return creds;
+        }
+    } catch (err) {
+        console.warn('[CoinDCX] Failed to load credentials from DB:', err);
+    }
+
+    // 2. Fallback to localStorage
+    try {
+        const encoded = localStorage.getItem(CREDS_KEY);
+        if (encoded) {
+            const creds = JSON.parse(atob(encoded));
+            // Migrate to DB
+            saveUserData(CREDS_KEY, encoded).catch(() => { });
+            return creds;
+        }
+    } catch {
+        // ignore
+    }
+    return null;
 }
 
 export function clearCredentials(): void {
     localStorage.removeItem(CREDS_KEY);
+    deleteUserData(CREDS_KEY).catch(err =>
+        console.warn('[CoinDCX] Failed to clear credentials from DB:', err.message)
+    );
 }
 
 export function hasStoredCredentials(): boolean {
     return !!localStorage.getItem(CREDS_KEY);
+}
+
+/**
+ * Async check that also checks the database.
+ */
+export async function hasStoredCredentialsAsync(): Promise<boolean> {
+    if (localStorage.getItem(CREDS_KEY)) return true;
+    try {
+        const dbEncoded = await loadUserData<string>(CREDS_KEY);
+        if (dbEncoded) {
+            localStorage.setItem(CREDS_KEY, dbEncoded);
+            return true;
+        }
+    } catch { /* ignore */ }
+    return false;
 }
