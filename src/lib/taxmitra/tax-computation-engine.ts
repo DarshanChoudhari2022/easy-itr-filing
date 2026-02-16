@@ -365,6 +365,9 @@ export function computeVdaTaxForFinancialYear(
         return isAcquisitionEvent(event);
     });
 
+    // Debug: log transaction counts for verification
+    console.log(`[TaxEngine] FY ${financialYear}: ${fyTransactions.length} FY txs, ${trades.length} trades, ${rewards.length} rewards, ${priorAcquisitions.length} prior acquisitions`);
+
     // ─── Step 2: Group by asset ───
     const allRelevantTx = [...priorAcquisitions, ...trades, ...rewards].sort(
         (a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime()
@@ -389,6 +392,7 @@ export function computeVdaTaxForFinancialYear(
     let grossLosses = 0;
     let totalTDSFromTrades = 0;
     let totalFee = 0;
+    let totalSellConsideration = 0; // Total sell volume for TDS base calculation
 
     for (const [asset, txs] of Object.entries(byAsset)) {
         const result = computeAssetFIFO(asset, txs, financialYear, method);
@@ -404,15 +408,20 @@ export function computeVdaTaxForFinancialYear(
         grossGains += result.summary.grossGains;
         grossLosses += result.summary.grossLosses;
 
-        // Collect TDS and Fees from ALL sell-type and buy-type trades
+        // Collect TDS, Fees, and total sell consideration from ALL trades in this FY
         for (const tx of txs) {
-            // Brokerage fee applies to all trades in this FY
-            if (tx.financialYear === financialYear) {
-                totalFee += tx.feeInr || 0;
-            }
+            if (tx.financialYear !== financialYear) continue;
 
-            if ((tx.transactionType === 'sell' || tx.transactionType === 'swap_out') && tx.financialYear === financialYear) {
+            // Brokerage fee applies to all trades in this FY
+            totalFee += tx.feeInr || 0;
+
+            // Track sell-side metrics
+            const event = classifyVdaEvent(tx);
+            if (isDisposalEvent(event)) {
+                // TDS from trade data (explicit in CSV or estimated during ingestion)
                 totalTDSFromTrades += tx.tdsAmount || 0;
+                // Total sell volume (base for 1% TDS calculation)
+                totalSellConsideration += tx.grossAmountInr || (tx.quantity * (tx.priceInr || 0));
             }
         }
 
@@ -452,13 +461,30 @@ export function computeVdaTaxForFinancialYear(
         warnings.push(...result.warnings);
     }
 
-    // ─── Step 4: Other VDA Income (Rewards) ───
+    // ─── Step 4: Other VDA Income (Rewards / Staking / Airdrops / Interest) ───
     let otherVDAIncome = 0;
+    const otherIncomeBreakdown: Record<string, number> = {
+        reward: 0, staking: 0, airdrop: 0, interest: 0, referral: 0, mining: 0
+    };
     for (const reward of rewards) {
         if (reward.financialYear === financialYear) {
-            otherVDAIncome += reward.grossAmountInr || 0;
+            // Use grossAmountInr first, then fall back to quantity * priceInr
+            const value = (reward.grossAmountInr && reward.grossAmountInr > 0)
+                ? reward.grossAmountInr
+                : (reward.quantity || 0) * (reward.priceInr || reward.pricePerUnit || 0);
+            otherVDAIncome += value;
+
+            // Categorize for breakdown
+            const event = classifyVdaEvent(reward);
+            if (event === 'STAKING') otherIncomeBreakdown.staking += value;
+            else if (event === 'AIRDROP') otherIncomeBreakdown.airdrop += value;
+            else if (event === 'INTEREST_EARNED') otherIncomeBreakdown.interest += value;
+            else if (event === 'REFERRAL_BONUS') otherIncomeBreakdown.referral += value;
+            else if (event === 'MINING') otherIncomeBreakdown.mining += value;
+            else otherIncomeBreakdown.reward += value;
         }
     }
+    console.log(`[TaxEngine] Other VDA Income: ₹${otherVDAIncome.toFixed(2)}`, otherIncomeBreakdown);
 
     // ─── Step 5: Tax Computation ───
     // CRITICAL: Section 115BBH — taxable gain = sum of profits ONLY
@@ -480,17 +506,51 @@ export function computeVdaTaxForFinancialYear(
 
     // ─── Step 6: TDS Reconciliation ───
     const tdsRecon = reconcileTDS(tdsRecords, totalTDSFromTrades, financialYear);
-    // TDS Credit: Use trade data TDS as primary source (extracted from each sell transaction).
-    // If TDS certificates are uploaded and reflect a higher amount, use certificates (official source).
-    // If no certificates uploaded, trade data TDS is the best estimate.
-    const totalTDSCredit = tdsRecon.totalTDSFromCertificates > 0
-        ? Math.max(tdsRecon.totalTDSFromCertificates, tdsRecon.totalTDSFromTrades)
-        : tdsRecon.totalTDSFromTrades;
+
+    // TDS Credit Computation:
+    // 1. If TDS certificates are uploaded (TDS CSV), use the higher of certificates vs trade data
+    // 2. If no certificates, use trade data TDS (from individual sell transactions)
+    // 3. As a cross-check, compute theoretical TDS as 1% of total sell consideration
+    const theoreticalTDS = totalSellConsideration * 0.01;
+    let totalTDSCredit: number;
+    if (tdsRecon.totalTDSFromCertificates > 0) {
+        // Official TDS certificates take priority
+        totalTDSCredit = Math.max(tdsRecon.totalTDSFromCertificates, tdsRecon.totalTDSFromTrades);
+    } else if (totalTDSFromTrades > 0) {
+        // Use trade data TDS (estimated during ingestion)
+        totalTDSCredit = totalTDSFromTrades;
+    } else {
+        // No TDS data at all — estimate from sell volume (1% × total sell value)
+        totalTDSCredit = theoreticalTDS;
+        if (theoreticalTDS > 0) {
+            warnings.push(`TDS estimated as 1% of total sell value (₹${totalSellConsideration.toFixed(0)}) = ₹${theoreticalTDS.toFixed(2)}. Upload TDS CSV for exact figures.`);
+        }
+    }
+
+    console.log(`[TaxEngine] TDS: fromTrades=₹${totalTDSFromTrades.toFixed(2)}, fromCerts=₹${tdsRecon.totalTDSFromCertificates.toFixed(2)}, theoretical=₹${theoreticalTDS.toFixed(2)}, credit=₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine] Total sell consideration: ₹${totalSellConsideration.toFixed(2)}`);
 
     const netTaxPayable = totalTaxLiability - totalTDSCredit;
 
     // ─── Step 7: Unique assets ───
     const uniqueAssets = new Set(assetSummaries.map(a => a.assetSymbol)).size;
+
+    // ─── Final Summary Log ───
+    console.log(`\n[TaxEngine] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine] FY ${financialYear} — COMPUTATION SUMMARY`);
+    console.log(`[TaxEngine] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
+    console.log(`[TaxEngine] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
+    console.log(`[TaxEngine] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
+    console.log(`[TaxEngine] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
+    console.log(`[TaxEngine] ───────────────────────────────────────`);
+    console.log(`[TaxEngine] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
+    console.log(`[TaxEngine] Surcharge:                 ₹${surcharge.toFixed(2)}`);
+    console.log(`[TaxEngine] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
+    console.log(`[TaxEngine] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
+    console.log(`[TaxEngine] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
+    console.log(`[TaxEngine] ═══════════════════════════════════════\n`);
 
     return {
         financialYear,

@@ -507,11 +507,12 @@ export function parseCoinDCXTradesCSV(
             const fy = getFinancialYear(tradeDate);
             const ay = getAssessmentYear(fy);
 
-            // Compute TDS: if not provided, estimate 1% on sell consideration
+            // Compute TDS: if not provided in CSV, estimate 1% on ALL sell consideration
+            // CoinDCX deducts 1% TDS (Section 194S) on every sell transaction
+            // The ₹50K threshold is applied at the aggregate level by the exchange, not per-tx
             let computedTds = tdsAmount;
-            if (computedTds === 0 && txType === 'sell' && grossAmountInr > TDS_THRESHOLD_RETAIL) {
+            if (computedTds === 0 && txType === 'sell' && grossAmountInr > 0) {
                 computedTds = grossAmountInr * TDS_RATE;
-                result.warnings.push(`Row ${i + 1}: TDS not in CSV; estimated at INR ${computedTds.toFixed(2)} (1% of ${grossAmountInr.toFixed(2)})`);
             }
 
             const tx: NormalizedTransaction = {
@@ -1120,9 +1121,9 @@ export function parseWazirXTradesCSV(
             const fy = getFinancialYear(tradeDate);
             const ay = getAssessmentYear(fy);
 
-            // TDS estimation
+            // TDS estimation: 1% on ALL sell transactions (Section 194S)
             let computedTds = tdsAmount;
-            if (computedTds === 0 && txType === 'sell' && grossAmountInr > TDS_THRESHOLD_RETAIL) {
+            if (computedTds === 0 && txType === 'sell' && grossAmountInr > 0) {
                 computedTds = grossAmountInr * TDS_RATE;
             }
 
