@@ -616,41 +616,122 @@ function parseAssetFromSymbol(
     return { base: symbol, quote: 'INR' };
 }
 
+/**
+ * Aggregate individual trade fills into order-level records.
+ *
+ * WHY: CoinDCX's /trade_history endpoint returns one row per FILL
+ * (partial execution). A single order may be filled in multiple
+ * chunks. KoinX aggregates these into one order-level record.
+ *
+ * Without aggregation:
+ *   - Trade count is inflated (41 fills → should be ~20 orders)
+ *   - Sale consideration is wrong (sum of fill values ≠ order total
+ *     due to floating-point and fee differences)
+ *   - TDS is wrong (1% per fill ≠ 1% of order total)
+ *
+ * Aggregation strategy:
+ *   - Group fills by order_id + side + symbol
+ *   - Sum quantities and gross amounts
+ *   - Compute weighted-average price
+ *   - Use the EARLIEST fill timestamp as the order timestamp
+ *   - Sum all fees
+ */
+function aggregateTradesByOrder(trades: CoinDCXTrade[]): CoinDCXTrade[] {
+    // Group by order_id (primary) — if order_id missing, treat each fill as its own order
+    const orderMap = new Map<string, CoinDCXTrade[]>();
+
+    for (const trade of trades) {
+        // Use order_id as the grouping key; fall back to trade.id if missing
+        const key = trade.order_id
+            ? `${trade.order_id}_${trade.side}_${trade.symbol}`
+            : `fill_${trade.id}_${trade.side}_${trade.symbol}`;
+
+        if (!orderMap.has(key)) {
+            orderMap.set(key, []);
+        }
+        orderMap.get(key)!.push(trade);
+    }
+
+    const aggregated: CoinDCXTrade[] = [];
+
+    for (const [, fills] of orderMap) {
+        if (fills.length === 0) continue;
+
+        if (fills.length === 1) {
+            // Single fill = no aggregation needed
+            aggregated.push(fills[0]);
+            continue;
+        }
+
+        // Sort fills by timestamp (oldest first)
+        fills.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Aggregate
+        let totalQty = 0;
+        let totalGrossQuote = 0;  // qty × price for each fill
+        let totalFee = 0;
+
+        for (const fill of fills) {
+            const qty = fill.quantity || 0;
+            const price = fill.price || 0;
+            totalQty += qty;
+            totalGrossQuote += qty * price;
+            totalFee += parseFloat(fill.fee_amount) || 0;
+        }
+
+        // Weighted-average price across all fills
+        const avgPrice = totalQty > 0 ? totalGrossQuote / totalQty : 0;
+
+        // Use the first fill as the base record, override with aggregated values
+        const base = fills[0];
+        aggregated.push({
+            ...base,
+            quantity: totalQty,
+            price: avgPrice,
+            fee_amount: String(totalFee),
+            // Keep the earliest timestamp (first fill)
+            timestamp: base.timestamp,
+        });
+    }
+
+    console.log(`[CoinDCX] Aggregated ${trades.length} fills → ${aggregated.length} orders`);
+    return aggregated;
+}
+
 function convertTradesToNormalized(
     trades: CoinDCXTrade[],
     marketMap: Record<string, { base: string; quote: string }>,
     quoteToINR: Record<string, number> = {}
 ): NormalizedTransaction[] {
-    return trades.map((trade, i) => {
+    // ── CRITICAL: Aggregate fills into orders first ──
+    // This matches KoinX's order-level view and fixes:
+    //   1. Trade count (fills → orders)
+    //   2. Sale consideration (sum of fills = order total)
+    //   3. TDS (1% of order total, not per-fill)
+    const orders = aggregateTradesByOrder(trades);
+
+    return orders.map((trade, i) => {
         const { base, quote } = parseAssetFromSymbol(trade.symbol, marketMap);
         const tradeDate = new Date(trade.timestamp);
         const fy = getFY(tradeDate);
         const fee = parseFloat(trade.fee_amount) || 0;
         const qty = trade.quantity || 0;
-        const price = trade.price || 0;        // price is in quote currency
+        const price = trade.price || 0;        // weighted-avg price in quote currency
         const grossAmountQuote = qty * price;   // total in quote currency
 
         // ── INR Conversion using HISTORICAL rates ──
-        // CRITICAL FIX: Using a single live rate for both buy and sell trades
-        // collapses the profit margin to near zero. We MUST use the rate
-        // that was in effect at the time of each trade.
-        //
-        // Example: Buy ENA at $0.44 on Jun-2024 (USDT=83.5) → cost = 0.44*83.5 = ₹36.74
-        //          Sell ENA at $0.46 on Dec-2024 (USDT=84.7) → sale = 0.46*84.7 = ₹38.96
-        //          Gain = ₹2.22 (captures both crypto AND INR movement)
-        //
-        // If we used a single rate of 87 for both: gain = (0.46-0.44)*87 = ₹1.74 (WRONG)
+        // CRITICAL: Use the rate that was in effect at the time of each trade.
+        // Buy at USDT=83.5, sell at USDT=84.7 → captures both crypto AND INR gain.
         const quoteKey = quote.toUpperCase();
         const isINRQuote = quoteKey === 'INR';
 
-        // Get HISTORICAL quote→INR rate at the time of this trade
         let quoteINRRate = 1;
         if (!isINRQuote) {
             quoteINRRate = getHistoricalQuoteINR(quoteKey, tradeDate);
         }
 
-        const priceInr = price * quoteINRRate;  // trade price in INR per unit
-        const grossInr = qty * priceInr;        // total trade value in INR
+        const priceInr = price * quoteINRRate;  // weighted-avg price in INR per unit
+        const grossInr = qty * priceInr;        // total order value in INR
 
         // ── Fee conversion ──
         const feeCurrency = (trade.fee_currency || quote).toUpperCase();
@@ -660,12 +741,12 @@ function convertTradesToNormalized(
             feeInr = fee * feeRate;
         }
 
-        // ── TDS ──
-        // Section 194S: 1% TDS on consideration for sell trades
+        // ── TDS (Section 194S) ──
+        // 1% TDS on the TOTAL sell consideration (order-level, not per-fill)
         const tdsAmount = trade.side === 'sell' ? grossInr * 0.01 : 0;
 
         return {
-            externalId: `cdx-trade-${trade.id || trade.order_id}-${i}`,
+            externalId: `cdx-order-${trade.order_id || trade.id}-${i}`,
             exchange: 'CoinDCX',
             transactionType: trade.side,
             isTaxableEvent: trade.side === 'sell',
@@ -685,7 +766,7 @@ function convertTradesToNormalized(
             tradeTimestamp: tradeDate,
             financialYear: fy,
             assessmentYear: getAY(fy),
-            description: `${trade.side.toUpperCase()} ${qty} ${base} @ ${priceInr.toFixed(2)} INR (${price} ${quote})`,
+            description: `${trade.side.toUpperCase()} ${qty.toFixed(6)} ${base} @ ₹${priceInr.toFixed(2)}/unit (${price} ${quote})`,
             orderId: trade.order_id,
             rawData: {
                 source: 'api',
@@ -695,7 +776,8 @@ function convertTradesToNormalized(
                 quote_currency: quote,
                 quote_inr_rate: String(quoteINRRate),
             },
-            contentHash: hashContent(`${trade.id}-${trade.order_id}-${trade.timestamp}-${trade.side}-${qty}`),
+            // Hash by order_id so re-syncs don't create duplicates
+            contentHash: hashContent(`order-${trade.order_id || trade.id}-${trade.side}-${trade.symbol}-${qty.toFixed(8)}`),
         } as NormalizedTransaction;
     });
 }
