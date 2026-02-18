@@ -52,7 +52,8 @@ import {
   clearCredentials,
   hasStoredCredentials,
   type SyncProgress,
-  type FullSyncResult
+  type FullSyncResult,
+  type MissingDataItem
 } from "@/lib/coindcx-api";
 
 // Types
@@ -1461,34 +1462,72 @@ export default function CryptoTaxPage() {
                         )}
 
                         {apiSyncResult?.success && (
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            <div className="p-3 rounded-lg bg-white/10">
-                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalTrades}</p>
-                              <p className="text-xs text-indigo-200">Trades</p>
+                          <div className="space-y-3">
+                            {/* Stats grid with TDS and Other Income */}
+                            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                              <div className="p-2 rounded-lg bg-white/10 text-center">
+                                <p className="text-xl font-bold text-white">{apiSyncResult.summary.totalTrades}</p>
+                                <p className="text-[10px] text-indigo-200">Trades</p>
+                              </div>
+                              <div className="p-2 rounded-lg bg-white/10 text-center">
+                                <p className="text-xl font-bold text-white">{apiSyncResult.summary.totalRewards}</p>
+                                <p className="text-[10px] text-indigo-200">Rewards</p>
+                              </div>
+                              <div className="p-2 rounded-lg bg-white/10 text-center">
+                                <p className="text-xl font-bold text-white">{apiSyncResult.summary.totalDeposits}</p>
+                                <p className="text-[10px] text-indigo-200">Deposits</p>
+                              </div>
+                              <div className="p-2 rounded-lg bg-white/10 text-center">
+                                <p className="text-xl font-bold text-white">{apiSyncResult.summary.uniqueAssets.length}</p>
+                                <p className="text-[10px] text-indigo-200">Assets</p>
+                              </div>
+                              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                                <p className="text-xl font-bold text-emerald-300">₹{Math.round(apiSyncResult.summary.computedTDSCredit).toLocaleString('en-IN')}</p>
+                                <p className="text-[10px] text-emerald-200">TDS Credit</p>
+                              </div>
+                              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center">
+                                <p className="text-xl font-bold text-amber-300">₹{Math.round(apiSyncResult.summary.computedOtherIncome).toLocaleString('en-IN')}</p>
+                                <p className="text-[10px] text-amber-200">Other Income</p>
+                              </div>
                             </div>
-                            <div className="p-3 rounded-lg bg-white/10">
-                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalRewards}</p>
-                              <p className="text-xs text-indigo-200">Rewards</p>
-                            </div>
-                            <div className="p-3 rounded-lg bg-white/10">
-                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.totalDeposits}</p>
-                              <p className="text-xs text-indigo-200">Deposits</p>
-                            </div>
-                            <div className="p-3 rounded-lg bg-white/10">
-                              <p className="text-2xl font-bold text-white">{apiSyncResult.summary.uniqueAssets.length}</p>
-                              <p className="text-xs text-indigo-200">Assets</p>
-                            </div>
+
+                            {/* Missing Data Checklist - Critical items */}
+                            {apiSyncResult.missingDataChecklist && apiSyncResult.missingDataChecklist.length > 0 && (
+                              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 space-y-2">
+                                <p className="text-xs font-bold text-red-300 flex items-center gap-1.5">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  Missing Data ({apiSyncResult.missingDataChecklist.filter(i => i.severity === 'critical').length} critical)
+                                </p>
+                                {apiSyncResult.missingDataChecklist.map((item, i) => (
+                                  <div key={i} className={`p-2 rounded ${item.severity === 'critical' ? 'bg-red-500/15 border border-red-500/25' :
+                                      item.severity === 'warning' ? 'bg-amber-500/15 border border-amber-500/25' :
+                                        'bg-blue-500/10 border border-blue-500/20'
+                                    }`}>
+                                    <p className="text-[11px] font-semibold text-white">{item.category}</p>
+                                    <p className="text-[10px] text-slate-300 mt-0.5">{item.description}</p>
+                                    <p className="text-[10px] text-slate-300">
+                                      Current: <span className="text-red-300 font-medium">{item.currentValue}</span> → Expected: <span className="text-emerald-300 font-medium">{item.expectedValue}</span>
+                                    </p>
+                                    <p className="text-[10px] text-amber-300 mt-1 font-medium">→ {item.action}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
 
                         {/* Debug: show API step results */}
                         {apiSyncResult?.warnings && apiSyncResult.warnings.length > 0 && (
-                          <div className="p-3 rounded-lg bg-white/5 border border-white/10 space-y-1">
-                            <p className="text-xs font-semibold text-indigo-200 mb-1">API Sync Log:</p>
-                            {apiSyncResult.warnings.map((w, i) => (
-                              <p key={i} className="text-[11px] text-indigo-300 font-mono">{w}</p>
-                            ))}
-                          </div>
+                          <details className="group">
+                            <summary className="text-xs font-semibold text-indigo-200 cursor-pointer hover:text-indigo-100 p-2 rounded-lg bg-white/5 border border-white/10">
+                              API Sync Log ({apiSyncResult.warnings.length} entries) ▸
+                            </summary>
+                            <div className="p-3 rounded-b-lg bg-white/5 border border-t-0 border-white/10 space-y-1 max-h-48 overflow-y-auto">
+                              {apiSyncResult.warnings.map((w, i) => (
+                                <p key={i} className="text-[11px] text-indigo-300 font-mono">{w}</p>
+                              ))}
+                            </div>
+                          </details>
                         )}
 
                         <div className="flex gap-3">
