@@ -1500,8 +1500,8 @@ export default function CryptoTaxPage() {
                                 </p>
                                 {apiSyncResult.missingDataChecklist.map((item, i) => (
                                   <div key={i} className={`p-2 rounded ${item.severity === 'critical' ? 'bg-red-500/15 border border-red-500/25' :
-                                      item.severity === 'warning' ? 'bg-amber-500/15 border border-amber-500/25' :
-                                        'bg-blue-500/10 border border-blue-500/20'
+                                    item.severity === 'warning' ? 'bg-amber-500/15 border border-amber-500/25' :
+                                      'bg-blue-500/10 border border-blue-500/20'
                                     }`}>
                                     <p className="text-[11px] font-semibold text-white">{item.category}</p>
                                     <p className="text-[10px] text-slate-300 mt-0.5">{item.description}</p>
@@ -1998,15 +1998,24 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
     }
   };
 
-  // Preview Data Source: TaxComputation (no portfolio fallback needed)
+  // Preview Data Source: TaxComputation engine output (single source of truth)
   const taxableGains = taxComputation?.taxableCapitalGains ?? 0;
   const totalLosses = taxComputation?.grossCapitalLosses ?? 0;
   const totalTax = taxComputation?.totalTaxLiability ?? 0;
   const tdsPaid = taxComputation?.totalTDSCredit ?? 0;
   const netTax = taxComputation?.netTaxPayable ?? Math.max(0, totalTax - tdsPaid);
 
-  const sellCount = taxComputation?.assetSummaries?.reduce((acc, curr) => acc + curr.totalSold, 0) ?? trades.filter(t => t.trade_type === 'sell').length;
-  const buyVolume = taxComputation?.assetSummaries?.reduce((s, a) => s + a.totalBuyValueInr, 0) ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+  // BUG FIX: sellCount must be number of SELL TRANSACTIONS (VDA report lines), NOT total token quantity sold.
+  // totalSold is the sum of token quantities (e.g. 91,828 ADA tokens) — completely wrong for "Number of Transfers".
+  // totalVDAEntries = number of Schedule VDA rows = number of sell events = matches KoinX's "73 transfers".
+  const sellCount = taxComputation?.totalVDAEntries ?? trades.filter(t => t.trade_type === 'sell').length;
+
+  // BUG FIX: buyVolume must be cost of acquisition for SOLD assets only (from FIFO lot matches).
+  // totalBuyValueInr includes ALL buys (even unsold inventory) — massively overstated.
+  // totalCostOfAcquisitionInr is the correct FIFO-matched cost for sold assets only.
+  const buyVolume = taxComputation?.totalCostOfAcquisitionInr ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
+
+  // sellVolume: totalConsiderationInr = sum of sell proceeds from engine (correct)
   const sellVolume = taxComputation?.totalConsiderationInr ?? trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + t.quantity * t.buy_price, 0);
 
   // Asset Wise List
@@ -2114,11 +2123,11 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
                     <tbody>
                       {assetList.slice(0, 10).map((t: any, i: number) => (
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                          <td className="p-2 font-medium border">{t.asset}</td>
-                          <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.gains)}</td>
-                          <td className="p-2 text-right text-red-600 border">{t.losses > 0 ? formatCurrency(t.losses) : '₹0'}</td>
-                          <td className={`p-2 text-right font-bold border ${(t.gains - t.losses) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                            {formatCurrency(t.gains - t.losses)}
+                          <td className="p-2 font-medium border">{t.assetSymbol ?? t.asset}</td>
+                          <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.grossGains ?? t.gains ?? 0)}</td>
+                          <td className="p-2 text-right text-red-600 border">{(t.grossLosses ?? t.losses ?? 0) > 0 ? formatCurrency(t.grossLosses ?? t.losses) : '₹0'}</td>
+                          <td className={`p-2 text-right font-bold border ${((t.grossGains ?? t.gains ?? 0) - (t.grossLosses ?? t.losses ?? 0)) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {formatCurrency((t.grossGains ?? t.gains ?? 0) - (t.grossLosses ?? t.losses ?? 0))}
                           </td>
                         </tr>
                       ))}

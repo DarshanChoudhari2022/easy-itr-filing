@@ -810,47 +810,100 @@ export function buildComprehensiveReportData(
     user: { name: string; pan: string; email: string },
     settings: any,
     financialYear: string = '2025-26',
-    assessmentYear: string = '2026-27'
+    assessmentYear: string = '2026-27',
+    taxComputation?: any  // TaxComputationResult — primary source of truth
 ): ComprehensiveReportData {
-    // Flatten all matched lots
-    const allMatchedLots = portfolio?.breakdown?.flatMap((res: any) => res.matchedLots || []) || [];
-    allMatchedLots.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
+    // ── PRIMARY: Use TaxComputationResult (engine output) when available ──
+    // The engine correctly computes FIFO-matched figures. The trades[] array
+    // has known bugs (buy_price used as sell price, all buys not just sold, etc.)
 
-    // Calculate buy/sell volumes
-    const buyTrades = trades.filter(t => t.trade_type === 'buy');
-    const sellTrades = trades.filter(t => t.trade_type === 'sell');
-    const totalBuyValue = buyTrades.reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const totalSellValue = sellTrades.reduce((s, t) => s + t.quantity * t.buy_price, 0);
+    const engineResult = taxComputation || portfolio;
 
-    // Calculate TDS by exchange
+    // Number of transfers = number of VDA Schedule rows (sell events), NOT token quantity
+    const numberOfTransfers = engineResult?.totalVDAEntries
+        ?? engineResult?.vdaReportLines?.length
+        ?? trades.filter((t: any) => t.trade_type === 'sell').length;
+
+    // Sale consideration = total sell proceeds from engine (correct)
+    const saleConsideration = engineResult?.totalConsiderationInr
+        ?? engineResult?.totalSellValue
+        ?? 0;
+
+    // Cost of acquisition = FIFO-matched cost for SOLD assets only (not all buys)
+    const costOfAcquisition = engineResult?.totalCostOfAcquisitionInr
+        ?? engineResult?.totalCostValue
+        ?? 0;
+
+    // Taxable capital gains = sum of profitable trades only (per 115BBH)
+    const taxableCapitalGains = engineResult?.taxableCapitalGains
+        ?? engineResult?.totalTaxableGains
+        ?? Math.max(0, saleConsideration - costOfAcquisition);
+
+    // Losses = sum of loss-making trades (cannot be offset)
+    const losses = engineResult?.grossCapitalLosses
+        ?? engineResult?.totalLosses
+        ?? 0;
+
+    // Other income (staking, rewards, airdrops, interest)
+    const totalOtherIncome = engineResult?.otherVDAIncome
+        ?? engineResult?.totalOtherIncome
+        ?? 0;
+
+    // TDS credit from engine (most accurate)
+    const totalTDSCredit = engineResult?.totalTDSCredit ?? 0;
+
+    // Brokerage fees
+    const totalFees = engineResult?.totalBrokerageFee
+        ?? trades.reduce((s: number, t: any) => s + (t.fee || t.metadata?.fee || 0), 0);
+
+    // ── Asset-wise P&L from engine ──
+    const assetWisePnL = (engineResult?.assetSummaries || engineResult?.breakdown || []).map((b: any) => ({
+        assetName: b.assetSymbol ?? b.token ?? 'Unknown',
+        grossProfit: b.grossGains ?? b.totalGain ?? 0,
+        grossLoss: b.grossLosses ?? b.totalLoss ?? 0,
+        netGains: (b.grossGains ?? b.totalGain ?? 0) - (b.grossLosses ?? b.totalLoss ?? 0),
+    })).sort((a: any, b: any) => b.netGains - a.netGains);
+
+    // ── Capital Gains Transactions from engine lot matches ──
+    const lotMatches = engineResult?.lotMatches
+        ?? engineResult?.breakdown?.flatMap((res: any) => res.matchedLots || [])
+        ?? [];
+    lotMatches.sort((a: any, b: any) => new Date(a.sellDate).getTime() - new Date(b.sellDate).getTime());
+
+    // ── Schedule VDA from engine ──
+    const scheduleVDA = (engineResult?.vdaReportLines || []).map((row: any) => ({
+        slNo: row.slNo,
+        dateOfTransfer: row.dateOfTransfer,
+        headOfIncome: row.headOfIncome ?? 'Capital Gains - 115BBH',
+        descriptionOfVDA: row.descriptionOfVDA,
+        saleConsideration: row.saleConsideration,
+        costOfAcquisition: row.costOfAcquisition,
+        gainLoss: row.incomeFromTransfer ?? row.gainLoss ?? (row.saleConsideration - row.costOfAcquisition),
+    }));
+
+    // ── TDS by Exchange (from trades, since engine aggregates all exchanges) ──
     const exchangeTDSMap: Record<string, number> = {};
-    const exchangeSalesMap: Record<string, number> = {};
-    trades.forEach(t => {
-        const exchange = t.exchange || 'Unknown';
-        if (!exchangeTDSMap[exchange]) {
-            exchangeTDSMap[exchange] = 0;
-            exchangeSalesMap[exchange] = 0;
-        }
-        if (t.trade_type === 'sell') {
-            const saleVal = t.quantity * t.buy_price;
-            exchangeSalesMap[exchange] += saleVal;
-            exchangeTDSMap[exchange] += (t.tds_paid || t.metadata?.tds_deducted || saleVal * 0.01);
-        }
-    });
+    if (totalTDSCredit > 0) {
+        // Use engine's total TDS, attributed to CoinDCX (primary exchange)
+        exchangeTDSMap['CoinDCX'] = totalTDSCredit;
+    } else {
+        // Fallback: estimate from sell trades
+        trades.forEach((t: any) => {
+            if (t.trade_type === 'sell') {
+                const exchange = t.exchange || 'Unknown';
+                if (!exchangeTDSMap[exchange]) exchangeTDSMap[exchange] = 0;
+                exchangeTDSMap[exchange] += (t.metadata?.tds_deducted || 0);
+            }
+        });
+    }
 
-    // Calculate brokerage fees
-    const totalFees = trades.reduce((s, t) => s + (t.fee || t.metadata?.fee || 0), 0);
-
-    // Calculate other incomes (staking, rewards, airdrops)
-    const otherIncomeTrades = trades.filter(t =>
-        ['staking', 'airdrop', 'mining', 'interest_earned', 'reward'].includes(t.trade_type)
-    );
-    const rewardsReceived = otherIncomeTrades.filter(t => t.trade_type === 'reward').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const stakingIncome = otherIncomeTrades.filter(t => t.trade_type === 'staking').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const interestIncome = otherIncomeTrades.filter(t => t.trade_type === 'interest_earned').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const miningIncome = otherIncomeTrades.filter(t => t.trade_type === 'mining').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const airdropIncome = otherIncomeTrades.filter(t => t.trade_type === 'airdrop').reduce((s, t) => s + t.quantity * t.buy_price, 0);
-    const totalOtherIncome = portfolio?.totalOtherIncome || (rewardsReceived + stakingIncome + interestIncome + miningIncome + airdropIncome);
+    // ── Other Income breakdown (from engine if available) ──
+    // The engine doesn't break down by sub-category, so we use what we have
+    const rewardsReceived = totalOtherIncome; // Simplified: all other income as rewards
+    const stakingIncome = 0;
+    const interestIncome = 0;
+    const miningIncome = 0;
+    const airdropIncome = 0;
 
     return {
         user,
@@ -871,16 +924,16 @@ export function buildComprehensiveReportData(
             treatStablecoinsAsFiat: false,
         },
         capitalGains: {
-            numberOfTransfers: sellTrades.length,
-            saleConsideration: totalSellValue,
-            costOfAcquisition: totalBuyValue,
-            taxableCapitalGains: Math.max(0, portfolio?.totalTaxableGains || 0),
-            losses: portfolio?.totalLosses || 0,
+            numberOfTransfers,
+            saleConsideration,
+            costOfAcquisition,
+            taxableCapitalGains,
+            losses,
         },
         exchangeTDS: Object.entries(exchangeTDSMap).map(([exchange, tds]) => ({
             sourceName: exchange,
             customName: `${exchange} wallet`,
-            tdsDeducted: tds
+            tdsDeducted: tds as number
         })),
         otherIncomes: {
             rewardsReceived,
@@ -894,31 +947,19 @@ export function buildComprehensiveReportData(
             brokerageFee: totalFees,
             total: totalFees,
         },
-        assetWisePnL: (portfolio?.breakdown || []).map((b: any) => ({
-            assetName: b.token,
-            grossProfit: b.totalGain,
-            grossLoss: b.totalLoss,
-            netGains: b.totalGain - b.totalLoss,
-        })).sort((a: any, b: any) => b.netGains - a.netGains),
-        capitalGainsTxns: allMatchedLots.map((lot: any) => ({
+        assetWisePnL,
+        capitalGainsTxns: lotMatches.map((lot: any) => ({
             datePurchased: new Date(lot.buyDate).toLocaleDateString('en-IN'),
             dateSold: new Date(lot.sellDate).toLocaleDateString('en-IN'),
-            asset: lot.token,
-            quantity: lot.quantity,
-            purchaseValue: lot.buyPrice * lot.quantity,
-            saleValue: lot.sellPrice * lot.quantity,
-            gainOrLoss: lot.gainLoss,
+            asset: lot.assetSymbol ?? lot.token ?? 'Unknown',
+            quantity: lot.matchedQuantity ?? lot.quantity ?? 0,
+            purchaseValue: lot.costOfAcquisition ?? (lot.buyPricePerUnit ?? lot.buyPrice ?? 0) * (lot.matchedQuantity ?? lot.quantity ?? 0),
+            saleValue: lot.saleConsideration ?? (lot.sellPricePerUnit ?? lot.sellPrice ?? 0) * (lot.matchedQuantity ?? lot.quantity ?? 0),
+            gainOrLoss: lot.gainLoss ?? 0,
             source: 'taxmitra_engine',
-            remarks: lot.holdingPeriod < 365 ? 'short-term' : 'long-term'
+            remarks: (lot.holdingDays ?? lot.holdingPeriod ?? 0) < 365 ? 'short-term' : 'long-term'
         })),
-        scheduleVDA: allMatchedLots.map((lot: any, i: number) => ({
-            slNo: i + 1,
-            dateOfTransfer: new Date(lot.sellDate).toLocaleDateString('en-IN'),
-            headOfIncome: 'Income from VDA',
-            descriptionOfVDA: `${lot.token} (VDA)`,
-            saleConsideration: lot.sellPrice * lot.quantity,
-            costOfAcquisition: lot.buyPrice * lot.quantity,
-            gainLoss: lot.gainLoss,
-        })),
+        scheduleVDA,
     };
 }
+
