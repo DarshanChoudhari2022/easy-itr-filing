@@ -294,7 +294,9 @@ export default function CryptoTaxPage() {
   const [showApiSecret, setShowApiSecret] = useState(false);
 
   // Financial Year state and helper
+  // Smart FY: auto-detect from data, default to current FY (2025-26)
   const [selectedFY, setSelectedFY] = useState<string>('2025-26');
+  const [fyAutoDetected, setFyAutoDetected] = useState(false);
 
   // Available Financial Years
   const FINANCIAL_YEARS = [
@@ -460,12 +462,34 @@ export default function CryptoTaxPage() {
   }, []);
 
   // Recompute tax whenever parsed data or FY changes
+  // Also auto-detect the best FY from the data (once)
   useEffect(() => {
     if (parsedTransactions.length > 0) {
+      // ── Auto-detect FY from data (run once after first load) ──
+      if (!fyAutoDetected) {
+        const fyCounts: Record<string, number> = {};
+        for (const tx of parsedTransactions) {
+          // Only count buy/sell trades (not deposits/withdrawals)
+          if (tx.transactionType === 'buy' || tx.transactionType === 'sell') {
+            fyCounts[tx.financialYear] = (fyCounts[tx.financialYear] || 0) + 1;
+          }
+        }
+        const fyEntries = Object.entries(fyCounts).sort((a, b) => b[1] - a[1]);
+        if (fyEntries.length > 0) {
+          const bestFY = fyEntries[0][0];
+          if (bestFY !== selectedFY) {
+            console.log(`[CryptoTax] Auto-detected FY ${bestFY} from data (${fyEntries[0][1]} trades). Was: ${selectedFY}`);
+            setSelectedFY(bestFY);
+          }
+          setFyAutoDetected(true);
+          return; // Will re-run with new FY
+        }
+        setFyAutoDetected(true);
+      }
       recomputeTax(parsedTransactions, parsedTDSRecords, selectedFY);
       setTrades(mapTransactionsToTrades(parsedTransactions));
     }
-  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades]);
+  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades, fyAutoDetected]);
 
   useEffect(() => {
     if (user) {
@@ -559,7 +583,8 @@ export default function CryptoTaxPage() {
         return;
       }
 
-      // 4. Store parsed data in state
+      // 4. Store parsed data in state — reset FY auto-detection so it picks the right FY
+      setFyAutoDetected(false); // Will trigger FY re-detection from new data
       setParsedTransactions(prev => [...prev, ...allTransactions]);
       setParsedTDSRecords(prev => [...prev, ...allTDSRecords]);
 
@@ -567,10 +592,18 @@ export default function CryptoTaxPage() {
       const newTrades = mapTransactionsToTrades(allTransactions);
       setTrades(prev => [...prev, ...newTrades]);
 
-      // 6. Compute tax immediately
+      // 6. Compute tax immediately using the FY with most trades
       const allTxs = [...parsedTransactions, ...allTransactions];
       const allTds = [...parsedTDSRecords, ...allTDSRecords];
-      const taxResult = computeVdaTaxForFinancialYear(allTxs, allTds, selectedFY, settings.accountingMethod as any);
+      // Auto-detect best FY from the combined data
+      const fyCounts: Record<string, number> = {};
+      for (const tx of allTxs) {
+        if (tx.transactionType === 'buy' || tx.transactionType === 'sell') {
+          fyCounts[tx.financialYear] = (fyCounts[tx.financialYear] || 0) + 1;
+        }
+      }
+      const bestFY = Object.entries(fyCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || selectedFY;
+      const taxResult = computeVdaTaxForFinancialYear(allTxs, allTds, bestFY, settings.accountingMethod as any);
       setTaxComputation(taxResult);
 
       // 7. Show success
@@ -752,20 +785,32 @@ export default function CryptoTaxPage() {
   };
 
   // ============= STATISTICS (FY-wise) =============
+  // Only count transactions that belong to the selected FY (not prior-FY buys kept for FIFO)
+  const fySpecificTransactions = useMemo(() => {
+    return parsedTransactions.filter(tx => tx.financialYear === selectedFY);
+  }, [parsedTransactions, selectedFY]);
+
   const stats = useMemo(() => {
-    const buyTrades = filteredTrades.filter(t => t.trade_type === 'buy');
-    const sellTrades = filteredTrades.filter(t => t.trade_type === 'sell');
+    const fyBuys = fySpecificTransactions.filter(t => t.transactionType === 'buy');
+    const fySells = fySpecificTransactions.filter(t => t.transactionType === 'sell');
+    const fyRewards = fySpecificTransactions.filter(t =>
+      t.transactionType.startsWith('reward_') || t.transactionType === 'airdrop' ||
+      t.transactionType === 'staking_reward' || t.transactionType === 'reward'
+    );
 
     // Use engine computation if available
     if (taxComputation) {
       return {
-        totalTrades: filteredTrades.length,
-        buyTrades: buyTrades.length,
-        sellTrades: sellTrades.length,
-        buyVolume: taxComputation.assetSummaries.reduce((s, a) => s + a.totalBuyValueInr, 0),
+        totalTrades: fyBuys.length + fySells.length,
+        buyTrades: fyBuys.length,
+        sellTrades: fySells.length,
+        rewardTrades: fyRewards.length,
+        // BUG FIX: totalBuyValueInr = cost of ALL buys (including unsold inventory) — WRONG
+        // totalCostOfAcquisitionInr = FIFO-matched cost for SOLD assets only — CORRECT
+        buyVolume: taxComputation.totalCostOfAcquisitionInr,
         sellVolume: taxComputation.totalConsiderationInr,
-        netGain: taxComputation.netGainLossInfo, // True net P&L (gains - losses)
-        taxableGain: taxComputation.taxableCapitalGains, // 115BBH: only profits, no loss offset
+        netGain: taxComputation.netGainLossInfo,
+        taxableGain: taxComputation.taxableCapitalGains,
         taxPayable: taxComputation.totalTaxLiability,
         tdsCredit: taxComputation.totalTDSCredit,
         uniqueTokens: taxComputation.uniqueAssets,
@@ -776,9 +821,10 @@ export default function CryptoTaxPage() {
 
     // Fallback or empty state
     return {
-      totalTrades: filteredTrades.length,
-      buyTrades: buyTrades.length,
-      sellTrades: sellTrades.length,
+      totalTrades: fyBuys.length + fySells.length,
+      buyTrades: fyBuys.length,
+      sellTrades: fySells.length,
+      rewardTrades: fyRewards.length,
       buyVolume: 0,
       sellVolume: 0,
       netGain: 0,
@@ -789,7 +835,7 @@ export default function CryptoTaxPage() {
       otherIncome: 0,
       brokerage: 0
     };
-  }, [filteredTrades, taxComputation]);
+  }, [fySpecificTransactions, taxComputation]);
 
   // ============= CHART DATA (FY-wise) =============
   const tokenAllocation = useMemo(() => {
@@ -1075,41 +1121,41 @@ export default function CryptoTaxPage() {
                 {/* Stats Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   <StatCard
-                    label="Total Trades"
+                    label="Capital Gain Trades"
                     value={stats.totalTrades.toString()}
-                    subtext={`${stats.buyTrades} buys, ${stats.sellTrades} sells`}
+                    subtext={`${stats.buyTrades} buys · ${stats.sellTrades} sells`}
                     icon={<Activity className="h-5 w-5 text-indigo-600" />}
                   />
                   <StatCard
-                    label="Buy Volume"
+                    label="Cost of Acquisition"
                     value={formatCurrency(stats.buyVolume)}
-                    subtext={`${stats.uniqueTokens} tokens`}
+                    subtext={`${stats.uniqueTokens} unique assets`}
                     icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
                   />
                   <StatCard
-                    label="Sell Volume"
+                    label="Sale Consideration"
                     value={formatCurrency(stats.sellVolume)}
-                    subtext="Total sold"
+                    subtext="Total sell proceeds"
                     icon={<TrendingDown className="h-5 w-5 text-amber-600" />}
                   />
                   <StatCard
-                    label="Net Gain/Loss"
-                    value={formatCurrency(stats.netGain)}
-                    subtext={stats.netGain >= 0 ? 'Profit' : 'Loss'}
+                    label="Capital Gains"
+                    value={formatCurrency(stats.taxableGain)}
+                    subtext={stats.taxableGain >= 0 ? 'Taxable gains (§115BBH)' : 'Net loss (info only)'}
                     icon={<Target className="h-5 w-5 text-purple-600" />}
-                    highlight={stats.netGain >= 0 ? 'positive' : 'negative'}
+                    highlight={stats.taxableGain >= 0 ? 'positive' : 'negative'}
                   />
                   <StatCard
                     label="Other Income"
                     value={formatCurrency(stats.otherIncome)}
-                    subtext="Rewards, Staking, Airdrops"
+                    subtext={`Rewards/Staking${(stats as any).rewardTrades > 0 ? ` · ${(stats as any).rewardTrades} txns` : ' · Add manually ↗'}`}
                     icon={<Gift className="h-5 w-5 text-pink-600" />}
                     highlight="positive"
                   />
                   <StatCard
-                    label="Brokerage Fees"
-                    value={formatCurrency(stats.brokerage)}
-                    subtext="Trading expenses"
+                    label="TDS Credit"
+                    value={formatCurrency(stats.tdsCredit)}
+                    subtext="Section 194S deducted"
                     icon={<Receipt className="h-5 w-5 text-gray-600" />}
                   />
                 </div>
@@ -1121,22 +1167,62 @@ export default function CryptoTaxPage() {
                       <div>
                         <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
                         <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
-                        <p className="text-indigo-200 text-sm mt-1">on ₹{formatCurrency(stats.taxableGain + stats.otherIncome)} Taxable Income (§115BBH)</p>
-                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess</p>
+                        <p className="text-indigo-200 text-sm mt-1">
+                          Capital Gains: {formatCurrency(stats.taxableGain)} + Other Income: {formatCurrency(stats.otherIncome)}
+                        </p>
+                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess (§115BBH)</p>
                       </div>
                       <div className="flex flex-col sm:items-end gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-indigo-200 text-sm">TDS Credit (1%):</span>
+                          <span className="text-indigo-200 text-sm">TDS Credit:</span>
                           <Badge className="bg-white/20 text-white border-0">{formatCurrency(stats.tdsCredit)}</Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-indigo-200 text-sm">Net Payable:</span>
                           <span className="text-xl font-bold">{formatCurrency(Math.max(0, stats.taxPayable - stats.tdsCredit))}</span>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-indigo-300 text-xs">Gross Tax: {formatCurrency(stats.taxPayable)}</span>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* ── Missing Data Alerts ── */}
+                {parsedTransactions.length > 0 && (
+                  <div className="space-y-3">
+                    {/* Alert: Missing staking rewards */}
+                    {stats.otherIncome < 500 && (
+                      <Alert className="border-amber-300 bg-amber-50">
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertTitle className="text-amber-800 font-semibold">⚠️ Staking Rewards May Be Missing</AlertTitle>
+                        <AlertDescription className="text-amber-700 text-sm mt-1">
+                          <p>Your Other Income is <strong>{formatCurrency(stats.otherIncome)}</strong>. CoinDCX does <strong>not</strong> expose staking rewards via their API — they must be added manually.</p>
+                          <p className="mt-2 font-medium">KoinX reference for FY 2024-25:</p>
+                          <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
+                            <li>ADA Staking: 4 rewards totaling ~₹1,027.74 (₹232.49 + ₹414.75 + ₹49.24 + ₹331.26)</li>
+                            <li>SHIB Rewards: 2 rewards totaling ~₹103.58 (₹51.79 × 2)</li>
+                            <li>INR Cashback: ~₹709.63 (₹6.77 + ₹0.86 + ₹702.00)</li>
+                            <li><strong>Total Other Income: ~₹1,840.95</strong></li>
+                          </ul>
+                          <p className="mt-2 text-xs">📧 Check your email for "CoinDCX reward credited" messages. Then use <strong>+ Add Trade → Staking Reward / Airdrop</strong> to add each one.</p>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {/* Alert: TDS may be estimated (no TDS CSV uploaded) */}
+                    {parsedTDSRecords.length === 0 && stats.tdsCredit > 0 && (
+                      <Alert className="border-blue-200 bg-blue-50">
+                        <Info className="h-4 w-4 text-blue-600" />
+                        <AlertTitle className="text-blue-800 font-semibold">ℹ️ TDS is Estimated (1% of Sell Value)</AlertTitle>
+                        <AlertDescription className="text-blue-700 text-sm">
+                          No TDS certificate CSV uploaded. TDS is estimated at 1% of sell consideration. For exact figures, download your <strong>TDS Summary CSV</strong> from CoinDCX → Tax Reports, then upload it here.
+                          <br /><span className="text-xs mt-1 block">KoinX reference TDS for FY 2024-25: ₹28,770.38</span>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                )}
 
                 {/* Charts */}
                 {trades.length > 0 ? (
@@ -1400,6 +1486,7 @@ export default function CryptoTaxPage() {
                                 if (result.success && result.transactions.length > 0) {
                                   // FULL REPLACE: Remove old CoinDCX API data, insert fresh
                                   // This ensures updated FX rates and valuations take effect
+                                  setFyAutoDetected(false); // Reset so FY is re-detected from new data
                                   setParsedTransactions(prev => {
                                     const nonCoinDCXApi = prev.filter(t =>
                                       !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
@@ -1410,6 +1497,10 @@ export default function CryptoTaxPage() {
                                     setParsedTDSRecords(result.tdsRecords); // Full replace TDS too
                                   }
                                   toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax will recompute automatically.`);
+                                  // Show staking warning if no rewards found
+                                  if (result.summary.totalRewards === 0) {
+                                    toast.warning('⚠️ No staking rewards found via API. Add them manually using + Add Trade → Staking Reward.', { duration: 8000 });
+                                  }
                                 } else if (!result.success) {
                                   toast.error(result.error || 'Sync failed');
                                 } else {
@@ -1541,6 +1632,7 @@ export default function CryptoTaxPage() {
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
                                   // FULL REPLACE: Remove old CoinDCX API data, insert fresh
+                                  setFyAutoDetected(false); // Reset so FY is re-detected from new data
                                   setParsedTransactions(prev => {
                                     const nonCoinDCXApi = prev.filter(t =>
                                       !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
