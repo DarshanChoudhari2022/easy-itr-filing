@@ -1513,7 +1513,8 @@ export default function CryptoTaxPage() {
                                   if (result.tdsRecords.length > 0) {
                                     setParsedTDSRecords(result.tdsRecords); // Full replace TDS too
                                   }
-                                  toast.success(`✅ Imported ${result.summary.totalTransactions} transactions! Tax will recompute automatically.`);
+                                  const totalTradeRelated = (result.summary.totalSpotTrades || 0) + (result.summary.totalMarginTrades || 0) + (result.summary.totalFuturesTrades || 0);
+                                  toast.success(`✅ Imported ${result.transactions.length} transactions (${totalTradeRelated} trades)! Tax will recompute automatically.`);
                                   // Show staking warning if no rewards found
                                   if (result.summary.totalRewards === 0) {
                                     toast.warning('⚠️ No staking rewards found via API. Add them manually using + Add Trade → Staking Reward.', { duration: 8000 });
@@ -1573,12 +1574,19 @@ export default function CryptoTaxPage() {
                           <div className="space-y-3">
                             {/* Stats grid with TDS and Other Income */}
                             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                              <div className="p-2 rounded-lg bg-white/10 text-center">
+                              <div className="p-2 rounded-lg bg-white/10 text-center relative group">
                                 <p className="text-xl font-bold text-white">{apiSyncResult.summary.totalTrades}</p>
                                 <p className="text-[10px] text-indigo-200">Trades</p>
+                                {/* Tooltip for breakdown */}
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-32 p-2 bg-slate-900 border border-white/20 rounded shadow-xl hidden group-hover:block z-50 text-[10px] text-left">
+                                  <p className="text-white border-b border-white/10 mb-1 pb-1">Breakdown:</p>
+                                  <p className="flex justify-between"><span>Spot:</span> <span>{apiSyncResult.summary.totalSpotTrades || 0}</span></p>
+                                  <p className="flex justify-between"><span>Margin:</span> <span>{apiSyncResult.summary.totalMarginTrades || 0}</span></p>
+                                  <p className="flex justify-between"><span>Futures:</span> <span>{apiSyncResult.summary.totalFuturesTrades || 0}</span></p>
+                                </div>
                               </div>
                               <div className="p-2 rounded-lg bg-white/10 text-center">
-                                <p className="text-xl font-bold text-white">{apiSyncResult.summary.totalRewards}</p>
+                                <p className="text-xl font-bold text-white">{(apiSyncResult.summary as any).totalRewards || 0}</p>
                                 <p className="text-[10px] text-indigo-200">Rewards</p>
                               </div>
                               <div className="p-2 rounded-lg bg-white/10 text-center">
