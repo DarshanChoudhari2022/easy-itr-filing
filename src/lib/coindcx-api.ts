@@ -88,6 +88,48 @@ export interface CoinDCXLendingHistory {
     created_at: string | number;
 }
 
+export interface CoinDCXMarginOrder {
+    id: string;
+    side: 'buy' | 'sell';
+    status: string;        // 'open', 'close', 'rejected', etc.
+    market: string;        // e.g., 'BTCINR', 'ETHUSDT'
+    order_type: string;
+    avg_entry: number;
+    avg_exit: number;
+    fee: number;
+    entry_fee: number;
+    exit_fee: number;
+    active_pos: number;
+    exit_pos: number;
+    total_pos: number;
+    quantity: number;
+    price: number;
+    pnl: number;
+    initial_margin: number;
+    interest: number;
+    interest_amount: number;
+    leverage: number;
+    result: string | null;
+    created_at: number;
+    updated_at: number;
+    orders?: Array<{
+        id: number;
+        order_type: string;
+        status: string;
+        market: string;
+        side: 'buy' | 'sell';
+        avg_price: number;
+        total_quantity: number;
+        remaining_quantity: number;
+        price_per_unit: number;
+        timestamp: number;
+        fee: number;
+        fee_amount: number;
+        filled_quantity: number;
+        bo_stage: string;   // 'stage_entry', 'stage_exit', etc.
+    }>;
+}
+
 export interface SyncProgress {
     stage: string;
     detail: string;
@@ -963,7 +1005,7 @@ export async function fullCoinDCXSync(
 
     try {
         // ── Step 1: Validate credentials by fetching balances ──
-        report('Connecting', 'Validating API credentials...', 1, 10);
+        report('Connecting', 'Validating API credentials...', 1, 12);
         const balResult = await fetchCoinDCXBalances(credentials);
         if (!balResult.success) {
             return {
@@ -983,7 +1025,7 @@ export async function fullCoinDCXSync(
         warnings.push(`✅ Auth OK — ${balances.length} non-zero balances`);
 
         // ── Step 2: Fetch market details for symbol mapping ──
-        report('Markets', 'Loading market pair data...', 2, 10);
+        report('Markets', 'Loading market pair data...', 2, 12);
         let marketMap: Record<string, { base: string; quote: string }> = {};
         try {
             marketMap = await getMarketDetails();
@@ -996,7 +1038,7 @@ export async function fullCoinDCXSync(
         // ── Step 3: Fetch real-time FX rates for reward valuation ──
         // Note: Trade conversions now use HISTORICAL rates per-trade, not live rates.
         // Live rates are only needed for reward valuation (current asset prices).
-        report('FX Rates', 'Fetching live rates for reward valuation...', 3, 10);
+        report('FX Rates', 'Fetching live rates for reward valuation...', 3, 12);
         cachedQuoteToINR = {}; // Clear cache to get fresh rates
         let quoteToINR: Record<string, number> = {};
         try {
@@ -1011,7 +1053,7 @@ export async function fullCoinDCXSync(
 
         // ── Step 4: Fetch ALL trade history ──
         // fetchCoinDCXTradeHistory already handles pagination internally (up to 10,000 trades)
-        report('Trades', 'Fetching complete trade history...', 4, 10);
+        report('Trades', 'Fetching complete trade history...', 4, 12);
         let tradeCount = 0;
         const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
 
@@ -1039,9 +1081,207 @@ export async function fullCoinDCXSync(
             warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }
 
-        // ── Step 5: Deposits & Withdrawals ──
+        // ── Step 5: Fetch MARGIN trade history ──
+        // CRITICAL: CoinDCX has SEPARATE endpoints for spot and margin trades!
+        // The spot /trade_history endpoint does NOT include margin trades.
+        // This is the root cause of the ~₹8L gap in sell consideration.
+        report('Margin', 'Fetching margin trade history...', 5, 12);
+        let marginTradeCount = 0;
+        try {
+            // Fetch closed margin orders with full details
+            const marginResult = await makeAuthenticatedRequest<CoinDCXMarginOrder[]>(
+                '/exchange/v1/margin/fetch_orders',
+                {
+                    timestamp: Date.now(),
+                    details: true,
+                    status: 'close',
+                    size: 500,
+                },
+                credentials
+            );
+
+            console.log(`[CoinDCX Sync] Margin orders response:`, {
+                success: marginResult.success,
+                error: marginResult.error,
+                dataLength: Array.isArray(marginResult.data) ? marginResult.data.length : 'N/A',
+                sample: Array.isArray(marginResult.data) ? marginResult.data.slice(0, 2) : marginResult.data,
+            });
+
+            if (marginResult.success && marginResult.data && Array.isArray(marginResult.data)) {
+                const closedOrders = marginResult.data.filter(o =>
+                    o.status === 'close' && (o.exit_pos > 0 || o.total_pos > 0)
+                );
+
+                for (const order of closedOrders) {
+                    // Parse market pair (e.g., 'BTCINR', 'ETHUSDT')
+                    const { base, quote } = parseAssetFromSymbol(order.market, marketMap);
+                    const quoteKey = quote.toUpperCase();
+                    const isINRQuote = quoteKey === 'INR';
+
+                    // Process sub-orders (entry + exit legs)
+                    const subOrders = order.orders || [];
+                    for (const subOrder of subOrders) {
+                        if (subOrder.status === 'rejected' || subOrder.filled_quantity <= 0) continue;
+
+                        const tradeDate = new Date(subOrder.timestamp || order.created_at);
+                        const fy = getFY(tradeDate);
+                        const qty = subOrder.filled_quantity || 0;
+                        const price = subOrder.avg_price || subOrder.price_per_unit || 0;
+
+                        // Determine side from bo_stage
+                        // stage_entry = opening the position, stage_exit = closing
+                        // For a 'sell' margin order: entry=sell, exit=buy
+                        // For a 'buy' margin order: entry=buy, exit=sell
+                        let side: 'buy' | 'sell';
+                        if (subOrder.bo_stage === 'stage_entry') {
+                            side = order.side;
+                        } else {
+                            side = order.side === 'buy' ? 'sell' : 'buy';
+                        }
+
+                        // INR conversion
+                        let quoteINRRate = 1;
+                        if (!isINRQuote) {
+                            quoteINRRate = getHistoricalQuoteINR(quoteKey, tradeDate);
+                        }
+                        const priceInr = price * quoteINRRate;
+                        const grossInr = qty * priceInr;
+                        const feeInr = (subOrder.fee_amount || 0) * (isINRQuote ? 1 : quoteINRRate);
+                        const tdsAmount = side === 'sell' ? grossInr * 0.01 : 0;
+
+                        const normalized: NormalizedTransaction = {
+                            externalId: `cdx-margin-${order.id}-${subOrder.id}-${subOrder.bo_stage}`,
+                            exchange: 'CoinDCX',
+                            transactionType: side,
+                            isTaxableEvent: side === 'sell',
+                            assetSymbol: base.toUpperCase(),
+                            quoteAsset: quote.toUpperCase(),
+                            pair: `${base}/${quote}`.toUpperCase(),
+                            quantity: qty,
+                            pricePerUnit: price,
+                            priceInr,
+                            grossAmountQuote: qty * price,
+                            grossAmountInr: grossInr,
+                            feeAmount: subOrder.fee_amount || 0,
+                            feeAsset: isINRQuote ? 'INR' : quote.toUpperCase(),
+                            feeInr,
+                            tdsAmount,
+                            tdsRate: side === 'sell' ? 0.01 : 0,
+                            tradeTimestamp: tradeDate,
+                            financialYear: fy,
+                            assessmentYear: getAY(fy),
+                            description: `MARGIN ${side.toUpperCase()} ${qty.toFixed(6)} ${base} @ ₹${priceInr.toFixed(2)}/unit (${subOrder.bo_stage})`,
+                            orderId: order.id,
+                            rawData: {
+                                source: 'api',
+                                trade_type: 'margin',
+                                margin_order_id: order.id,
+                                sub_order_id: String(subOrder.id),
+                                bo_stage: subOrder.bo_stage,
+                                leverage: String(order.leverage),
+                                pnl: String(order.pnl),
+                                quote_currency: quote,
+                                quote_inr_rate: String(quoteINRRate),
+                            },
+                            contentHash: hashContent(`margin-${order.id}-${subOrder.id}-${side}-${qty.toFixed(8)}`),
+                        } as NormalizedTransaction;
+
+                        allTransactions.push(normalized);
+                        marginTradeCount++;
+                    }
+
+                    // If no sub-orders but order has position data, create from order-level data
+                    if (subOrders.length === 0 && (order.avg_entry > 0 || order.avg_exit > 0)) {
+                        const qty = order.exit_pos || order.total_pos || order.quantity;
+                        if (qty > 0 && order.avg_exit > 0) {
+                            const tradeDate = new Date(order.updated_at || order.created_at);
+                            const fy = getFY(tradeDate);
+                            let quoteINRRate = 1;
+                            if (!isINRQuote) {
+                                quoteINRRate = getHistoricalQuoteINR(quoteKey, tradeDate);
+                            }
+
+                            // Entry leg (buy/sell to open position)
+                            if (order.avg_entry > 0) {
+                                const entryPriceInr = order.avg_entry * quoteINRRate;
+                                const entryGrossInr = qty * entryPriceInr;
+                                allTransactions.push({
+                                    externalId: `cdx-margin-${order.id}-entry`,
+                                    exchange: 'CoinDCX',
+                                    transactionType: order.side,
+                                    isTaxableEvent: order.side === 'sell',
+                                    assetSymbol: base.toUpperCase(),
+                                    quoteAsset: quote.toUpperCase(),
+                                    pair: `${base}/${quote}`.toUpperCase(),
+                                    quantity: qty,
+                                    pricePerUnit: order.avg_entry,
+                                    priceInr: entryPriceInr,
+                                    grossAmountQuote: qty * order.avg_entry,
+                                    grossAmountInr: entryGrossInr,
+                                    feeAmount: order.entry_fee || 0,
+                                    feeAsset: isINRQuote ? 'INR' : quote.toUpperCase(),
+                                    feeInr: (order.entry_fee || 0) * (isINRQuote ? 1 : quoteINRRate),
+                                    tdsAmount: order.side === 'sell' ? entryGrossInr * 0.01 : 0,
+                                    tdsRate: order.side === 'sell' ? 0.01 : 0,
+                                    tradeTimestamp: new Date(order.created_at),
+                                    financialYear: getFY(new Date(order.created_at)),
+                                    assessmentYear: getAY(getFY(new Date(order.created_at))),
+                                    description: `MARGIN ${order.side.toUpperCase()} (ENTRY) ${qty.toFixed(6)} ${base} @ ₹${entryPriceInr.toFixed(2)}`,
+                                    orderId: order.id,
+                                    rawData: { source: 'api', trade_type: 'margin', margin_order_id: order.id, bo_stage: 'entry', leverage: String(order.leverage) },
+                                    contentHash: hashContent(`margin-entry-${order.id}-${order.side}-${qty.toFixed(8)}`),
+                                } as NormalizedTransaction);
+                                marginTradeCount++;
+                            }
+
+                            // Exit leg (opposite side to close position)
+                            const exitSide = order.side === 'buy' ? 'sell' : 'buy';
+                            const exitPriceInr = order.avg_exit * quoteINRRate;
+                            const exitGrossInr = qty * exitPriceInr;
+                            allTransactions.push({
+                                externalId: `cdx-margin-${order.id}-exit`,
+                                exchange: 'CoinDCX',
+                                transactionType: exitSide,
+                                isTaxableEvent: exitSide === 'sell',
+                                assetSymbol: base.toUpperCase(),
+                                quoteAsset: quote.toUpperCase(),
+                                pair: `${base}/${quote}`.toUpperCase(),
+                                quantity: qty,
+                                pricePerUnit: order.avg_exit,
+                                priceInr: exitPriceInr,
+                                grossAmountQuote: qty * order.avg_exit,
+                                grossAmountInr: exitGrossInr,
+                                feeAmount: order.exit_fee || 0,
+                                feeAsset: isINRQuote ? 'INR' : quote.toUpperCase(),
+                                feeInr: (order.exit_fee || 0) * (isINRQuote ? 1 : quoteINRRate),
+                                tdsAmount: exitSide === 'sell' ? exitGrossInr * 0.01 : 0,
+                                tdsRate: exitSide === 'sell' ? 0.01 : 0,
+                                tradeTimestamp: tradeDate,
+                                financialYear: fy,
+                                assessmentYear: getAY(fy),
+                                description: `MARGIN ${exitSide.toUpperCase()} (EXIT) ${qty.toFixed(6)} ${base} @ ₹${exitPriceInr.toFixed(2)}`,
+                                orderId: order.id,
+                                rawData: { source: 'api', trade_type: 'margin', margin_order_id: order.id, bo_stage: 'exit', leverage: String(order.leverage), pnl: String(order.pnl) },
+                                contentHash: hashContent(`margin-exit-${order.id}-${exitSide}-${qty.toFixed(8)}`),
+                            } as NormalizedTransaction);
+                            marginTradeCount++;
+                        }
+                    }
+                }
+
+                warnings.push(`📊 Margin: ${marginTradeCount} trades from ${closedOrders.length} closed margin orders`);
+                console.log(`[CoinDCX Sync] Margin: ${marginTradeCount} trades from ${closedOrders.length} closed orders (${marginResult.data.length} total orders)`);
+            } else {
+                warnings.push(`ℹ️ Margin: ${marginResult.error || 'No margin orders found (this is ok if you only trade spot)'}`);
+            }
+        } catch (e) {
+            console.log('[CoinDCX Sync] Margin orders fetch failed (may not be available):', (e as Error).message);
+            warnings.push(`ℹ️ Margin: endpoint not available — ${(e as Error).message}`);
+        }
+
+        // ── Step 6: Deposits & Withdrawals ──
         // Try CoinDCX authenticated endpoints for deposits/withdrawals
-        report('Deposits', 'Fetching deposit & withdrawal history...', 5, 10);
+        report('Deposits', 'Fetching deposit & withdrawal history...', 6, 12);
         let depositCount = 0;
         let withdrawalCount = 0;
 
@@ -1089,7 +1329,7 @@ export async function fullCoinDCXSync(
         }
 
         // 5b: Fetch withdrawals
-        report('Withdrawals', 'Fetching withdrawal history...', 6, 10);
+        report('Withdrawals', 'Fetching withdrawal history...', 7, 12);
         const withdrawalEndpoints = [
             '/exchange/v1/users/withdrawals',
             '/exchange/v1/withdrawals',
@@ -1140,7 +1380,7 @@ export async function fullCoinDCXSync(
         //   3. /exchange/v1/earn/orders            — Earn orders (newer endpoint)
         //   4. /exchange/v1/funding/lend_history   — Lending history
         //   5. Trade data analysis for INR cashback/promo rewards
-        report('Rewards', 'Fetching all rewards & staking income...', 7, 10);
+        report('Rewards', 'Fetching all rewards & staking income...', 8, 12);
         let rewardCount = 0;
         const allRewardRecords: CoinDCXLendingHistory[] = [];
 
@@ -1181,7 +1421,7 @@ export async function fullCoinDCXSync(
         }
 
         // ── 7b: Try staking interest endpoint ──
-        report('Staking', 'Fetching staking interest...', 8, 10);
+        report('Staking', 'Fetching staking interest...', 9, 12);
         try {
             const stakingResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/lending/interest',
@@ -1214,7 +1454,7 @@ export async function fullCoinDCXSync(
         }
 
         // ── 7c: Try additional earn endpoints ──
-        report('Earn', 'Checking earn/staking orders...', 9, 10);
+        report('Earn', 'Checking earn/staking orders...', 10, 12);
         const additionalEarnEndpoints = [
             { path: '/exchange/v1/earn/orders', name: 'Earn Orders' },
             { path: '/exchange/v1/funding/lend_history', name: 'Lend History' },
@@ -1266,7 +1506,7 @@ export async function fullCoinDCXSync(
         }
 
         // ── 7d: Convert all rewards with proper INR valuation ──
-        report('Valuation', 'Valuing rewards at market prices...', 10, 10);
+        report('Valuation', 'Valuing rewards at market prices...', 11, 12);
         if (allRewardRecords.length > 0) {
             // Also fetch asset prices for reward valuation
             // We need ADA/INR, SHIB/INR etc. from the ticker
@@ -1372,7 +1612,7 @@ export async function fullCoinDCXSync(
             warnings,
             missingDataChecklist,
             summary: {
-                totalTrades: tradeCount,
+                totalTrades: tradeCount + marginTradeCount,
                 totalDeposits: depositCount,
                 totalWithdrawals: withdrawalCount,
                 totalRewards: rewardCount,
