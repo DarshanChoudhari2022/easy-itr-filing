@@ -803,14 +803,15 @@ export function parseCoinDCXTDSCSV(
     result.totalRows = lines.length - 1;
 
     const col = {
-        date: findColumn(headers, 'date', 'time', 'tds_date', 'deduction_date', 'timestamp'),
-        consideration: findColumn(headers, 'consideration', 'gross_amount', 'amount', 'sale_amount', 'value', 'total'),
-        tdsAmount: findColumn(headers, 'tds_amount', 'tds', 'tax_deducted', 'deduction', 'tds_inr'),
+        date: findColumn(headers, 'date', 'time', 'tds_date', 'deduction_date', 'timestamp', 'transaction_date'),
+        asset: findColumn(headers, 'asset', 'coin', 'symbol', 'token', 'currency'),
+        qty: findColumn(headers, 'quantity', 'qty', 'amount_sold', 'volume'),
+        consideration: findColumn(headers, 'consideration', 'gross_amount', 'amount', 'sale_amount', 'value', 'total', 'gross_consideration'),
+        tdsAmount: findColumn(headers, 'tds_amount', 'tds', 'tax_deducted', 'deduction', 'tds_inr', 'tds_deducted'),
         tdsRate: findColumn(headers, 'tds_rate', 'rate', 'rate_percent'),
         tradeRef: findColumn(headers, 'trade_id', 'reference', 'transaction_id', 'order_id', 'trade_reference'),
         certificate: findColumn(headers, 'certificate', 'cert_no', 'certificate_number'),
         tan: findColumn(headers, 'tan', 'tan_number', 'deductor_tan'),
-        asset: findColumn(headers, 'asset', 'coin', 'symbol', 'token'),
         section: findColumn(headers, 'section'),
         quarter: findColumn(headers, 'quarter', 'q'),
     };
@@ -864,6 +865,42 @@ export function parseCoinDCXTDSCSV(
             };
 
             result.tdsRecords.push(record);
+
+            // CRITICAL: Generate a synthetic SELL transaction from the TDS record.
+            // This ensures that even if 'Insta' or 'P2P' trades are missing from the API/Trades CSV,
+            // the sale consideration (and thus Capital Gains) is captured.
+            const asset = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'USDT';
+            const quantity = col.qty >= 0 ? Math.abs(parseFloat(values[col.qty]) || 0) : 0;
+
+            // Generate transaction for the sell event recorded in TDS summary
+            const sellTx: NormalizedTransaction = {
+                externalId: record.tradeReference || `tds-sell-${fy}-${i}`,
+                exchange: 'CoinDCX',
+                transactionType: 'sell',
+                isTaxableEvent: true,
+                assetSymbol: asset,
+                quoteAsset: 'INR',
+                pair: `${asset}/INR`,
+                quantity: quantity || (consideration / 100000), // Fallback if qty missing (unlikely in TDS report)
+                pricePerUnit: quantity > 0 ? consideration / quantity : 0,
+                priceInr: quantity > 0 ? consideration / quantity : 0,
+                grossAmountQuote: consideration,
+                grossAmountInr: consideration,
+                feeAmount: 0,
+                feeAsset: 'INR',
+                feeInr: 0,
+                tdsAmount: tdsAmt,
+                tdsRate: record.tdsRate,
+                tradeTimestamp: tdsDate,
+                financialYear: fy,
+                assessmentYear: getAssessmentYear(fy),
+                description: `SELL ${quantity || ''} ${asset} (from TDS Summary report)`,
+                orderId: record.tradeReference,
+                rawData,
+                contentHash: computeRowHash(rawData) + '-sell',
+            };
+
+            result.transactions.push(sellTx);
             result.successCount++;
 
         } catch (err) {
@@ -1205,8 +1242,8 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
         return 'trades';
     }
 
-    // Only classify as TDS if NO trade indicators present
-    if (firstLine.includes('tds') || firstLine.includes('deduct') || firstLine.includes('certificate')) {
+    // Check for TDS indicators
+    if (firstLine.includes('tds') || firstLine.includes('deduct') || firstLine.includes('certificate') || firstLine.includes('tan_number')) {
         return 'tds';
     }
     if (firstLine.includes('reward') || firstLine.includes('staking') || firstLine.includes('airdrop') || firstLine.includes('earned')) {
@@ -1327,20 +1364,50 @@ export async function processImportSession(
         session.warnings.push(`${file.name}: Imported ${parseResult.transactions.length} total records into wallet history.`);
 
 
-        // Global dedup across files
+        // SMART RECONCILIATION: Merge data across files using Order IDs
+        // Trade files (Spot/Margin/Insta) are highly detailed.
+        // TDS files are the source of truth for Sale Consideration.
         const dedupedTx: NormalizedTransaction[] = [];
         for (const tx of parseResult.transactions) {
+            // Priority 1: Check if we have seen this EXACT content hash (exact same row)
             if (globalHashes.has(tx.contentHash)) {
                 parseResult.duplicateCount++;
-            } else {
-                globalHashes.add(tx.contentHash);
-                dedupedTx.push(tx);
+                continue;
             }
+
+            // Priority 2: Check if we have seen this Order ID/External ID (different file type for same trade)
+            if (tx.orderId || tx.externalId) {
+                const id = tx.orderId || tx.externalId;
+                const existing = dedupedTx.find(t => t.orderId === id || t.externalId === id);
+
+                if (existing) {
+                    // We already have this trade from another file in this session.
+                    // Merge info: e.g., if existing is from 'trades' and new is from 'tds', 
+                    // ensure existing has the authoritative TDS amount.
+                    if (parseResult.fileType === 'tds') {
+                        existing.tdsAmount = tx.tdsAmount || existing.tdsAmount;
+                        existing.rawData = { ...existing.rawData, ...tx.rawData };
+                        parseResult.duplicateCount++;
+                        continue;
+                    }
+                    // If existing is from 'tds' (synthetic) and new is from 'trades' (real), 
+                    // replacement is better because 'trades' has qty/price.
+                    if (existing.description?.includes('from TDS Summary')) {
+                        // Replace synthetic with real
+                        const idx = dedupedTx.indexOf(existing);
+                        dedupedTx[idx] = tx;
+                        continue;
+                    }
+                }
+            }
+
+            globalHashes.add(tx.contentHash);
+            dedupedTx.push(tx);
         }
         parseResult.transactions = dedupedTx;
 
         session.files.push(parseResult);
-        session.totalTransactions += parseResult.transactions.length;
+        session.totalTransactions = dedupedTx.length + (session.totalTransactions || 0);
         session.totalTDSRecords += parseResult.tdsRecords.length;
         session.totalErrors += parseResult.errorCount;
         session.totalDuplicates += parseResult.duplicateCount;
