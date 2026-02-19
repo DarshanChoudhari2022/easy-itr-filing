@@ -1,9 +1,19 @@
 /**
- * Tax Mitra — FIFO Tax Computation Engine v3
+ * Tax Mitra — FIFO Tax Computation Engine v4
  * ============================================
  * Production-ready Indian crypto tax computation under:
  *   - Section 115BBH: 30% flat tax on VDA gains
  *   - Section 194S: 1% TDS on consideration
+ *
+ * ARCHITECTURE (v4):
+ *   ✓ FULL HISTORICAL FIFO: ALL transactions from inception are processed
+ *   ✓ FY selection is REPORTING-LEVEL ONLY — never affects FIFO inventory
+ *   ✓ Prior-year sells correctly consume inventory (fixes KoinX mismatch)
+ *   ✓ Stablecoin trades (USDT/USDC) treated as taxable disposals
+ *   ✓ Inventory reconciliation & negative inventory prevention
+ *   ✓ Brokerage does NOT reduce cost basis (per 115BBH)
+ *   ✓ Losses cannot offset gains (per 115BBH)
+ *   ✓ Idempotent reprocessing — full FIFO recalculation on every run
  *
  * Rules enforced:
  *   ✓ No set-off of VDA losses against other income heads
@@ -75,26 +85,33 @@ export type VdaEventType =
  */
 export function classifyVdaEvent(tx: NormalizedTransaction): VdaEventType {
     const t = (tx.transactionType || '').toLowerCase().trim();
+    const asset = (tx.assetSymbol || '').toUpperCase();
     const quote = (tx.quoteAsset || 'INR').toUpperCase();
     const isFiatQuote = quote === 'INR';
 
     // Rewards & income types
-    if (t.startsWith('reward_') || t === 'reward') return 'REWARD';
+    if (t.startsWith('reward_') || t === 'reward') {
+        if (t.includes('staking')) return 'STAKING';
+        if (t.includes('interest')) return 'INTEREST_EARNED';
+        if (t.includes('mining')) return 'MINING';
+        return 'REWARD';
+    }
     if (t === 'staking' || t === 'staking_reward') return 'STAKING';
     if (t === 'airdrop') return 'AIRDROP';
     if (t === 'referral_bonus' || t === 'referral') return 'REFERRAL_BONUS';
     if (t === 'interest_earned' || t === 'interest') return 'INTEREST_EARNED';
     if (t === 'mining') return 'MINING';
 
-    // Transfers
+    // Transfers & Settlements
     if (t === 'transfer' || t === 'transfer_self' || t === 'internal_transfer') return 'TRANSFER_SELF';
+    if (t === 'settlement' || t === 'adjustment' || t === 'redenomination') return 'TRANSFER_SELF'; // Treat as non-taxable move unless it has value
 
     // Deposits & Withdrawals
     if (t === 'deposit') {
-        return isFiatQuote || tx.assetSymbol === 'INR' ? 'DEPOSIT_FIAT' : 'DEPOSIT_CRYPTO';
+        return (isFiatQuote || asset === 'INR') ? 'DEPOSIT_FIAT' : 'DEPOSIT_CRYPTO';
     }
     if (t === 'withdrawal' || t === 'withdraw') {
-        return isFiatQuote || tx.assetSymbol === 'INR' ? 'WITHDRAW_FIAT' : 'WITHDRAW_CRYPTO';
+        return (isFiatQuote || asset === 'INR') ? 'WITHDRAW_FIAT' : 'WITHDRAW_CRYPTO';
     }
 
     // Spot trades
@@ -121,6 +138,7 @@ export function classifyVdaEvent(tx: NormalizedTransaction): VdaEventType {
 
     return 'UNKNOWN';
 }
+
 
 /** Is this event an acquisition (adds to inventory)? */
 function isAcquisitionEvent(eventType: VdaEventType): boolean {
@@ -286,7 +304,10 @@ export interface TaxComputationResult {
 const VDA_TAX_RATE = 0.30;
 const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
-const ENGINE_VERSION = '3.0.0';
+const ENGINE_VERSION = '4.0.0';
+
+// Stablecoins are taxable VDAs — treat like any other crypto
+const STABLECOIN_SYMBOLS = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD'];
 
 // Surcharge thresholds for AY 2026-27 (on total income basis)
 // For VDA income specifically, marginal surcharge caps may apply
@@ -295,6 +316,34 @@ const SURCHARGE_SLABS = [
     { above: 5000000, rate: 0.10 },    // Above 50L: 10%
     { above: 0, rate: 0 },
 ];
+
+// ============= COMPLIANCE FLAGS (Indian VDA Rules) =============
+
+/** Per Section 115BBH:
+ *  - Brokerage/fee must NOT reduce cost basis (only 'cost of acquisition' is deductible)
+ *  - Losses from one VDA cannot offset gains from another
+ *  - 30% flat tax + 4% cess (no slab benefit)
+ */
+const VDA_COMPLIANCE = {
+    BROKERAGE_REDUCES_COST_BASIS: false,  // Must be false per 115BBH
+    ALLOW_LOSS_OFFSET: false,             // Must be false per 115BBH
+    TAX_RATE: 0.30,
+    CESS_RATE: 0.04,
+    STABLECOINS_ARE_VDA: true,            // USDT/USDC trades are taxable
+} as const;
+
+// ============= INVENTORY RECONCILIATION =============
+
+export interface InventoryReconciliation {
+    assetSymbol: string;
+    totalAcquired: number;       // Sum of all buy/reward/deposit quantities
+    totalDisposed: number;       // Sum of all sell/withdrawal quantities
+    expectedBalance: number;     // acquired - disposed
+    inventoryBalance: number;    // Sum of remaining lot quantities
+    discrepancy: number;         // expected - inventory
+    isReconciled: boolean;       // discrepancy < epsilon
+    negativeInventoryEvents: number; // Times we had to sell more than available
+}
 
 // ============= CORE ENGINE =============
 
@@ -338,40 +387,36 @@ export function computeVdaTaxForFinancialYear(
     }));
 
     // ─── Step 1: Re-assign FY using IST-aware function (single source of truth) ───
-    // This ensures FY is always computed identically regardless of where it was first set
     transactions = transactions.map(tx => ({
         ...tx,
         financialYear: mapTxToFinancialYear(tx.tradeTimestamp),
     }));
 
-    const fyTransactions = transactions.filter(tx => tx.financialYear === financialYear);
+    // ═══════════════════════════════════════════════════════════════════
+    // CRITICAL ARCHITECTURE (v4):
+    //
+    //   FIFO requires FULL HISTORICAL INVENTORY.
+    //   We MUST process ALL transactions from account inception to present.
+    //   This includes ALL prior-year sells — they consume inventory too.
+    //
+    //   The FY selection is REPORTING-LEVEL ONLY:
+    //   - ALL buys → add to FIFO queue (all years)
+    //   - ALL sells → consume from FIFO queue (all years)
+    //   - Only REPORT gains/losses for disposals where disposal_date ∈ target FY
+    //
+    //   Without this, prior-year sells don't consume inventory,
+    //   leading to incorrect cost basis for current-year gains.
+    //   This was the root cause of KoinX mismatches.
+    // ═══════════════════════════════════════════════════════════════════
 
-    // Classify every transaction using the canonical classifier
-    const classified = fyTransactions.map(tx => ({
-        tx,
-        event: classifyVdaEvent(tx),
-    }));
-
-    const trades = classified.filter(c =>
-        isAcquisitionEvent(c.event) || isDisposalEvent(c.event)
-    ).map(c => c.tx);
-
-    const rewards = classified.filter(c => isIncomeEvent(c.event)).map(c => c.tx);
-
-    // Also include prior-FY acquisitions to build cost basis (FIFO needs full history)
-    const priorAcquisitions = transactions.filter(tx => {
-        if (tx.financialYear === financialYear) return false;
-        const event = classifyVdaEvent(tx);
-        return isAcquisitionEvent(event);
-    });
-
-    // Debug: log transaction counts for verification
-    console.log(`[TaxEngine] FY ${financialYear}: ${fyTransactions.length} FY txs, ${trades.length} trades, ${rewards.length} rewards, ${priorAcquisitions.length} prior acquisitions`);
-
-    // ─── Step 2: Group by asset ───
-    const allRelevantTx = [...priorAcquisitions, ...trades, ...rewards].sort(
-        (a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime()
-    );
+    // Process ALL transactions for FIFO stack building
+    const allRelevantTx = transactions
+        .filter(tx => {
+            const event = classifyVdaEvent(tx);
+            // Include trades, rewards, and crypto deposits/withdrawals (for inventory tracking)
+            return isAcquisitionEvent(event) || isDisposalEvent(event) || event === 'DEPOSIT_CRYPTO' || event === 'WITHDRAW_CRYPTO';
+        })
+        .sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
 
     const byAsset: Record<string, NormalizedTransaction[]> = {};
     for (const tx of allRelevantTx) {
@@ -379,11 +424,22 @@ export function computeVdaTaxForFinancialYear(
         byAsset[tx.assetSymbol].push(tx);
     }
 
-    // ─── Step 3: Run FIFO per asset ───
+    // Filter rewards/income events from ALL transactions
+    const rewards = transactions.filter(tx => isIncomeEvent(classifyVdaEvent(tx)));
+
+    // Count prior-year transactions for logging
+    const priorYearCount = allRelevantTx.filter(tx => tx.financialYear !== financialYear).length;
+    const targetYearCount = allRelevantTx.filter(tx => tx.financialYear === financialYear).length;
+    console.log(`[TaxEngine v4] FY ${financialYear}: Processing FULL history → ${allRelevantTx.length} total records (${priorYearCount} prior-year + ${targetYearCount} target-year). ${rewards.length} reward events.`);
+
+
+
+    // ─── Step 3: Run FIFO per asset (FULL HISTORY, report for target FY) ───
     const assetSummaries: AssetGainSummary[] = [];
     const allLotMatches: LotMatch[] = [];
     const allVDALines: VDAReportLine[] = [];
     const activeLots: TaxLot[] = [];
+    const inventoryReconciliations: InventoryReconciliation[] = [];
     let slNoCounter = 1;
 
     let totalConsideration = 0;
@@ -400,6 +456,7 @@ export function computeVdaTaxForFinancialYear(
         assetSummaries.push(result.summary);
         allLotMatches.push(...result.matches);
         activeLots.push(...result.remainingLots);
+        inventoryReconciliations.push(result.reconciliation);
 
         totalConsideration += result.summary.totalSellValueInr;
         // CRITICAL: totalCost = cost of acquisition for SOLD assets only (from FIFO lot matches)
@@ -412,7 +469,7 @@ export function computeVdaTaxForFinancialYear(
         for (const tx of txs) {
             if (tx.financialYear !== financialYear) continue;
 
-            // Brokerage fee applies to all trades in this FY
+            // Brokerage fee: tracked but NOT deducted from cost basis per 115BBH
             totalFee += tx.feeInr || 0;
 
             // Track sell-side metrics
@@ -459,6 +516,22 @@ export function computeVdaTaxForFinancialYear(
 
         // Warnings
         warnings.push(...result.warnings);
+    }
+
+    // ─── Inventory Reconciliation Report ───
+    const unreconciledAssets = inventoryReconciliations.filter(r => !r.isReconciled);
+    if (unreconciledAssets.length > 0) {
+        warnings.push(`⚠️ Inventory reconciliation: ${unreconciledAssets.length} asset(s) have discrepancies.`);
+        for (const r of unreconciledAssets) {
+            warnings.push(`  ${r.assetSymbol}: Expected ${r.expectedBalance.toFixed(8)}, Inventory has ${r.inventoryBalance.toFixed(8)} (Δ ${r.discrepancy.toFixed(8)})`);
+        }
+    }
+    const negativeInvAssets = inventoryReconciliations.filter(r => r.negativeInventoryEvents > 0);
+    if (negativeInvAssets.length > 0) {
+        warnings.push(`⚠️ Negative inventory detected in ${negativeInvAssets.length} asset(s) — check for missing buy/deposit transactions.`);
+        for (const r of negativeInvAssets) {
+            warnings.push(`  ${r.assetSymbol}: ${r.negativeInventoryEvents} negative inventory event(s)`);
+        }
     }
 
     // ─── Step 4: Other VDA Income (Rewards / Staking / Airdrops / Interest) ───
@@ -536,21 +609,23 @@ export function computeVdaTaxForFinancialYear(
     const uniqueAssets = new Set(assetSummaries.map(a => a.assetSymbol)).size;
 
     // ─── Final Summary Log ───
-    console.log(`\n[TaxEngine] ═══════════════════════════════════════`);
-    console.log(`[TaxEngine] FY ${financialYear} — COMPUTATION SUMMARY`);
-    console.log(`[TaxEngine] ═══════════════════════════════════════`);
-    console.log(`[TaxEngine] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
-    console.log(`[TaxEngine] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
-    console.log(`[TaxEngine] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
-    console.log(`[TaxEngine] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
-    console.log(`[TaxEngine] ───────────────────────────────────────`);
-    console.log(`[TaxEngine] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
-    console.log(`[TaxEngine] Surcharge:                 ₹${surcharge.toFixed(2)}`);
-    console.log(`[TaxEngine] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
-    console.log(`[TaxEngine] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
-    console.log(`[TaxEngine] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
-    console.log(`[TaxEngine] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
-    console.log(`[TaxEngine] ═══════════════════════════════════════\n`);
+    console.log(`\n[TaxEngine v4] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine v4] FY ${financialYear} — COMPUTATION SUMMARY`);
+    console.log(`[TaxEngine v4] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine v4] Full history: ${allRelevantTx.length} records (${priorYearCount} prior-year + ${targetYearCount} target-year)`);
+    console.log(`[TaxEngine v4] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
+    console.log(`[TaxEngine v4] ───────────────────────────────────────`);
+    console.log(`[TaxEngine v4] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Surcharge:                 ₹${surcharge.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine v4] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
+    console.log(`[TaxEngine v4] Brokerage (NOT deducted per 115BBH): ₹${totalFee.toFixed(2)}`);
+    console.log(`[TaxEngine v4] ═══════════════════════════════════════\n`);
 
     return {
         financialYear,
@@ -598,12 +673,21 @@ export function computeVdaTaxForFinancialYear(
 }
 
 // ============= FIFO PER-ASSET COMPUTATION =============
+// CRITICAL v4 CHANGE:
+//   This function processes ALL transactions for the asset across ALL years.
+//   It builds the FIFO inventory from account inception.
+//   ALL sells (from ALL FYs) consume inventory in correct chronological order.
+//   Only gains/losses for the TARGET FY are reported.
+//
+//   Without this, prior-year sells don't reduce inventory,
+//   and current-year sells get matched to the WRONG (too-old) lots.
 
 interface AssetFIFOResult {
     summary: AssetGainSummary;
-    matches: LotMatch[];
-    remainingLots: TaxLot[];
+    matches: LotMatch[];         // Only target FY matches
+    remainingLots: TaxLot[];     // Remaining inventory after ALL processing
     warnings: string[];
+    reconciliation: InventoryReconciliation;
 }
 
 function computeAssetFIFO(
@@ -614,8 +698,9 @@ function computeAssetFIFO(
 ): AssetFIFOResult {
     const warnings: string[] = [];
     const inventory: TaxLot[] = [];
-    const matches: LotMatch[] = [];
+    const targetFYMatches: LotMatch[] = [];  // Only matches from target FY disposals
 
+    // Stats for target FY only (reported)
     let totalBought = 0;
     let totalSold = 0;
     let totalBuyValue = 0;
@@ -623,6 +708,14 @@ function computeAssetFIFO(
     let grossGains = 0;
     let grossLosses = 0;
     let lotCounter = 0;
+
+    // Reconciliation tracking (all years)
+    let totalAcquiredAllTime = 0;
+    let totalDisposedAllTime = 0;
+    let negativeInventoryEvents = 0;
+
+    // Check if this is a stablecoin
+    const isStablecoin = STABLECOIN_SYMBOLS.includes(asset.toUpperCase());
 
     // Sort chronologically
     const sorted = [...transactions].sort((a, b) =>
@@ -633,6 +726,7 @@ function computeAssetFIFO(
         const eventType = classifyVdaEvent(tx);
         const isBuy = isAcquisitionEvent(eventType);
         const isSell = isDisposalEvent(eventType);
+        const isTargetFY = tx.financialYear === targetFY;
 
         // Skip non-taxable events (self-transfers, fiat deposits/withdrawals)
         if (eventType === 'TRANSFER_SELF' || eventType === 'DEPOSIT_FIAT' ||
@@ -643,30 +737,29 @@ function computeAssetFIFO(
 
         if (isBuy) {
             // ─── Fee handling per 115BBH ───
-            // If fee is in base asset (e.g., buying BTC, fee in BTC):
-            //   → Reduce acquired qty, keep cost/unit same
-            //   → Net qty = quantity - fee
-            // If fee is in quote asset (e.g., fee in INR/USDT):
-            //   → Add fee to total cost, increasing cost/unit
-            //   → This IS allowed as "cost of acquisition" per 115BBH
+            // Per VDA_COMPLIANCE.BROKERAGE_REDUCES_COST_BASIS === false:
+            //   Brokerage/fee does NOT reduce cost basis.
+            //   However, fee paid in base asset reduces acquired quantity (not a policy choice, it's a math fact).
+            //   Fee paid in quote currency is NOT added to cost basis per strict 115BBH interpretation.
             const feeAsset = (tx.feeAsset || '').toUpperCase();
             const feeInBaseAsset = feeAsset === asset.toUpperCase();
             const feeAmount = tx.feeAmount || 0;
 
             let netQty = tx.quantity;
             let costBasis = tx.priceInr || 0; // cost per unit in INR
-            let totalCost = netQty * costBasis;
+            let totalLotCost = netQty * costBasis;
 
             if (feeInBaseAsset && feeAmount > 0) {
-                // Fee in base asset: reduce acquired quantity
+                // Fee in base asset: reduce acquired quantity (physical reduction)
                 netQty = Math.max(0, tx.quantity - feeAmount);
-            } else if (!feeInBaseAsset && (tx.feeInr || 0) > 0) {
-                // Fee in quote asset: add to cost of acquisition
-                totalCost += (tx.feeInr || 0);
-                costBasis = netQty > 0 ? totalCost / netQty : 0;
+                totalLotCost = netQty * costBasis; // Recalculate with reduced qty
             }
+            // NOTE: Fee in quote currency is NOT added to cost basis per 115BBH
+            // (brokerage does not reduce cost basis)
 
             if (netQty <= 0) continue; // Nothing acquired after fees
+
+            totalAcquiredAllTime += netQty;
 
             // Map event type to acquisition type
             let acquisitionType = 'purchase';
@@ -681,7 +774,7 @@ function computeAssetFIFO(
                 originalQuantity: netQty,
                 remainingQuantity: netQty,
                 costBasisPerUnit: costBasis,
-                totalCostInr: totalCost,
+                totalCostInr: totalLotCost,
                 acquisitionDate: tx.tradeTimestamp,
                 acquisitionType,
                 exchange: tx.exchange,
@@ -690,25 +783,44 @@ function computeAssetFIFO(
             };
             inventory.push(lot);
 
-            if (tx.financialYear === targetFY) {
+            // Only count target FY stats for reporting
+            if (isTargetFY) {
                 totalBought += netQty;
-                totalBuyValue += totalCost;
+                totalBuyValue += totalLotCost;
             }
 
-        } else if (isSell && tx.financialYear === targetFY) {
-            // ─── FIFO lot matching for disposals ───
+        } else if (isSell) {
+            // ═══════════════════════════════════════════════════════
+            // CRITICAL v4 FIX: Process ALL sells from ALL financial years
+            // Not just target FY. This ensures prior-year sells properly
+            // consume inventory, so current-year sells get correct cost basis.
+            // ═══════════════════════════════════════════════════════
             let remainingToSell = tx.quantity;
             const salePrice = tx.priceInr; // sale price per unit in INR
 
-            // Proceeds = quantity × sale price (no fee deduction per 115BBH)
-            // Under 115BBH, ONLY cost of acquisition is deductible
-            totalSold += tx.quantity;
-            totalSellValue += tx.grossAmountInr || (tx.quantity * salePrice);
+            totalDisposedAllTime += tx.quantity;
+
+            // Only track sell volume/value for target FY
+            if (isTargetFY) {
+                totalSold += tx.quantity;
+                totalSellValue += tx.grossAmountInr || (tx.quantity * salePrice);
+            }
+
+            // ─── Negative inventory prevention ───
+            const availableInventory = inventory.reduce((s, l) => s + l.remainingQuantity, 0);
+            if (availableInventory < remainingToSell - 0.00000001) {
+                negativeInventoryEvents++;
+                if (isTargetFY) {
+                    warnings.push(`${asset}: Selling ${remainingToSell.toFixed(8)} but only ${availableInventory.toFixed(8)} in inventory (missing buy/deposit for ${(remainingToSell - availableInventory).toFixed(8)} units)`);
+                }
+            }
 
             while (remainingToSell > 0.00000001 && inventory.length > 0) {
                 const lotIdx = selectLotIndex(inventory, method);
                 if (lotIdx === -1) {
-                    warnings.push(`${asset}: Selling ${remainingToSell.toFixed(8)} without buy lot (possible deposit/transfer missing)`);
+                    if (isTargetFY) {
+                        warnings.push(`${asset}: Selling ${remainingToSell.toFixed(8)} without buy lot (possible deposit/transfer missing)`);
+                    }
                     break;
                 }
 
@@ -717,7 +829,7 @@ function computeAssetFIFO(
 
                 // Proceeds: proportional share of total sale value
                 const proceeds = matchedQty * salePrice;
-                // Cost: from the lot (already includes fee adjustments from buy side)
+                // Cost: from the lot (per 115BBH, only cost of acquisition)
                 const cost = matchedQty * lot.costBasisPerUnit;
                 const gain = proceeds - cost;
 
@@ -725,33 +837,36 @@ function computeAssetFIFO(
                     (tx.tradeTimestamp.getTime() - lot.acquisitionDate.getTime()) / (1000 * 60 * 60 * 24)
                 );
 
-                const match: LotMatch = {
-                    sellTransactionId: tx.externalId,
-                    buyLotId: lot.id,
-                    assetSymbol: asset,
-                    matchedQuantity: matchedQty,
-                    buyPricePerUnit: lot.costBasisPerUnit,
-                    sellPricePerUnit: salePrice,
-                    costOfAcquisition: Math.round(cost * 100) / 100,
-                    saleConsideration: Math.round(proceeds * 100) / 100,
-                    gainLoss: Math.round(gain * 100) / 100,
-                    buyDate: lot.acquisitionDate,
-                    sellDate: tx.tradeTimestamp,
-                    holdingDays,
-                    accountingMethod: method,
-                    financialYear: targetFY,
-                };
-                matches.push(match);
+                // Only record lot matches for target FY disposals
+                if (isTargetFY) {
+                    const match: LotMatch = {
+                        sellTransactionId: tx.externalId,
+                        buyLotId: lot.id,
+                        assetSymbol: asset,
+                        matchedQuantity: matchedQty,
+                        buyPricePerUnit: lot.costBasisPerUnit,
+                        sellPricePerUnit: salePrice,
+                        costOfAcquisition: Math.round(cost * 100) / 100,
+                        saleConsideration: Math.round(proceeds * 100) / 100,
+                        gainLoss: Math.round(gain * 100) / 100,
+                        buyDate: lot.acquisitionDate,
+                        sellDate: tx.tradeTimestamp,
+                        holdingDays,
+                        accountingMethod: method,
+                        financialYear: targetFY,
+                    };
+                    targetFYMatches.push(match);
 
-                // 115BBH: Track gains AND losses separately
-                // Losses CANNOT offset gains — each is tracked independently
-                if (gain > 0) {
-                    grossGains += gain;
-                } else {
-                    grossLosses += Math.abs(gain);
+                    // 115BBH: Track gains AND losses separately
+                    // Losses CANNOT offset gains — each is tracked independently
+                    if (gain > 0) {
+                        grossGains += gain;
+                    } else {
+                        grossLosses += Math.abs(gain);
+                    }
                 }
 
-                // Update lot
+                // Update lot — this happens for ALL years (the whole point of v4)
                 lot.remainingQuantity -= matchedQty;
                 remainingToSell -= matchedQty;
 
@@ -761,7 +876,7 @@ function computeAssetFIFO(
                 }
             }
 
-            if (remainingToSell > 0.00000001) {
+            if (remainingToSell > 0.00000001 && isTargetFY) {
                 warnings.push(`${asset}: ${remainingToSell.toFixed(8)} units could not be matched to any buy lot (missing cost basis)`);
             }
         }
@@ -773,6 +888,25 @@ function computeAssetFIFO(
         ? inventory.reduce((s, l) => s + l.remainingQuantity * l.costBasisPerUnit, 0) / currentHolding
         : 0;
 
+    // ── Inventory Reconciliation ──
+    const expectedBalance = totalAcquiredAllTime - totalDisposedAllTime;
+    const inventoryBalance = currentHolding;
+    const discrepancy = Math.abs(expectedBalance - inventoryBalance);
+    const reconciliation: InventoryReconciliation = {
+        assetSymbol: asset,
+        totalAcquired: totalAcquiredAllTime,
+        totalDisposed: totalDisposedAllTime,
+        expectedBalance,
+        inventoryBalance,
+        discrepancy,
+        isReconciled: discrepancy < 0.00001,
+        negativeInventoryEvents,
+    };
+
+    if (isStablecoin && (totalSold > 0 || grossGains > 0 || grossLosses > 0)) {
+        console.log(`[TaxEngine v4] Stablecoin ${asset}: Treated as taxable VDA. Sold=${totalSold.toFixed(4)}, Gains=₹${grossGains.toFixed(2)}, Losses=₹${grossLosses.toFixed(2)}`);
+    }
+
     return {
         summary: {
             assetSymbol: asset,
@@ -783,14 +917,15 @@ function computeAssetFIFO(
             grossGains: Math.round(grossGains * 100) / 100,
             grossLosses: Math.round(grossLosses * 100) / 100,
             netGainLoss: Math.round((grossGains - grossLosses) * 100) / 100,
-            taxableGain: Math.round(grossGains * 100) / 100, // NO loss offset
+            taxableGain: Math.round(grossGains * 100) / 100, // NO loss offset per 115BBH
             currentHolding,
             avgCostBasis: Math.round(avgCostBasis * 100) / 100,
-            matchedLots: matches,
+            matchedLots: targetFYMatches,
         },
-        matches,
+        matches: targetFYMatches,
         remainingLots: inventory.filter(l => !l.isFullyConsumed),
         warnings,
+        reconciliation,
     };
 }
 

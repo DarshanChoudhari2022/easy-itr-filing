@@ -585,16 +585,29 @@ export default function CryptoTaxPage() {
 
       // 4. Store parsed data in state — reset FY auto-detection so it picks the right FY
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
-      setParsedTransactions(prev => [...prev, ...allTransactions]);
-      setParsedTDSRecords(prev => [...prev, ...allTDSRecords]);
+
+      // Deduplicate against already-stored transactions (prevent double-import)
+      const existingHashes = new Set(parsedTransactions.map(t => t.contentHash).filter(Boolean));
+      const newUniqueTxs = allTransactions.filter(t => !existingHashes.has(t.contentHash));
+      const skippedCount = allTransactions.length - newUniqueTxs.length;
+      if (skippedCount > 0) {
+        console.log(`[CryptoImport] Dedup: skipped ${skippedCount} already-imported transactions`);
+        messages.push(`ℹ️ ${skippedCount} already-imported transactions skipped (dedup)`);
+      }
+
+      const existingTDSHashes = new Set(parsedTDSRecords.map(r => JSON.stringify([r.tdsDate, r.tdsAmountInr])));
+      const newUniqueTDS = allTDSRecords.filter(r => !existingTDSHashes.has(JSON.stringify([r.tdsDate, r.tdsAmountInr])));
+
+      setParsedTransactions(prev => [...prev, ...newUniqueTxs]);
+      setParsedTDSRecords(prev => [...prev, ...newUniqueTDS]);
 
       // 5. Map to Trade[] for UI display
-      const newTrades = mapTransactionsToTrades(allTransactions);
+      const newTrades = mapTransactionsToTrades(newUniqueTxs);
       setTrades(prev => [...prev, ...newTrades]);
 
       // 6. Compute tax immediately using the FY with most trades
-      const allTxs = [...parsedTransactions, ...allTransactions];
-      const allTds = [...parsedTDSRecords, ...allTDSRecords];
+      const allTxs = [...parsedTransactions, ...newUniqueTxs];
+      const allTds = [...parsedTDSRecords, ...newUniqueTDS];
       // Auto-detect best FY from the combined data
       const fyCounts: Record<string, number> = {};
       for (const tx of allTxs) {
@@ -800,10 +813,14 @@ export default function CryptoTaxPage() {
 
     // Use engine computation if available
     if (taxComputation) {
+      // ── Use engine's sell count (VDA report lines = unique sell events, matches KoinX) ──
+      // totalVDAEntries = number of sell events processed by FIFO engine
+      // This is more accurate than raw fySells.length which counts raw CSV rows
+      const engineSellCount = taxComputation.totalVDAEntries || fySells.length;
       return {
-        totalTrades: fyBuys.length + fySells.length,
+        totalTrades: fyBuys.length + engineSellCount,
         buyTrades: fyBuys.length,
-        sellTrades: fySells.length,
+        sellTrades: engineSellCount,
         rewardTrades: fyRewards.length,
         // BUG FIX: totalBuyValueInr = cost of ALL buys (including unsold inventory) — WRONG
         // totalCostOfAcquisitionInr = FIFO-matched cost for SOLD assets only — CORRECT

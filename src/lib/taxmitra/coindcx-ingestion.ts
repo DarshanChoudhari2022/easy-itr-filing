@@ -440,6 +440,7 @@ export function parseCoinDCXTradesCSV(
             const feeStr = col.fee >= 0 ? values[col.fee] : '0';
             const feeCurrStr = col.feeCurrency >= 0 ? values[col.feeCurrency] : 'INR';
             const orderIdStr = col.orderId >= 0 ? values[col.orderId] : `coindcx-${i}`;
+            const totalStr = col.total >= 0 ? values[col.total] : '';
 
             // For partially_cancelled orders: filled qty = total qty - remaining qty
             if (col.status >= 0 && col.remainingQty >= 0) {
@@ -484,25 +485,38 @@ export function parseCoinDCXTradesCSV(
             const isBuy = sideNorm.includes('buy') || sideNorm === 'b';
             const txType = isBuy ? 'buy' : 'sell';
 
-            // INR conversion
+            // ── INR conversion ──
+            // Priority: use the CSV 'total' column as the authoritative INR amount when available.
+            // CoinDCX exports include a 'total' column with the exact INR trade value.
+            // Recomputing quantity × price can differ due to rounding or fee inclusion.
+            const totalFromCsv = totalStr ? Math.abs(parseFloat(totalStr) || 0) : 0;
+
             let priceInr = pricePerUnit;
-            if (quoteAsset !== 'INR') {
-                // Need FX conversion
-                if (fxRateLookup) {
-                    const rate = fxRateLookup(quoteAsset, tradeDate);
-                    priceInr = pricePerUnit * rate;
-                } else {
-                    // Default USDT ≈ 84 INR
-                    const defaultRates: Record<string, number> = {
-                        'USDT': 84, 'USDC': 84, 'BUSD': 84,
-                        'BTC': 7500000, 'ETH': 250000
-                    };
-                    priceInr = pricePerUnit * (defaultRates[quoteAsset] || 84);
-                    result.warnings.push(`Row ${i + 1}: Used default FX rate for ${quoteAsset}/INR. For accuracy, upload FX data.`);
+            let grossAmountInr: number;
+
+            if (totalFromCsv > 0 && quoteAsset === 'INR') {
+                // Use the exact total from the CSV (most accurate)
+                grossAmountInr = totalFromCsv;
+                // Derive priceInr from total for consistency
+                priceInr = quantity > 0 ? totalFromCsv / quantity : pricePerUnit;
+            } else {
+                // Non-INR pair or no total column — compute from price
+                if (quoteAsset !== 'INR') {
+                    if (fxRateLookup) {
+                        const rate = fxRateLookup(quoteAsset, tradeDate);
+                        priceInr = pricePerUnit * rate;
+                    } else {
+                        const defaultRates: Record<string, number> = {
+                            'USDT': 84, 'USDC': 84, 'BUSD': 84,
+                            'BTC': 7500000, 'ETH': 250000
+                        };
+                        priceInr = pricePerUnit * (defaultRates[quoteAsset] || 84);
+                        result.warnings.push(`Row ${i + 1}: Used default FX rate for ${quoteAsset}/INR. For accuracy, upload FX data.`);
+                    }
                 }
+                grossAmountInr = quantity * priceInr;
             }
 
-            const grossAmountInr = quantity * priceInr;
             const feeInr = feeCurrStr.toUpperCase() === 'INR' ? feeAmount : feeAmount * priceInr;
             const fy = getFinancialYear(tradeDate);
             const ay = getAssessmentYear(fy);
@@ -914,6 +928,8 @@ export function parseCoinDCXRewardsCSV(
         'bonus': 'reward_airdrop',
         'mining': 'reward_mining',
         'cashback': 'reward_airdrop',
+        'settlement': 'reward_airdrop', // Treat settlements as zero-cost acquisitions/adjustments
+        'reward': 'reward_airdrop',
     };
 
     for (let i = 1; i < lines.length; i++) {
@@ -933,23 +949,25 @@ export function parseCoinDCXRewardsCSV(
             }
 
             // Determine reward type
-            const typeStr = col.type >= 0 ? values[col.type]?.toLowerCase().trim() : 'staking';
-            let txType = 'reward_staking';
+            const typeStr = col.type >= 0 ? values[col.type]?.toLowerCase().trim() : 'reward';
+            let txType = 'reward_airdrop';
             for (const [key, val] of Object.entries(rewardTypeMap)) {
                 if (typeStr.includes(key)) { txType = val; break; }
             }
 
             // Get INR value
             let priceInr = 0;
-            if (col.value >= 0) {
-                priceInr = parseFloat(values[col.value]) || 0;
-                if (priceInr > 0 && quantity > 0) {
-                    priceInr = priceInr / quantity; // per unit
-                }
+            if (asset === 'INR') {
+                priceInr = 1;
+            } else if (col.value >= 0 && values[col.value]) {
+                const totalValue = Math.abs(parseFloat(values[col.value].replace(/[^\d.]/g, '')) || 0);
+                priceInr = quantity > 0 ? totalValue / quantity : 0;
             }
-            if (priceInr === 0 && fxRateLookup) {
+
+            if (priceInr === 0 && asset !== 'INR' && fxRateLookup) {
                 priceInr = fxRateLookup(asset, rewardDate);
             }
+
 
             const fy = getFinancialYear(rewardDate);
 
@@ -1304,28 +1322,10 @@ export async function processImportSession(
 
         const effectiveFYStart = parseInt(effectiveFY.split('-')[0]);
 
-        // Filter: keep target FY + prior-FY buys (for FIFO cost basis)
-        parseResult.transactions = parseResult.transactions.filter(tx => {
-            const txFYStart = parseInt(tx.financialYear.split('-')[0]);
+        // No longer filter by FY during ingestion. Keep ALL transactions for full wallet history.
+        // This is critical for FIFO to track lots across multiple years.
+        session.warnings.push(`${file.name}: Imported ${parseResult.transactions.length} total records into wallet history.`);
 
-            // Keep transactions from effective FY
-            if (tx.financialYear === effectiveFY) return true;
-
-            // Keep prior-FY buy-side transactions (needed for FIFO cost basis)
-            if (txFYStart < effectiveFYStart) {
-                const isBuySide = tx.transactionType === 'buy' || tx.transactionType === 'swap_in' ||
-                    tx.transactionType === 'deposit' || tx.transactionType.startsWith('reward_');
-                if (isBuySide) {
-                    session.warnings.push(
-                        `${file.name}: Kept prior-FY buy (${tx.financialYear}) for FIFO cost basis: ${tx.quantity} ${tx.assetSymbol}`
-                    );
-                    return true;
-                }
-            }
-
-            // Skip future-FY and prior-FY sells (not relevant)
-            return false;
-        });
 
         // Global dedup across files
         const dedupedTx: NormalizedTransaction[] = [];
