@@ -566,6 +566,432 @@ export type Database = {
         }
         Relationships: []
       }
+      raw_transactions: {
+        Row: {
+          id: string
+          user_id: string
+          source: string
+          exchange: string
+          external_id: string | null
+          content_hash: string
+          raw_payload: Json
+          sync_session_id: string
+          ingested_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          source: string
+          exchange?: string
+          external_id?: string | null
+          content_hash: string
+          raw_payload: Json
+          sync_session_id: string
+          ingested_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          source?: string
+          exchange?: string
+          external_id?: string | null
+          content_hash?: string
+          raw_payload?: Json
+          sync_session_id?: string
+          ingested_at?: string
+        }
+        Relationships: []
+      }
+      normalized_transactions: {
+        Row: {
+          id: string
+          user_id: string
+          raw_transaction_id: string | null
+          external_id: string
+          exchange: string
+          transaction_type: string
+          event_class: string
+          is_taxable_event: boolean
+          asset_symbol: string
+          quote_asset: string
+          pair: string
+          quantity: number
+          price_per_unit: number
+          price_inr: number
+          gross_amount_quote: number
+          gross_amount_inr: number
+          fee_amount: number | null
+          fee_asset: string | null
+          fee_inr: number | null
+          tds_amount: number | null
+          tds_rate: number | null
+          trade_timestamp: string
+          financial_year: string
+          assessment_year: string
+          source: string
+          source_priority: number
+          content_hash: string
+          description: string | null
+          order_id: string | null
+          tx_hash: string | null
+          counter_asset: string | null
+          counter_quantity: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          raw_transaction_id?: string | null
+          external_id: string
+          exchange?: string
+          transaction_type: string
+          event_class: string
+          is_taxable_event?: boolean
+          asset_symbol: string
+          quote_asset?: string
+          pair: string
+          quantity: number
+          price_per_unit: number
+          price_inr: number
+          gross_amount_quote: number
+          gross_amount_inr: number
+          fee_amount?: number | null
+          fee_asset?: string | null
+          fee_inr?: number | null
+          tds_amount?: number | null
+          tds_rate?: number | null
+          trade_timestamp: string
+          financial_year: string
+          assessment_year: string
+          source: string
+          source_priority?: number
+          content_hash: string
+          description?: string | null
+          order_id?: string | null
+          tx_hash?: string | null
+          counter_asset?: string | null
+          counter_quantity?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          raw_transaction_id?: string | null
+          external_id?: string
+          exchange?: string
+          transaction_type?: string
+          event_class?: string
+          is_taxable_event?: boolean
+          asset_symbol?: string
+          quote_asset?: string
+          pair?: string
+          quantity?: number
+          price_per_unit?: number
+          price_inr?: number
+          gross_amount_quote?: number
+          gross_amount_inr?: number
+          fee_amount?: number | null
+          fee_asset?: string | null
+          fee_inr?: number | null
+          tds_amount?: number | null
+          tds_rate?: number | null
+          trade_timestamp?: string
+          financial_year?: string
+          assessment_year?: string
+          source?: string
+          source_priority?: number
+          content_hash?: string
+          description?: string | null
+          order_id?: string | null
+          tx_hash?: string | null
+          counter_asset?: string | null
+          counter_quantity?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_lots: {
+        Row: {
+          id: string
+          user_id: string
+          computation_id: string
+          lot_id: string
+          buy_transaction_id: string
+          asset_symbol: string
+          original_quantity: number
+          remaining_quantity: number
+          is_fully_consumed: boolean
+          cost_basis_per_unit: number
+          total_cost_inr: number
+          acquisition_date: string
+          acquisition_type: string
+          financial_year: string
+          exchange: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          computation_id: string
+          lot_id: string
+          buy_transaction_id: string
+          asset_symbol: string
+          original_quantity: number
+          remaining_quantity: number
+          is_fully_consumed?: boolean
+          cost_basis_per_unit: number
+          total_cost_inr: number
+          acquisition_date: string
+          acquisition_type: string
+          financial_year: string
+          exchange?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          computation_id?: string
+          lot_id?: string
+          buy_transaction_id?: string
+          asset_symbol?: string
+          original_quantity?: number
+          remaining_quantity?: number
+          is_fully_consumed?: boolean
+          cost_basis_per_unit?: number
+          total_cost_inr?: number
+          acquisition_date?: string
+          acquisition_type?: string
+          financial_year?: string
+          exchange?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      disposal_events: {
+        Row: {
+          id: string
+          user_id: string
+          computation_id: string
+          sell_transaction_id: string
+          buy_lot_id: string
+          asset_symbol: string
+          matched_quantity: number
+          buy_price_per_unit: number
+          sell_price_per_unit: number
+          cost_of_acquisition: number
+          sale_consideration: number
+          gain_loss: number
+          buy_date: string
+          sell_date: string
+          holding_days: number
+          accounting_method: string
+          financial_year: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          computation_id: string
+          sell_transaction_id: string
+          buy_lot_id: string
+          asset_symbol: string
+          matched_quantity: number
+          buy_price_per_unit: number
+          sell_price_per_unit: number
+          cost_of_acquisition: number
+          sale_consideration: number
+          gain_loss: number
+          buy_date: string
+          sell_date: string
+          holding_days: number
+          accounting_method?: string
+          financial_year: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          computation_id?: string
+          sell_transaction_id?: string
+          buy_lot_id?: string
+          asset_symbol?: string
+          matched_quantity?: number
+          buy_price_per_unit?: number
+          sell_price_per_unit?: number
+          cost_of_acquisition?: number
+          sale_consideration?: number
+          gain_loss?: number
+          buy_date?: string
+          sell_date?: string
+          holding_days?: number
+          accounting_method?: string
+          financial_year?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      other_income_events: {
+        Row: {
+          id: string
+          user_id: string
+          computation_id: string
+          transaction_id: string
+          income_type: string
+          asset_symbol: string
+          quantity: number
+          price_inr_at_receipt: number
+          gross_value_inr: number
+          receipt_date: string
+          financial_year: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          computation_id: string
+          transaction_id: string
+          income_type: string
+          asset_symbol: string
+          quantity: number
+          price_inr_at_receipt: number
+          gross_value_inr: number
+          receipt_date: string
+          financial_year: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          computation_id?: string
+          transaction_id?: string
+          income_type?: string
+          asset_symbol?: string
+          quantity?: number
+          price_inr_at_receipt?: number
+          gross_value_inr?: number
+          receipt_date?: string
+          financial_year?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      sync_logs: {
+        Row: {
+          id: string
+          user_id: string
+          sync_type: string
+          exchange: string
+          status: string
+          total_records_fetched: number | null
+          new_records_added: number | null
+          duplicate_records: number | null
+          error_records: number | null
+          earliest_tx_date: string | null
+          latest_tx_date: string | null
+          has_data_gaps: boolean | null
+          gap_details: Json | null
+          last_from_id: string | null
+          last_timestamp: number | null
+          started_at: string
+          completed_at: string | null
+          error_message: string | null
+          warnings: string[] | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          sync_type: string
+          exchange?: string
+          status?: string
+          total_records_fetched?: number | null
+          new_records_added?: number | null
+          duplicate_records?: number | null
+          error_records?: number | null
+          earliest_tx_date?: string | null
+          latest_tx_date?: string | null
+          has_data_gaps?: boolean | null
+          gap_details?: Json | null
+          last_from_id?: string | null
+          last_timestamp?: number | null
+          started_at?: string
+          completed_at?: string | null
+          error_message?: string | null
+          warnings?: string[] | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          sync_type?: string
+          exchange?: string
+          status?: string
+          total_records_fetched?: number | null
+          new_records_added?: number | null
+          duplicate_records?: number | null
+          error_records?: number | null
+          earliest_tx_date?: string | null
+          latest_tx_date?: string | null
+          has_data_gaps?: boolean | null
+          gap_details?: Json | null
+          last_from_id?: string | null
+          last_timestamp?: number | null
+          started_at?: string
+          completed_at?: string | null
+          error_message?: string | null
+          warnings?: string[] | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      reconciliation_logs: {
+        Row: {
+          id: string
+          user_id: string
+          computation_id: string
+          financial_year: string
+          recon_type: string
+          expected_value: number | null
+          computed_value: number | null
+          discrepancy: number | null
+          discrepancy_pct: number | null
+          status: string
+          details: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          computation_id: string
+          financial_year: string
+          recon_type: string
+          expected_value?: number | null
+          computed_value?: number | null
+          discrepancy?: number | null
+          discrepancy_pct?: number | null
+          status: string
+          details?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          computation_id?: string
+          financial_year?: string
+          recon_type?: string
+          expected_value?: number | null
+          computed_value?: number | null
+          discrepancy?: number | null
+          discrepancy_pct?: number | null
+          status?: string
+          details?: Json | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           id: string

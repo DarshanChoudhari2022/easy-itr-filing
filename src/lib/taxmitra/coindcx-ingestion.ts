@@ -15,6 +15,8 @@
  *   - All amounts converted to INR at time of transaction
  */
 
+import CryptoJS from 'crypto-js';
+
 // ============= TYPES =============
 
 export type CoinDCXFileType =
@@ -40,6 +42,7 @@ export interface NormalizedTransaction {
     externalId: string;
     exchange: string;
     transactionType: string;
+    event_class?: string; // New field for VDA classification
     isTaxableEvent: boolean;
     assetSymbol: string;
     quoteAsset: string;
@@ -117,24 +120,10 @@ const TDS_THRESHOLD_RETAIL = 50000; // ₹50,000 for retail users
 // ============= UTILITY FUNCTIONS =============
 
 /**
- * Simple SHA-256 hash (browser-compatible using SubtleCrypto)
+ * SHA-256 hash using CryptoJS
  */
 export async function computeContentHash(content: string): Promise<string> {
-    if (typeof window !== 'undefined' && window.crypto?.subtle) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(content);
-        const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    // Fallback: simple hash for non-browser environments
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-        const char = content.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash |= 0;
-    }
-    return Math.abs(hash).toString(16).padStart(16, '0');
+    return CryptoJS.SHA256(content).toString();
 }
 
 /**
@@ -142,13 +131,7 @@ export async function computeContentHash(content: string): Promise<string> {
  */
 function computeRowHash(row: Record<string, string>): string {
     const key = Object.values(row).join('|');
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-        const char = key.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash |= 0;
-    }
-    return Math.abs(hash).toString(16).padStart(16, '0');
+    return CryptoJS.SHA256(key).toString();
 }
 
 /**

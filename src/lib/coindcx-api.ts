@@ -9,6 +9,10 @@
  */
 
 import CryptoJS from 'crypto-js';
+import { supabase } from '../integrations/supabase/client';
+import { mergeTransactions } from './taxmitra/merge-engine';
+import { classifyVdaEvent } from './taxmitra/tax-computation-engine';
+import { saveUserData, loadUserData, deleteUserData } from './supabase-data-service';
 import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
 
 // ============= CONFIG =============
@@ -637,7 +641,7 @@ function getAY(fy: string): string {
 }
 
 function hashContent(s: string): string {
-    return CryptoJS.MD5(s).toString();
+    return CryptoJS.SHA256(s).toString();
 }
 
 function parseAssetFromSymbol(
@@ -996,6 +1000,27 @@ export async function fullCoinDCXSync(
     const warnings: string[] = [];
     let balances: CoinDCXBalance[] = [];
 
+    // Get current user for sync_logs
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Authentication required for sync');
+    const userId = user.id;
+
+    // Create sync session entry
+    const { data: syncEntry, error: syncError } = await supabase
+        .from('sync_logs')
+        .insert({
+            user_id: userId,
+            sync_type: 'api_full',
+            exchange: 'CoinDCX',
+            status: 'in_progress',
+            started_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+    if (syncError) console.warn('[CoinDCX Sync] Failed to create sync log:', syncError);
+    const syncSessionId = syncEntry?.id || `sync-tmp-${Date.now()}`;
+
     const report = (stage: string, detail: string, current: number, total: number) => {
         onProgress?.({
             stage,
@@ -1004,6 +1029,29 @@ export async function fullCoinDCXSync(
             total,
             pctComplete: Math.round((current / total) * 100)
         });
+    };
+
+    /** Helper to save raw records for audit trail */
+    const saveRaw = async (source: string, records: any[]) => {
+        if (!records || !records.length) return;
+        try {
+            const rawToInsert = records.map(r => ({
+                user_id: userId,
+                sync_session_id: syncSessionId,
+                source,
+                exchange: 'CoinDCX',
+                external_id: String(r.id || r.order_id || r.txn_id || r.tx_hash || hashContent(JSON.stringify(r))),
+                content_hash: hashContent(JSON.stringify(r)),
+                raw_payload: r,
+                ingested_at: new Date().toISOString()
+            }));
+
+            await supabase
+                .from('raw_transactions')
+                .upsert(rawToInsert, { onConflict: 'user_id,content_hash' });
+        } catch (e) {
+            console.warn(`[CoinDCX Sync] Failed to save raw ${source}:`, e);
+        }
     };
 
     try {
@@ -1093,6 +1141,9 @@ export async function fullCoinDCXSync(
             allTransactions.push(...normalized);
             tradeCount = normalized.length;
             warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${uniqueTrades.length}, deduped from ${tradesResult.data.length})`);
+
+            // Save raw for audit trail
+            await saveRaw('api_spot_trades', uniqueTrades);
         } else {
             warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
         }
@@ -1241,7 +1292,11 @@ export async function fullCoinDCXSync(
                         }
                     }
                 }
-                if (marginTradeCount > 0) warnings.push(`📊 Margin: Fetched ${marginTradeCount} trades.`);
+                if (marginTradeCount > 0) {
+                    warnings.push(`📊 Margin: Fetched ${marginTradeCount} trades.`);
+                    // Save raw for audit trail
+                    await saveRaw('api_margin_trades', marginResult.data);
+                }
             }
         } catch (e) {
             console.warn('[CoinDCX Sync] Margin sync failed:', e);
@@ -1298,7 +1353,11 @@ export async function fullCoinDCXSync(
                     });
                     futuresTradeCount++;
                 }
-                if (futuresTradeCount > 0) warnings.push(`📈 Futures: Fetched ${futuresTradeCount} transactions.`);
+                if (futuresTradeCount > 0) {
+                    warnings.push(`📈 Futures: Fetched ${futuresTradeCount} transactions.`);
+                    // Save raw for audit trail
+                    await saveRaw('api_futures_trades', futuresResult.data);
+                }
             }
         } catch (e) {
             console.warn('[CoinDCX Sync] Futures sync failed:', e);
@@ -1323,6 +1382,9 @@ export async function fullCoinDCXSync(
                 if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
                     console.log(`[CoinDCX Sync] Trial ${te.name} found ${result.data.length} records.`);
                     warnings.push(`🔍 ${te.name}: Found ${result.data.length} records.`);
+
+                    // Save raw for audit trail
+                    await saveRaw(`api_trial_${te.type}`, result.data);
 
                     // Simple normalization for unknown formats - at least record them
                     for (const item of result.data) {
@@ -1390,6 +1452,9 @@ export async function fullCoinDCXSync(
                 if (depResult.success && depResult.data) {
                     const depArray = Array.isArray(depResult.data) ? depResult.data : [];
                     if (depArray.length > 0) {
+                        // Save raw for audit trail
+                        await saveRaw('api_deposits', depArray);
+
                         const mapped = depArray.map((item: any) => ({
                             id: item.id || item.txn_id || `dep-${item.created_at}`,
                             currency: item.currency_short_name || item.currency || item.coin,
@@ -1434,6 +1499,9 @@ export async function fullCoinDCXSync(
                 if (wdResult.success && wdResult.data) {
                     const wdArray = Array.isArray(wdResult.data) ? wdResult.data : [];
                     if (wdArray.length > 0) {
+                        // Save raw for audit trail
+                        await saveRaw('api_withdrawals', wdArray);
+
                         const mapped = wdArray.map((item: any) => ({
                             id: item.id || item.txn_id || `wd-${item.created_at}`,
                             currency: item.currency_short_name || item.currency || item.coin,
@@ -1619,6 +1687,10 @@ export async function fullCoinDCXSync(
             const normalized = convertRewardsToNormalized(allRewardRecords, assetPrices);
             allTransactions.push(...normalized);
             rewardCount = normalized.length;
+
+            // Save raw for audit trail
+            await saveRaw('api_rewards', allRewardRecords);
+
             const totalRewardINR = normalized.reduce((s, t) => s + (t.grossAmountInr || 0), 0);
             warnings.push(`🎁 Total Rewards: ${rewardCount} transactions, ₹${totalRewardINR.toFixed(2)} value`);
         } else {
@@ -1632,47 +1704,43 @@ export async function fullCoinDCXSync(
             warnings.push(`📧 Check your email for "CoinDCX reward credited" or "Staking reward" notifications to verify exact amounts.`);
         }
 
-        // ── Smart Deduplicate ──
-        // Use contentHash + externalId + timestamp for precise dedup
-        const seen = new Set<string>();
-        const dedupedTxs = allTransactions.filter(tx => {
-            // Primary dedup by contentHash
-            if (seen.has(tx.contentHash)) return false;
-            // Secondary dedup: same external ID (prevents cross-endpoint duplicates)
-            const idKey = `${tx.externalId}_${tx.transactionType}`;
-            if (seen.has(idKey)) return false;
-            seen.add(tx.contentHash);
-            seen.add(idKey);
-            return true;
-        });
+        // ── Step 12: Final Deduplication & Persistence (v5 Merge Engine) ──
+        report('Merging', 'Merging with existing database records...', 12, 12);
 
-        // ── Compute FY breakdown & aggregate stats ──
+        // Ensure ALL transactions have event_class and contentHash for v5 engine
+        const transactionsToMerge = allTransactions.map(tx => ({
+            ...tx,
+            event_class: classifyVdaEvent(tx),
+            contentHash: tx.contentHash || hashContent(JSON.stringify(tx.rawData || tx))
+        }));
+
+        const mergeRes = await mergeTransactions(userId, transactionsToMerge, 'api');
+        const finalTxs = mergeRes.mergedTransactions;
+
+        // ── Stats for final report ──
         const fyBreakdown: Record<string, number> = {};
         const assetSet = new Set<string>();
         let computedTDSCredit = 0;
         let computedOtherIncome = 0;
-        for (const tx of dedupedTxs) {
+
+        for (const tx of finalTxs) {
             fyBreakdown[tx.financialYear] = (fyBreakdown[tx.financialYear] || 0) + 1;
             assetSet.add(tx.assetSymbol);
-
-            // Accumulate TDS from all sell transactions
             if (tx.tdsAmount && tx.tdsAmount > 0) {
                 computedTDSCredit += tx.tdsAmount;
             }
-            // Accumulate other income from reward transactions
-            const txType = (tx.transactionType || '').toLowerCase();
-            if (txType.startsWith('reward_') || txType === 'staking_reward' ||
-                txType === 'reward' || txType === 'airdrop' || txType === 'interest_earned') {
+            const event = classifyVdaEvent(tx);
+            if (event === 'STAKING' || event === 'INTEREST_EARNED' || event === 'AIRDROP' || event === 'REWARD' || event === 'REFERRAL_BONUS') {
                 computedOtherIncome += tx.grossAmountInr || 0;
             }
         }
 
         // ── Sort by timestamp ──
-        dedupedTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
+        finalTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
 
         // ── Missing data checklist ──
         const missingDataChecklist = buildMissingDataChecklist(
-            dedupedTxs, computedOtherIncome, computedTDSCredit, rewardCount
+            finalTxs, computedOtherIncome, computedTDSCredit, rewardCount
         );
 
         if (missingDataChecklist.length > 0) {
@@ -1684,15 +1752,24 @@ export async function fullCoinDCXSync(
             }
         }
 
-        console.log(`[CoinDCX Sync] ✅ COMPLETE: ${dedupedTxs.length} total transactions, ${assetSet.size} unique assets`);
-        console.log(`[CoinDCX Sync] FY breakdown:`, fyBreakdown);
-        console.log(`[CoinDCX Sync] Computed TDS Credit: ₹${computedTDSCredit.toFixed(2)}`);
-        console.log(`[CoinDCX Sync] Computed Other Income: ₹${computedOtherIncome.toFixed(2)}`);
-        console.log(`[CoinDCX Sync] Warnings:`, warnings);
+        // Update sync log to COMPLETED
+        await supabase
+            .from('sync_logs')
+            .update({
+                status: 'completed',
+                total_records_fetched: allTransactions.length,
+                new_records_added: mergeRes.added,
+                duplicate_records: mergeRes.duplicates,
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', syncSessionId);
+
+        console.log(`[CoinDCX Sync] ✅ COMPLETE: ${finalTxs.length} total transactions, ${assetSet.size} unique assets`);
+        console.log(`[CoinDCX Sync] Merge Result: +${mergeRes.added}, =${mergeRes.duplicates}`);
 
         return {
             success: true,
-            transactions: dedupedTxs,
+            transactions: finalTxs,
             tdsRecords: allTDSRecords,
             balances,
             warnings,
@@ -1705,7 +1782,7 @@ export async function fullCoinDCXSync(
                 totalDeposits: depositCount,
                 totalWithdrawals: withdrawalCount,
                 totalRewards: rewardCount,
-                totalTransactions: dedupedTxs.length,
+                totalTransactions: finalTxs.length,
                 uniqueAssets: Array.from(assetSet).sort(),
                 fyBreakdown,
                 computedTDSCredit,
@@ -1715,10 +1792,23 @@ export async function fullCoinDCXSync(
 
     } catch (error) {
         console.error('[CoinDCX Sync] Fatal error:', error);
-        warnings.push(`💀 Fatal: ${(error as Error).message} `);
+        warnings.push(`💀 Fatal: ${(error as Error).message}`);
+
+        // Update sync log to FAILED
+        if (syncSessionId) {
+            await supabase
+                .from('sync_logs')
+                .update({
+                    status: 'failed',
+                    error_message: (error as Error).message,
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', syncSessionId);
+        }
+
         return {
             success: false,
-            error: `Sync failed: ${(error as Error).message} `,
+            error: `Sync failed: ${(error as Error).message}`,
             transactions: allTransactions,
             tdsRecords: [],
             balances,
@@ -1824,8 +1914,6 @@ function buildMissingDataChecklist(
 }
 
 // ============= CREDENTIALS STORAGE (Supabase primary, localStorage cache) =============
-
-import { saveUserData, loadUserData, deleteUserData } from '@/lib/supabase-data-service';
 
 const CREDS_KEY = 'taxmitra_coindcx_creds';
 

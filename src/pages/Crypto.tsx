@@ -1501,17 +1501,12 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
-                                  // FULL REPLACE: Remove old CoinDCX API data, insert fresh
-                                  // This ensures updated FX rates and valuations take effect
+                                  // The API Sync result now contains the FULL merged history from the database (V5 engine)
                                   setFyAutoDetected(false); // Reset so FY is re-detected from new data
-                                  setParsedTransactions(prev => {
-                                    const nonCoinDCXApi = prev.filter(t =>
-                                      !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
-                                    );
-                                    return [...nonCoinDCXApi, ...result.transactions];
-                                  });
+                                  setParsedTransactions(result.transactions);
+
                                   if (result.tdsRecords.length > 0) {
-                                    setParsedTDSRecords(result.tdsRecords); // Full replace TDS too
+                                    setParsedTDSRecords(result.tdsRecords);
                                   }
                                   const totalTradeRelated = (result.summary.totalSpotTrades || 0) + (result.summary.totalMarginTrades || 0) + (result.summary.totalFuturesTrades || 0);
                                   toast.success(`✅ Imported ${result.transactions.length} transactions (${totalTradeRelated} trades)! Tax will recompute automatically.`);
@@ -1656,14 +1651,10 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
-                                  // FULL REPLACE: Remove old CoinDCX API data, insert fresh
+                                  // The API Sync result now contains the FULL merged history from the database (V5 engine)
                                   setFyAutoDetected(false); // Reset so FY is re-detected from new data
-                                  setParsedTransactions(prev => {
-                                    const nonCoinDCXApi = prev.filter(t =>
-                                      !(t.exchange === 'CoinDCX' && t.rawData?.source === 'api')
-                                    );
-                                    return [...nonCoinDCXApi, ...result.transactions];
-                                  });
+                                  setParsedTransactions(result.transactions);
+
                                   if (result.tdsRecords.length > 0) {
                                     setParsedTDSRecords(result.tdsRecords);
                                   }
