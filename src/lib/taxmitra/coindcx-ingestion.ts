@@ -451,9 +451,11 @@ export function parseCoinDCXTradesCSV(
                 continue;
             }
 
-            const quantity = Math.abs(parseFloat(qtyStr) || 0);
-            const pricePerUnit = Math.abs(parseFloat(priceStr) || 0);
-            const feeAmount = Math.abs(parseFloat(feeStr) || 0);
+            const cleanNumber = (val: string) => Math.abs(parseFloat(val.replace(/[^0-9.-]/g, '')) || 0);
+
+            const quantity = cleanNumber(qtyStr);
+            const pricePerUnit = cleanNumber(priceStr);
+            const feeAmount = cleanNumber(feeStr);
             const tdsAmount = Math.abs(parseFloat(tdsStr) || 0);
 
             if (quantity === 0) {
@@ -611,7 +613,7 @@ export function parseCoinDCXDepositsCSV(
             if (status.includes('fail') || status.includes('cancel')) continue;
 
             const asset = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'UNKNOWN';
-            const quantity = Math.abs(parseFloat(col.qty >= 0 ? values[col.qty] : '0') || 0);
+            const quantity = Math.abs(parseFloat((col.qty >= 0 ? values[col.qty] : '0').replace(/[^0-9.-]/g, '')) || 0);
             const depositDate = parseDate(col.date >= 0 ? values[col.date] : '');
 
             if (isNaN(depositDate.getTime()) || quantity === 0) {
@@ -713,9 +715,9 @@ export function parseCoinDCXWithdrawalsCSV(
             if (status.includes('fail') || status.includes('cancel') || status.includes('pending')) continue;
 
             const asset = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'UNKNOWN';
-            const quantity = Math.abs(parseFloat(col.qty >= 0 ? values[col.qty] : '0') || 0);
+            const quantity = Math.abs(parseFloat((col.qty >= 0 ? values[col.qty] : '0').replace(/[^0-9.-]/g, '')) || 0);
             const wdDate = parseDate(col.date >= 0 ? values[col.date] : '');
-            const fee = Math.abs(parseFloat(col.fee >= 0 ? values[col.fee] : '0') || 0);
+            const fee = Math.abs(parseFloat((col.fee >= 0 ? values[col.fee] : '0').replace(/[^0-9.-]/g, '')) || 0);
 
             if (isNaN(wdDate.getTime()) || quantity === 0) {
                 result.errors.push({ line: i + 1, message: 'Invalid date or zero quantity', rawData });
@@ -983,7 +985,7 @@ export function parseCoinDCXRewardsCSV(
 
             const rawData = rowToRecord(headers, values);
             const asset = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'UNKNOWN';
-            const quantity = Math.abs(parseFloat(col.qty >= 0 ? values[col.qty] : '0') || 0);
+            const quantity = Math.abs(parseFloat((col.qty >= 0 ? values[col.qty] : '0').replace(/[^0-9.-]/g, '')) || 0);
             const rewardDate = parseDate(col.date >= 0 ? values[col.date] : '');
 
             if (isNaN(rewardDate.getTime()) || quantity === 0) {
@@ -1144,10 +1146,12 @@ export function parseWazirXTradesCSV(
                 continue;
             }
 
-            const quantity = Math.abs(parseFloat(volumeStr) || 0);
-            const pricePerUnit = Math.abs(parseFloat(priceStr) || 0);
-            const feeAmount = Math.abs(parseFloat(feeStr) || 0);
-            const tdsAmount = Math.abs(parseFloat(tdsStr) || 0);
+            const cleanNumber = (val: string) => Math.abs(parseFloat(val.replace(/[^0-9.-]/g, '')) || 0);
+
+            const quantity = cleanNumber(volumeStr);
+            const pricePerUnit = cleanNumber(priceStr);
+            const feeAmount = cleanNumber(feeStr);
+            const tdsAmount = cleanNumber(tdsStr);
 
             if (quantity === 0) {
                 result.errors.push({ line: i + 1, message: 'Volume is zero — skipping', rawData });

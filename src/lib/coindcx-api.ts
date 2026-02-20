@@ -311,9 +311,9 @@ export async function fetchCoinDCXTradeHistory(
             const lastTrade = trades[trades.length - 1];
             lastFromId = lastTrade?.id;
             pageCount++;
-            // Safety: max 20 pages (10,000 trades)
-            if (pageCount >= 20) {
-                console.warn('[CoinDCX] Hit max pagination limit of 20 pages');
+            // Safety: max 200 pages (100,000 trades) to ensure we don't truncate active traders' history
+            if (pageCount >= 200) {
+                console.warn('[CoinDCX] Hit max pagination limit of 200 pages. Total trades fetched:', allTrades.length);
                 hasMore = false;
             }
         }
