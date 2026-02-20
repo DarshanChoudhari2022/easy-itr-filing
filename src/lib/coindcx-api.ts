@@ -835,8 +835,12 @@ function convertTradesToNormalized(
         }
 
         // ── TDS (Section 194S) ──
-        // 1% TDS on the TOTAL sell consideration (order-level, not per-fill)
-        const tdsAmount = trade.side === 'sell' ? grossInr * 0.01 : 0;
+        // DO NOT fabricate TDS from API data. CoinDCX API does not return
+        // actual TDS deducted. TDS credit must come from:
+        //   1. Form 26AS / TDS CSV upload (most accurate)
+        //   2. TDS Summary export from CoinDCX
+        // Fabricating 1% here caused TDS credit to be inflated from ₹8K to ₹67K
+        const tdsAmount = 0;
 
         return {
             externalId: `cdx-order-${trade.order_id || trade.id}-${i}`,
@@ -855,7 +859,7 @@ function convertTradesToNormalized(
             feeAsset: feeCurrency,
             feeInr: feeInr,
             tdsAmount,
-            tdsRate: trade.side === 'sell' ? 0.01 : 0,
+            tdsRate: 0,
             tradeTimestamp: tradeDate,
             financialYear: fy,
             assessmentYear: getAY(fy),

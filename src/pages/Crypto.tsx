@@ -583,31 +583,26 @@ export default function CryptoTaxPage() {
         return;
       }
 
-      // 4. Store parsed data in state — reset FY auto-detection so it picks the right FY
+      // 4. Store parsed data in state — REPLACE all old data (not append)
+      // This prevents stale data accumulation from old API syncs/imports
+      // that had fabricated TDS or other bad values
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
 
-      // Deduplicate against already-stored transactions (prevent double-import)
-      const existingHashes = new Set(parsedTransactions.map(t => t.contentHash).filter(Boolean));
-      const newUniqueTxs = allTransactions.filter(t => !existingHashes.has(t.contentHash));
-      const skippedCount = allTransactions.length - newUniqueTxs.length;
-      if (skippedCount > 0) {
-        console.log(`[CryptoImport] Dedup: skipped ${skippedCount} already-imported transactions`);
-        messages.push(`ℹ️ ${skippedCount} already-imported transactions skipped (dedup)`);
-      }
+      // REPLACE mode: clear old data and use only the new import
+      // This is intentional — re-uploading CSV should give you a fresh, correct state
+      console.log(`[CryptoImport] REPLACE mode: clearing ${parsedTransactions.length} old transactions, replacing with ${allTransactions.length} new ones`);
+      messages.push(`🔄 Replaced ${parsedTransactions.length} old transactions with ${allTransactions.length} fresh ones from CSV`);
 
-      const existingTDSHashes = new Set(parsedTDSRecords.map(r => JSON.stringify([r.tdsDate, r.tdsAmountInr])));
-      const newUniqueTDS = allTDSRecords.filter(r => !existingTDSHashes.has(JSON.stringify([r.tdsDate, r.tdsAmountInr])));
-
-      setParsedTransactions(prev => [...prev, ...newUniqueTxs]);
-      setParsedTDSRecords(prev => [...prev, ...newUniqueTDS]);
+      setParsedTransactions(allTransactions);
+      setParsedTDSRecords(allTDSRecords);
 
       // 5. Map to Trade[] for UI display
-      const newTrades = mapTransactionsToTrades(newUniqueTxs);
-      setTrades(prev => [...prev, ...newTrades]);
+      const newTrades = mapTransactionsToTrades(allTransactions);
+      setTrades(newTrades);
 
       // 6. Compute tax immediately using the FY with most trades
-      const allTxs = [...parsedTransactions, ...newUniqueTxs];
-      const allTds = [...parsedTDSRecords, ...newUniqueTDS];
+      const allTxs = allTransactions;
+      const allTds = allTDSRecords;
       // Auto-detect best FY from the combined data
       const fyCounts: Record<string, number> = {};
       for (const tx of allTxs) {

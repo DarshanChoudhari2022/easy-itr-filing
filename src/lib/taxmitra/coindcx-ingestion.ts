@@ -465,8 +465,19 @@ export function parseCoinDCXTradesCSV(
             const baseAsset = extractBaseAsset(pairStr);
             const quoteAsset = extractQuoteAsset(pairStr);
             const sideNorm = sideStr.toLowerCase().trim();
-            const isBuy = sideNorm.includes('buy') || sideNorm === 'b';
-            const txType = isBuy ? 'buy' : 'sell';
+            const pairNorm = pairStr.toLowerCase().trim();
+
+            const isMargin = sideNorm.includes('margin') || pairNorm.includes('margin');
+            const isFutures = sideNorm.includes('future') || pairNorm.includes('future');
+            const isBuy = sideNorm.includes('buy') || sideNorm === 'b' || sideNorm.includes('long');
+
+            let baseTxType = isBuy ? 'buy' : 'sell';
+            let txType = baseTxType;
+            if (isMargin) {
+                txType = `margin_${baseTxType}`;
+            } else if (isFutures) {
+                txType = `futures_${baseTxType}`;
+            }
 
             // ── INR conversion ──
             // Priority: use the CSV 'total' column as the authoritative INR amount when available.
@@ -504,13 +515,9 @@ export function parseCoinDCXTradesCSV(
             const fy = getFinancialYear(tradeDate);
             const ay = getAssessmentYear(fy);
 
-            // Compute TDS: if not provided in CSV, estimate 1% on ALL sell consideration
-            // CoinDCX deducts 1% TDS (Section 194S) on every sell transaction
-            // The ₹50K threshold is applied at the aggregate level by the exchange, not per-tx
+            // TDS: DO NOT guess 1% TDS. Only trust explicit TDS data in the CSV or trade 
+            // records (tax-engine will fallback to theoretical ONLY as a warning)
             let computedTds = tdsAmount;
-            if (computedTds === 0 && txType === 'sell' && grossAmountInr > 0) {
-                computedTds = grossAmountInr * TDS_RATE;
-            }
 
             const tx: NormalizedTransaction = {
                 externalId: orderIdStr,
