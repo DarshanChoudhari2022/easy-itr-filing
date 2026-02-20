@@ -644,6 +644,50 @@ function hashContent(s: string): string {
     return CryptoJS.SHA256(s).toString();
 }
 
+/**
+ * Transaction Validation Gate — prevents garbage data from entering the system.
+ * 
+ * ROOT CAUSE FIX: CoinDCX trial endpoints and deposit/withdrawal APIs sometimes
+ * return records with null/missing token symbols, zero quantities, or ₹1 placeholder
+ * prices. These inflated TaxMitra's transaction count from 71 (KoinX) to 299.
+ * 
+ * This gate rejects invalid transactions and quarantines them for audit.
+ * Returns { valid: true } if the transaction is good, or { valid: false, reason } if not.
+ */
+function validateTransaction(tx: NormalizedTransaction): { valid: boolean; reason?: string } {
+    // 1. Reject UNKNOWN or empty token symbols
+    const symbol = (tx.assetSymbol || '').trim().toUpperCase();
+    if (!symbol || symbol === 'UNKNOWN' || symbol === 'NULL' || symbol === 'UNDEFINED' || symbol === 'N/A') {
+        return { valid: false, reason: `Invalid token symbol: "${tx.assetSymbol}"` };
+    }
+
+    // 2. Reject zero or negative quantities
+    if (!tx.quantity || tx.quantity <= 0) {
+        return { valid: false, reason: `Zero/negative quantity: ${tx.quantity}` };
+    }
+
+    // 3. Reject buy/sell trades with zero INR value (unable to determine cost/consideration)
+    const isTrade = ['buy', 'sell'].includes((tx.transactionType || '').toLowerCase());
+    if (isTrade && (!tx.grossAmountInr || tx.grossAmountInr <= 0) && (!tx.priceInr || tx.priceInr <= 0)) {
+        return { valid: false, reason: `Trade with no INR value: price=₹${tx.priceInr}, gross=₹${tx.grossAmountInr}` };
+    }
+
+    // 4. Reject suspicious ₹1 placeholder prices on buy/sell (CoinDCX API artifact)
+    if (isTrade && tx.priceInr && tx.priceInr > 0 && tx.priceInr <= 1 && tx.grossAmountInr && tx.grossAmountInr <= 1) {
+        return { valid: false, reason: `Suspicious ₹1 placeholder price for ${symbol}` };
+    }
+
+    // 5. Sanity check: quantity should be a reasonable number (not NaN, Infinity, etc.)
+    if (!isFinite(tx.quantity) || !isFinite(tx.priceInr || 0)) {
+        return { valid: false, reason: `Non-finite values: qty=${tx.quantity}, price=${tx.priceInr}` };
+    }
+
+    return { valid: true };
+}
+
+/** List of quarantined transactions — saved for audit but excluded from tax computation */
+let quarantinedTransactions: Array<NormalizedTransaction & { quarantineReason: string }> = [];
+
 function parseAssetFromSymbol(
     symbol: string,
     marketMap: Record<string, { base: string; quote: string }>
@@ -836,7 +880,15 @@ function convertBalanceDepositsToNormalized(
     records: Array<{ id: string; currency: string; amount: string; fee?: string; status: string; created_at: string | number; tx_hash?: string }>
 ): NormalizedTransaction[] {
     return records
-        .filter(r => r.status?.toLowerCase() === 'confirmed' || r.status?.toLowerCase() === 'completed' || r.status?.toLowerCase() === 'done')
+        .filter(r => {
+            // Skip records with missing/invalid currency
+            const currency = (r.currency || '').trim();
+            if (!currency || currency === 'UNKNOWN' || currency === 'null') return false;
+            // Must have valid status and non-zero amount
+            const validStatus = r.status?.toLowerCase() === 'confirmed' || r.status?.toLowerCase() === 'completed' || r.status?.toLowerCase() === 'done';
+            const hasAmount = parseFloat(r.amount) > 0;
+            return validStatus && hasAmount;
+        })
         .map((r, i) => {
             const date = new Date(r.created_at);
             const fy = getFY(date);
@@ -848,9 +900,9 @@ function convertBalanceDepositsToNormalized(
                 exchange: 'CoinDCX',
                 transactionType: type,
                 isTaxableEvent: false,
-                assetSymbol: r.currency?.toUpperCase() || 'UNKNOWN',
+                assetSymbol: (r.currency || '').trim().toUpperCase() || 'UNKNOWN',
                 quoteAsset: 'INR',
-                pair: `${r.currency}/INR`.toUpperCase(),
+                pair: `${(r.currency || 'UNKNOWN').trim()}/INR`.toUpperCase(),
                 quantity: qty,
                 pricePerUnit: 0,
                 priceInr: 0,
@@ -894,95 +946,104 @@ function convertRewardsToNormalized(
 ): NormalizedTransaction[] {
     return records
         .filter(r => r.status?.toLowerCase() !== 'pending')
-        .map((r, i) => {
-            const date = new Date(r.created_at);
-            const fy = getFY(date);
-            const qty = parseFloat(r.amount) || 0;
-            const interestEarned = parseFloat(r.interest_earned || '0') || 0;
-            const amount = interestEarned > 0 ? interestEarned : qty;
+        .map((r, i) => convertSingleReward(r, i, quoteToINR))
+        .filter((r): r is NormalizedTransaction => r !== null);
+}
 
-            // Map type
-            let txType = 'reward_staking';
-            if (r.type?.toLowerCase().includes('interest')) txType = 'reward_interest';
-            else if (r.type?.toLowerCase().includes('airdrop')) txType = 'reward_airdrop';
-            else if (r.type?.toLowerCase().includes('promo')) txType = 'reward_airdrop';
-            else if (r.type?.toLowerCase().includes('lend')) txType = 'reward_interest';
-            else if (r.type?.toLowerCase().includes('staking')) txType = 'reward_staking';
-            else if (r.type?.toLowerCase().includes('referral')) txType = 'reward_airdrop';
-            else if (r.type?.toLowerCase().includes('cashback')) txType = 'reward_airdrop';
+function convertSingleReward(
+    r: CoinDCXLendingHistory,
+    i: number,
+    quoteToINR: Record<string, number> = {}
+): NormalizedTransaction | null {
+    const date = new Date(r.created_at);
+    const fy = getFY(date);
+    const qty = parseFloat(r.amount) || 0;
+    const interestEarned = parseFloat(r.interest_earned || '0') || 0;
+    const amount = interestEarned > 0 ? interestEarned : qty;
 
-            const asset = r.currency?.toUpperCase() || 'UNKNOWN';
+    // Map type
+    let txType = 'reward_staking';
+    if (r.type?.toLowerCase().includes('interest')) txType = 'reward_interest';
+    else if (r.type?.toLowerCase().includes('airdrop')) txType = 'reward_airdrop';
+    else if (r.type?.toLowerCase().includes('promo')) txType = 'reward_airdrop';
+    else if (r.type?.toLowerCase().includes('lend')) txType = 'reward_interest';
+    else if (r.type?.toLowerCase().includes('staking')) txType = 'reward_staking';
+    else if (r.type?.toLowerCase().includes('referral')) txType = 'reward_airdrop';
+    else if (r.type?.toLowerCase().includes('cashback')) txType = 'reward_airdrop';
 
-            // ── Value the reward at market price ──
-            // For INR rewards: 1 INR = 1 INR (no conversion needed)
-            // For crypto rewards: use the asset's INR price from ticker
-            let priceInr = 0;
-            let grossInr = 0;
+    const asset = (r.currency || '').trim().toUpperCase();
+    // Skip rewards with invalid currency
+    if (!asset || asset === 'UNKNOWN') return null;
 
-            if (asset === 'INR') {
-                priceInr = 1;
-                grossInr = amount;
-            } else {
-                // Try to get the asset's INR price
-                // First check if asset itself has a direct INR rate (e.g., ADA/INR)
-                const directRate = quoteToINR[asset] || 0;
-                if (directRate > 0) {
-                    priceInr = directRate;
-                    grossInr = amount * directRate;
-                } else {
-                    // For smaller tokens (SHIB etc.), try known approximate prices
-                    // These are FY24-25 average prices for reward valuation
-                    const rewardPriceEstimates: Record<string, number> = {
-                        'SHIB': 0.002143,  // ₹0.002143 per SHIB (approx)
-                        'DOGE': 38,
-                        'ADA': 95,         // ₹95 per ADA (FY24-25 avg within range)
-                        'XRP': 77,
-                        'ETH': 285000,
-                        'BTC': 7200000,
-                        'MATIC': 85,
-                        'POL': 85,
-                        'SOL': 18000,
-                    };
-                    priceInr = rewardPriceEstimates[asset] || 0;
-                    grossInr = amount * priceInr;
-                }
-            }
+    // ── Value the reward at market price ──
+    // For INR rewards: 1 INR = 1 INR (no conversion needed)
+    // For crypto rewards: use the asset's INR price from ticker
+    let priceInr = 0;
+    let grossInr = 0;
 
-            console.log(`[CoinDCX] Reward: ${amount} ${asset} @ ₹${priceInr.toFixed(4)} = ₹${grossInr.toFixed(2)} [${txType}]`);
+    if (asset === 'INR') {
+        priceInr = 1;
+        grossInr = amount;
+    } else {
+        // Try to get the asset's INR price
+        // First check if asset itself has a direct INR rate (e.g., ADA/INR)
+        const directRate = quoteToINR[asset] || 0;
+        if (directRate > 0) {
+            priceInr = directRate;
+            grossInr = amount * directRate;
+        } else {
+            // For smaller tokens (SHIB etc.), try known approximate prices
+            // These are FY24-25 average prices for reward valuation
+            const rewardPriceEstimates: Record<string, number> = {
+                'SHIB': 0.002143,  // ₹0.002143 per SHIB (approx)
+                'DOGE': 38,
+                'ADA': 95,         // ₹95 per ADA (FY24-25 avg within range)
+                'XRP': 77,
+                'ETH': 285000,
+                'BTC': 7200000,
+                'MATIC': 85,
+                'POL': 85,
+                'SOL': 18000,
+            };
+            priceInr = rewardPriceEstimates[asset] || 0;
+            grossInr = amount * priceInr;
+        }
+    }
 
-            return {
-                externalId: `cdx-reward-${r.id || i}`,
-                exchange: 'CoinDCX',
-                transactionType: txType,
-                isTaxableEvent: true, // Rewards are taxable as other income
-                assetSymbol: asset,
-                quoteAsset: 'INR',
-                pair: `${asset}/INR`,
-                quantity: amount,
-                pricePerUnit: priceInr,
-                priceInr: priceInr,
-                grossAmountQuote: grossInr,
-                grossAmountInr: grossInr,
-                feeAmount: 0,
-                feeAsset: 'INR',
-                feeInr: 0,
-                tdsAmount: 0,
-                tdsRate: 0,
-                tradeTimestamp: date,
-                financialYear: fy,
-                assessmentYear: getAY(fy),
-                description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${asset} (₹${grossInr.toFixed(2)})`,
-                rawData: {
-                    source: 'api',
-                    type: r.type,
-                    status: r.status,
-                    original_id: r.id,
-                    interest_earned: r.interest_earned || '',
-                    valued_at_inr: String(priceInr),
-                },
-                contentHash: hashContent(`reward-${r.id}-${r.amount}-${r.created_at}`),
-            } as NormalizedTransaction;
-        });
+    console.log(`[CoinDCX] Reward: ${amount} ${asset} @ ₹${priceInr.toFixed(4)} = ₹${grossInr.toFixed(2)} [${txType}]`);
+
+    return {
+        externalId: `cdx-reward-${r.id || i}`,
+        exchange: 'CoinDCX',
+        transactionType: txType,
+        isTaxableEvent: true, // Rewards are taxable as other income
+        assetSymbol: asset,
+        quoteAsset: 'INR',
+        pair: `${asset}/INR`,
+        quantity: amount,
+        pricePerUnit: priceInr,
+        priceInr: priceInr,
+        grossAmountQuote: grossInr,
+        grossAmountInr: grossInr,
+        feeAmount: 0,
+        feeAsset: 'INR',
+        feeInr: 0,
+        tdsAmount: 0,
+        tdsRate: 0,
+        tradeTimestamp: date,
+        financialYear: fy,
+        assessmentYear: getAY(fy),
+        description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${asset} (₹${grossInr.toFixed(2)})`,
+        rawData: {
+            source: 'api',
+            type: r.type,
+            status: r.status,
+            original_id: r.id,
+            interest_earned: r.interest_earned || '',
+            valued_at_inr: String(priceInr),
+        },
+        contentHash: hashContent(`reward-${r.id}-${r.amount}-${r.created_at}`),
+    } as NormalizedTransaction;
 }
 
 // ============= FULL SYNC =============
@@ -1197,8 +1258,8 @@ export async function fullCoinDCXSync(
                             allTransactions.push({
                                 externalId: `cdx-margin-sub-${subOrder.id}-${subOrder.bo_stage}`,
                                 exchange: 'CoinDCX',
-                                transactionType: side,
-                                isTaxableEvent: side === 'sell',
+                                transactionType: `margin_${side}`,
+                                isTaxableEvent: false, // Margin is business income, not 115BBH capital gains
                                 assetSymbol: base.toUpperCase(),
                                 quoteAsset: quote.toUpperCase(),
                                 pair: `${base}/${quote}`.toUpperCase(),
@@ -1210,8 +1271,8 @@ export async function fullCoinDCXSync(
                                 feeAmount: subOrder.fee_amount || 0,
                                 feeAsset: isINRQuote ? 'INR' : quote.toUpperCase(),
                                 feeInr,
-                                tdsAmount: side === 'sell' ? grossInr * 0.01 : 0,
-                                tdsRate: side === 'sell' ? 0.01 : 0,
+                                tdsAmount: 0, // No 194S TDS on margin trades
+                                tdsRate: 0,
                                 tradeTimestamp: tradeDate,
                                 financialYear: fy,
                                 assessmentYear: getAY(fy),
@@ -1234,8 +1295,8 @@ export async function fullCoinDCXSync(
                             allTransactions.push({
                                 externalId: `cdx-margin-entry-${order.id}`,
                                 exchange: 'CoinDCX',
-                                transactionType: order.side,
-                                isTaxableEvent: order.side === 'sell',
+                                transactionType: `margin_${order.side}`,
+                                isTaxableEvent: false,
                                 assetSymbol: base.toUpperCase(),
                                 quoteAsset: quote.toUpperCase(),
                                 pair: `${base}/${quote}`.toUpperCase(),
@@ -1247,8 +1308,8 @@ export async function fullCoinDCXSync(
                                 feeAmount: order.entry_fee || 0,
                                 feeAsset: quote.toUpperCase(),
                                 feeInr: (order.entry_fee || 0) * quoteINRRate,
-                                tdsAmount: order.side === 'sell' ? (qty * entryInr) * 0.01 : 0,
-                                tdsRate: order.side === 'sell' ? 0.01 : 0,
+                                tdsAmount: 0, // No TDS on margin
+                                tdsRate: 0,
                                 tradeTimestamp: new Date(order.created_at),
                                 financialYear: getFY(new Date(order.created_at)),
                                 assessmentYear: getAY(getFY(new Date(order.created_at))),
@@ -1265,8 +1326,8 @@ export async function fullCoinDCXSync(
                             allTransactions.push({
                                 externalId: `cdx-margin-exit-${order.id}`,
                                 exchange: 'CoinDCX',
-                                transactionType: exitSide,
-                                isTaxableEvent: exitSide === 'sell',
+                                transactionType: `margin_${exitSide}`,
+                                isTaxableEvent: false,
                                 assetSymbol: base.toUpperCase(),
                                 quoteAsset: quote.toUpperCase(),
                                 pair: `${base}/${quote}`.toUpperCase(),
@@ -1278,8 +1339,8 @@ export async function fullCoinDCXSync(
                                 feeAmount: order.exit_fee || 0,
                                 feeAsset: quote.toUpperCase(),
                                 feeInr: (order.exit_fee || 0) * quoteINRRate,
-                                tdsAmount: exitSide === 'sell' ? (qty * exitInr) * 0.01 : 0,
-                                tdsRate: exitSide === 'sell' ? 0.01 : 0,
+                                tdsAmount: 0, // No TDS on margin
+                                tdsRate: 0,
                                 tradeTimestamp: tradeDate,
                                 financialYear: fy,
                                 assessmentYear: getAY(fy),
@@ -1368,8 +1429,7 @@ export async function fullCoinDCXSync(
         const trialEndpoints = [
             { path: '/exchange/v1/insta/order_history', name: 'Insta History', type: 'insta' },
             { path: '/exchange/v1/p2p/trades', name: 'P2P Trades', type: 'p2p' },
-            { path: '/exchange/v1/users/transactions', name: 'User Transactions', type: 'ledger' },
-            { path: '/exchange/v1/orders/history', name: 'Order History', type: 'order_history' }
+            { path: '/exchange/v1/users/transactions', name: 'User Transactions', type: 'ledger' }
         ];
 
         for (const te of trialEndpoints) {
@@ -1708,13 +1768,27 @@ export async function fullCoinDCXSync(
         report('Merging', 'Merging with existing database records...', 12, 12);
 
         // Ensure ALL transactions have event_class and contentHash for v5 engine
-        const transactionsToMerge = allTransactions.map(tx => ({
-            ...tx,
-            event_class: classifyVdaEvent(tx),
-            contentHash: tx.contentHash || hashContent(JSON.stringify(tx.rawData || tx))
-        }));
+        // ALSO: Apply validation gate to filter out noise (e.g. UNKNOWN tokens)
+        const validTransactions: NormalizedTransaction[] = [];
+        for (const tx of allTransactions) {
+            const validation = validateTransaction(tx);
+            if (validation.valid) {
+                validTransactions.push({
+                    ...tx,
+                    event_class: classifyVdaEvent(tx),
+                    contentHash: tx.contentHash || hashContent(JSON.stringify(tx.rawData || tx))
+                });
+            } else {
+                quarantinedTransactions.push({ ...tx, quarantineReason: validation.reason || 'Unknown error' });
+                console.warn(`[CoinDCX Sync] ⚠️ Quarantined invalid tx ${tx.externalId}: ${validation.reason}`);
+            }
+        }
 
-        const mergeRes = await mergeTransactions(userId, transactionsToMerge, 'api');
+        if (quarantinedTransactions.length > 0) {
+            warnings.push(`🛡️ Filtered ${quarantinedTransactions.length} invalid/noise transactions (e.g., missing tokens).`);
+        }
+
+        const mergeRes = await mergeTransactions(userId, validTransactions, 'api');
         const finalTxs = mergeRes.mergedTransactions;
 
         // ── Stats for final report ──

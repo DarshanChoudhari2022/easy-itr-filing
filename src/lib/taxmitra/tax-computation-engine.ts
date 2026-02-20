@@ -582,21 +582,21 @@ export function computeVdaTaxForFinancialYear(
 
     // TDS Credit Computation:
     // 1. If TDS certificates are uploaded (TDS CSV), use the higher of certificates vs trade data
-    // 2. If no certificates, use trade data TDS (from individual sell transactions)
-    // 3. As a cross-check, compute theoretical TDS as 1% of total sell consideration
+    // 2. If no certificates, use EXACT trade data TDS (from individual sell transactions)
+    // 3. We compute theoretical TDS just as an informational warning, but we do NOT artificially inflate TDS credit
     const theoreticalTDS = totalSellConsideration * 0.01;
-    let totalTDSCredit: number;
+    let totalTDSCredit: number = 0;
+
     if (tdsRecon.totalTDSFromCertificates > 0) {
         // Official TDS certificates take priority
         totalTDSCredit = Math.max(tdsRecon.totalTDSFromCertificates, tdsRecon.totalTDSFromTrades);
-    } else if (totalTDSFromTrades > 0) {
-        // Use trade data TDS (estimated during ingestion)
-        totalTDSCredit = totalTDSFromTrades;
     } else {
-        // No TDS data at all — estimate from sell volume (1% × total sell value)
-        totalTDSCredit = theoreticalTDS;
-        if (theoreticalTDS > 0) {
-            warnings.push(`TDS estimated as 1% of total sell value (₹${totalSellConsideration.toFixed(0)}) = ₹${theoreticalTDS.toFixed(2)}. Upload TDS CSV for exact figures.`);
+        // Trust the explicit trade TDS logic
+        totalTDSCredit = totalTDSFromTrades;
+
+        // Let the user know if their trade TDS differs greatly from theoretical 1%
+        if (theoreticalTDS > 0 && Math.abs(totalTDSCredit - theoreticalTDS) > theoreticalTDS * 0.1) {
+            warnings.push(`TDS Warning: Your computed TDS credit (₹${totalTDSCredit.toFixed(2)}) differs from the estimated 1% of total sell value (₹${theoreticalTDS.toFixed(2)}). Upload your Form 26AS/TDS CSV for exact figures.`);
         }
     }
 
