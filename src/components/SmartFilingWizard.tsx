@@ -1422,6 +1422,12 @@ export function SmartFilingWizard() {
                                         ]}
                                         variant="warning"
                                     />
+
+                                    <div className="bg-emerald-50 text-emerald-800 text-[11px] px-3 py-2 rounded-lg border border-emerald-200 flex items-center gap-2">
+                                        <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                                        <span><b>Auto-fetched:</b> Data natively synced from your TaxMitra Crypto Module. The computed tax will be carried directly to ITR.</span>
+                                    </div>
+
                                     <div className="grid gap-4 sm:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Net Crypto Gains (₹)</Label>
@@ -1547,23 +1553,65 @@ export function SmartFilingWizard() {
                                     </div>
                                 </div>
                                 <CardContent className="pt-6 space-y-6">
-                                    <StepExplainer
-                                        emoji="📈"
-                                        title="What are Capital Gains?"
-                                        shortDescription="Profit made from selling shares, mutual funds, ETFs, or bonds."
-                                        details={[
-                                            'STCG (Short Term Capital Gains): Sold within 12 months of buying → Taxed at 20% (Budget 2024).',
-                                            'LTCG (Long Term Capital Gains): Sold after holding for 12+ months → Tax-free up to ₹1.25 Lakh, then 12.5%.',
-                                            'IPO Listing Gains: If you got IPO allotment and sold on listing day = Short Term Capital Gain.',
-                                            'Mutual Fund Redemption: Equity MF held > 1 year = LTCG. Debt MF gains = taxed at your slab rate.',
-                                        ]}
-                                        tips={[
-                                            'Download your Capital Gains Statement from Zerodha Console, Groww app, or Angel One.',
-                                            'Losses can be set off! STCG loss vs STCG/LTCG gain. LTCG loss only vs LTCG gain.',
-                                            'If you only had IPO listing gains and no other trading, enter the profit under STCG.',
-                                        ]}
-                                        variant="info"
-                                    />
+                                    {/* Baby Steps Guide for Stocks */}
+                                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 md:p-5">
+                                        <h4 className="text-sm font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+                                            <Download className="h-5 w-5 text-indigo-500" />
+                                            Baby Steps: Download your Tax P&L Statement
+                                        </h4>
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                                                <div className="absolute right-0 top-0 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+                                                    <TrendingUp className="h-24 w-24 -mt-4 -mr-4 text-slate-800" />
+                                                </div>
+                                                <div className="flex justify-between items-start mb-3 relative z-10">
+                                                    <span className="font-bold text-slate-900 flex items-center gap-2">
+                                                        <div className="h-6 w-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs">1</div>
+                                                        Groww App
+                                                    </span>
+                                                    <a href="https://groww.in/portfolio/reports" target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-white hover:bg-indigo-600 px-2 py-1 rounded transition-colors text-[10px] font-bold flex items-center gap-1 border border-indigo-100">Open Groww <ArrowRight className="h-3 w-3" /></a>
+                                                </div>
+                                                <ol className="text-[11px] text-slate-600 space-y-1.5 list-none relative z-10">
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> Click on your <b>Profile</b> (top right)</li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> Go to <b>Reports</b> → <b>Tax & Investment</b></li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> Select <b>Capital Gains (Tax)</b></li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> Download for <b>FY 2025-26</b></li>
+                                                </ol>
+                                            </div>
+
+                                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                                                <div className="absolute right-0 top-0 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+                                                    <TrendingUp className="h-24 w-24 -mt-4 -mr-4 text-slate-800" />
+                                                </div>
+                                                <div className="flex justify-between items-start mb-3 relative z-10">
+                                                    <span className="font-bold text-slate-900 flex items-center gap-2">
+                                                        <div className="h-6 w-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs">2</div>
+                                                        Zerodha Console
+                                                    </span>
+                                                    <a href="https://console.zerodha.com/reports/taxpnl" target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-white hover:bg-indigo-600 px-2 py-1 rounded transition-colors text-[10px] font-bold flex items-center gap-1 border border-indigo-100">Open Zerodha <ArrowRight className="h-3 w-3" /></a>
+                                                </div>
+                                                <ol className="text-[11px] text-slate-600 space-y-1.5 list-none relative z-10">
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" /> Log into <b>Zerodha Console</b></li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" /> Click on <b>Reports</b> → <b>Tax P&L</b></li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" /> Select Financial Year: <b>2025-26</b></li>
+                                                    <li className="flex items-start gap-1.5"><Check className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" /> Click <b>Download Summary</b> (Excel/CSV)</li>
+                                                </ol>
+                                            </div>
+
+                                            <div className="bg-white p-4 rounded-xl border-2 border-primary/20 bg-primary/5 shadow-sm md:col-span-2 flex items-center justify-between">
+                                                <div>
+                                                    <span className="font-black text-slate-900 flex items-center gap-2 mb-1">
+                                                        <div className="h-6 w-6 rounded-full bg-primary text-white flex items-center justify-center text-xs">3</div>
+                                                        Upload the P&L File Here
+                                                    </span>
+                                                    <span className="text-[11px] ml-8 text-slate-600">We will read the Short-Term (STCG) and Long-Term (LTCG) figures and save them to your session instantly.</span>
+                                                </div>
+                                                <Button size="sm" onClick={() => document.getElementById('broker-upload')?.click()} className="text-xs font-bold gap-2">
+                                                    <Upload className="h-4 w-4" /> Upload & Auto-Fill
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="grid gap-6 sm:grid-cols-2">
                                         <div className="space-y-2">
                                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Short Term Gains (STCG)</Label>
