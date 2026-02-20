@@ -1,8 +1,13 @@
 -- ══════════════════════════════════════════════════════════════
--- TaxMitra Crypto Tax Engine v5 — Production Schema Migration
--- Date: 2026-02-19
+-- TaxMitra Crypto Tax Engine v5.1 — Production Schema Migration
+-- Date: 2026-02-20
 -- Purpose: Complete schema for FIFO inventory, gap detection,
---          CSV merge, reconciliation, and audit trail.
+--          CSV merge, reconciliation, audit trail,
+--          TDS records, and import session tracking.
+-- Changelog v5.1:
+--   - Added tds_source column to normalized_transactions
+--   - Added tds_records table for TDS CSV/Form 26AS data
+--   - Added crypto_import_sessions table
 -- ══════════════════════════════════════════════════════════════
 
 -- 1. RAW TRANSACTIONS (immutable audit log)
@@ -44,6 +49,11 @@ CREATE TABLE IF NOT EXISTS public.normalized_transactions (
   fee_inr             numeric(20,6) DEFAULT 0,
   tds_amount          numeric(15,4) DEFAULT 0,
   tds_rate            numeric(5,4) DEFAULT 0,
+  -- NEW v5.1: Track TDS provenance to prevent fabrication
+  -- Values: 'csv_explicit' (from TDS CSV), 'form_26as' (from Form 26AS),
+  --         'trade_csv' (from trade CSV TDS column), 'api_actual' (from API),
+  --         'none' (no TDS on buys/rewards)
+  tds_source          text DEFAULT 'none',
   trade_timestamp     timestamptz NOT NULL,
   financial_year      text NOT NULL,
   assessment_year     text NOT NULL,
@@ -125,6 +135,50 @@ CREATE TABLE IF NOT EXISTS public.other_income_events (
 );
 CREATE INDEX IF NOT EXISTS idx_other_income_user_fy ON public.other_income_events(user_id, financial_year);
 
+-- 5b. TDS RECORDS (from TDS Summary CSV / Form 26AS)
+CREATE TABLE IF NOT EXISTS public.tds_records (
+  id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id               uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  tds_date              timestamptz NOT NULL,
+  section               text NOT NULL DEFAULT '194S',
+  exchange              text NOT NULL DEFAULT 'CoinDCX',
+  gross_consideration   numeric(20,6) NOT NULL,
+  tds_rate              numeric(5,4) NOT NULL DEFAULT 0.01,
+  tds_amount_inr        numeric(15,4) NOT NULL,
+  trade_reference       text,
+  certificate_number    text,
+  tan_of_deductor       text,
+  quarter               text,
+  financial_year        text NOT NULL,
+  -- Source tracking: 'tds_csv', 'form_26as', 'manual'
+  source                text NOT NULL DEFAULT 'tds_csv',
+  asset_symbol          text,
+  order_type            text,      -- 'Insta', 'Spot', etc.
+  raw_data              jsonb,
+  content_hash          text,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_tds_user_fy ON public.tds_records(user_id, financial_year);
+
+-- 5c. CRYPTO IMPORT SESSIONS (tracks CSV file uploads)
+CREATE TABLE IF NOT EXISTS public.crypto_import_sessions (
+  id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id               uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  session_id            text NOT NULL,
+  exchange              text NOT NULL DEFAULT 'CoinDCX',
+  financial_year        text NOT NULL,
+  status                text NOT NULL DEFAULT 'completed',
+  total_files           int DEFAULT 0,
+  total_transactions    int DEFAULT 0,
+  total_tds_records     int DEFAULT 0,
+  total_errors          int DEFAULT 0,
+  file_details          jsonb,       -- Array of {fileName, fileType, rows, errors}
+  import_mode           text DEFAULT 'replace', -- 'replace' or 'append'
+  created_at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_import_sessions_user ON public.crypto_import_sessions(user_id, exchange);
+
 -- 6. SYNC LOGS
 CREATE TABLE IF NOT EXISTS public.sync_logs (
   id                      uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -173,6 +227,8 @@ ALTER TABLE public.normalized_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.disposal_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.other_income_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tds_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crypto_import_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sync_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reconciliation_logs ENABLE ROW LEVEL SECURITY;
 
@@ -181,5 +237,7 @@ CREATE POLICY "Users own norm_tx" ON public.normalized_transactions FOR ALL USIN
 CREATE POLICY "Users own lots" ON public.inventory_lots FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users own disposals" ON public.disposal_events FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users own other_income" ON public.other_income_events FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users own tds" ON public.tds_records FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users own import_sessions" ON public.crypto_import_sessions FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users own sync" ON public.sync_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users own recon" ON public.reconciliation_logs FOR ALL USING (auth.uid() = user_id);
