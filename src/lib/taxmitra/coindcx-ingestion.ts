@@ -828,8 +828,12 @@ export function parseCoinDCXTDSCSV(
 
             const rawData = rowToRecord(headers, values);
             const tdsDate = parseDate(col.date >= 0 ? values[col.date] : '');
-            const consideration = Math.abs(parseFloat(col.consideration >= 0 ? values[col.consideration] : '0') || 0);
-            const tdsAmt = Math.abs(parseFloat(col.tdsAmount >= 0 ? values[col.tdsAmount] : '0') || 0);
+
+            // Clean up numbers before parseFloat (remove commas/rupee symbols)
+            const cleanNumber = (val: string) => Math.abs(parseFloat(val.replace(/[^0-9.-]/g, '')) || 0);
+
+            const consideration = cleanNumber(col.consideration >= 0 ? values[col.consideration] : '0');
+            const tdsAmt = cleanNumber(col.tdsAmount >= 0 ? values[col.tdsAmount] : '0');
 
             if (isNaN(tdsDate.getTime()) || tdsAmt === 0) {
                 result.errors.push({ line: i + 1, message: 'Invalid TDS date or zero amount', rawData });
@@ -874,6 +878,8 @@ export function parseCoinDCXTDSCSV(
             const quantity = col.qty >= 0 ? Math.abs(parseFloat(values[col.qty]) || 0) : 0;
 
             // Generate transaction for the sell event recorded in TDS summary
+            const finalQuantity = quantity > 0 ? quantity : (consideration > 0 ? consideration / 1000 : 1);
+
             const sellTx: NormalizedTransaction = {
                 externalId: record.tradeReference || `tds-sell-${fy}-${i}`,
                 exchange: 'CoinDCX',
@@ -882,9 +888,9 @@ export function parseCoinDCXTDSCSV(
                 assetSymbol: asset,
                 quoteAsset: quoteAsset,
                 pair: `${asset}/${quoteAsset}`,
-                quantity: quantity || (consideration / 100000), // Fallback if qty missing (unlikely in TDS report)
-                pricePerUnit: quantity > 0 ? consideration / quantity : 0,
-                priceInr: quantity > 0 ? consideration / quantity : 0,
+                quantity: finalQuantity,
+                pricePerUnit: consideration / finalQuantity,
+                priceInr: consideration / finalQuantity,
                 grossAmountQuote: consideration,
                 grossAmountInr: consideration,
                 feeAmount: 0,

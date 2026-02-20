@@ -1476,8 +1476,8 @@ export async function fullCoinDCXSync(
                             feeAmount: parseFloat(item.fee || item.fee_amount || 0),
                             feeAsset: 'INR',
                             feeInr: parseFloat(item.fee || item.fee_amount || 0),
-                            tdsAmount: side === 'sell' ? parseFloat(item.total || 0) * 0.01 : 0,
-                            tdsRate: side === 'sell' ? 0.01 : 0,
+                            tdsAmount: 0, // Never fabricate TDS from Trial endpoints
+                            tdsRate: 0,
                             tradeTimestamp: date,
                             financialYear: fy,
                             assessmentYear: getAY(fy),
