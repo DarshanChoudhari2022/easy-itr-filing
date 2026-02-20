@@ -793,17 +793,24 @@ export function parseCoinDCXTDSCSV(
     result.totalRows = lines.length - 1;
 
     const col = {
-        date: findColumn(headers, 'date', 'time', 'tds_date', 'deduction_date', 'timestamp', 'transaction_date'),
-        asset: findColumn(headers, 'asset', 'coin', 'symbol', 'token', 'currency'),
+        // CoinDCX TDS Summary uses "Created At" as date header
+        date: findColumn(headers, 'created_at', 'date', 'time', 'tds_date', 'deduction_date', 'timestamp', 'transaction_date'),
+        // CoinDCX TDS Summary uses "Crypto Pair /" — need to match 'crypto_pair', 'pair'
+        asset: findColumn(headers, 'crypto_pair', 'pair', 'asset', 'coin', 'symbol', 'token', 'currency'),
         qty: findColumn(headers, 'quantity', 'qty', 'amount_sold', 'volume'),
-        consideration: findColumn(headers, 'consideration', 'gross_amount', 'amount', 'sale_amount', 'value', 'total', 'gross_consideration'),
-        tdsAmount: findColumn(headers, 'tds_amount', 'tds', 'tax_deducted', 'deduction', 'tds_inr', 'tds_deducted'),
+        // CoinDCX TDS Summary uses "Order Value"
+        consideration: findColumn(headers, 'order_value', 'consideration', 'gross_amount', 'amount', 'sale_amount', 'value', 'total', 'gross_consideration'),
+        // CoinDCX TDS Summary has both "TDS deducted" and "TDS (In INR)"
+        tdsAmount: findColumn(headers, 'tds_in_inr', 'tds_inr', 'tds_amount', 'tds', 'tax_deducted', 'deduction', 'tds_deducted'),
         tdsRate: findColumn(headers, 'tds_rate', 'rate', 'rate_percent'),
         tradeRef: findColumn(headers, 'trade_id', 'reference', 'transaction_id', 'order_id', 'trade_reference'),
         certificate: findColumn(headers, 'certificate', 'cert_no', 'certificate_number'),
         tan: findColumn(headers, 'tan', 'tan_number', 'deductor_tan'),
         section: findColumn(headers, 'section'),
         quarter: findColumn(headers, 'quarter', 'q'),
+        // CoinDCX TDS Summary has "Order Type" and "Side" columns
+        orderType: findColumn(headers, 'order_type', 'type'),
+        side: findColumn(headers, 'side'),
     };
 
     if (col.date === -1 || col.tdsAmount === -1) {
@@ -859,7 +866,11 @@ export function parseCoinDCXTDSCSV(
             // CRITICAL: Generate a synthetic SELL transaction from the TDS record.
             // This ensures that even if 'Insta' or 'P2P' trades are missing from the API/Trades CSV,
             // the sale consideration (and thus Capital Gains) is captured.
-            const asset = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'USDT';
+            const rawAssetValue = col.asset >= 0 ? values[col.asset].toUpperCase().trim() : 'USDT';
+            // CoinDCX TDS CSV has pair values like "COTIINR", "DOGEINR", "USDC", "ADA", "ACAUSDT"
+            // Use extractBaseAsset to get the actual token (COTI, DOGE, USDC, ADA, ACA)
+            const asset = extractBaseAsset(rawAssetValue);
+            const quoteAsset = extractQuoteAsset(rawAssetValue);
             const quantity = col.qty >= 0 ? Math.abs(parseFloat(values[col.qty]) || 0) : 0;
 
             // Generate transaction for the sell event recorded in TDS summary
@@ -869,8 +880,8 @@ export function parseCoinDCXTDSCSV(
                 transactionType: 'sell',
                 isTaxableEvent: true,
                 assetSymbol: asset,
-                quoteAsset: 'INR',
-                pair: `${asset}/INR`,
+                quoteAsset: quoteAsset,
+                pair: `${asset}/${quoteAsset}`,
                 quantity: quantity || (consideration / 100000), // Fallback if qty missing (unlikely in TDS report)
                 pricePerUnit: quantity > 0 ? consideration / quantity : 0,
                 priceInr: quantity > 0 ? consideration / quantity : 0,
@@ -1219,8 +1230,18 @@ export function parseWazirXTradesCSV(
 export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
     const firstLine = csvContent.split('\n')[0]?.toLowerCase() || '';
 
-    // Check for TRADE indicators FIRST — this is critical because CoinDCX Order History
-    // CSV has a "Tds" column that would falsely match the TDS check below.
+    // Check for TDS SUMMARY indicators FIRST — CoinDCX TDS Summary CSV has
+    // "Side" and "Crypto Pair" headers that also match trade indicators.
+    // TDS-specific patterns: "TDS deducted", "TDS (In INR)", "tds_summary" in content
+    const hasTDSSpecific = firstLine.includes('tds deducted') || firstLine.includes('tds (in inr)') ||
+        firstLine.includes('tds_in_inr') || firstLine.includes('tds_amount') ||
+        firstLine.includes('tds_summary') || firstLine.includes('tax_deducted');
+
+    if (hasTDSSpecific) {
+        return 'tds';
+    }
+
+    // Check for TRADE indicators — only if not already identified as TDS
     const hasTradeIndicators = firstLine.includes('side') || firstLine.includes('pair') ||
         firstLine.includes('market') || firstLine.includes('action') ||
         firstLine.includes('avg price') || firstLine.includes('average_price') ||
@@ -1232,7 +1253,7 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
         return 'trades';
     }
 
-    // Check for TDS indicators
+    // Check for generic TDS indicators (less specific)
     if (firstLine.includes('tds') || firstLine.includes('deduct') || firstLine.includes('certificate') || firstLine.includes('tan_number')) {
         return 'tds';
     }
