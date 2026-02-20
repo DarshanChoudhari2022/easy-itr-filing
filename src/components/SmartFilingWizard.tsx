@@ -746,7 +746,12 @@ export function SmartFilingWizard() {
                 vdaGains: income.cryptoGains,
                 stcg15: income.stcgEquity,
                 ltcg10: income.ltcgEquity,
-                businessNet: income.freelanceGross - income.freelanceExpenses,
+                businessGross: income.freelanceGross,
+                businessExpenses: income.freelanceExpenses,
+                businessNet: income.freelanceGross, // For 44ADA/44AD this is the net, for regular it's gross - expenses
+                turnover: income.freelanceTurnover,
+                isPresumptive: income.freelanceSection === '44AD' || income.freelanceSection === '44ADA',
+                presumptiveSection: income.freelanceSection as any,
                 netHousePropertyIncome: income.rentalIncome - income.rentalExpenses - income.homeLoanInterest
             },
             deductions: {
@@ -766,7 +771,8 @@ export function SmartFilingWizard() {
             taxesPaid: {
                 tdsSalary: income.salaryTDS,
                 tdsInterest: 0, tdsDividend: 0, tdsRent: 0,
-                tdsProfessional: 0, tdsProperty: 0,
+                tdsProfessional: 0, // In future, add freelanceTDS to state
+                tdsProperty: 0,
                 tdsOther: income.cryptoTDS,
                 tcs: 0, advanceTax: 0, selfAssessmentTax: 0
             },
@@ -901,7 +907,7 @@ export function SmartFilingWizard() {
                                 </div>
                                 <div className="p-6">
                                     <AISUploader
-                                        onAutoFill={(data) => {
+                                        onAutoFill={(data: any) => {
                                             toast.success("Details auto-filled from AIS!");
                                             setIncome(prev => ({
                                                 ...prev,
@@ -922,13 +928,15 @@ export function SmartFilingWizard() {
                                                 hasShares: (data.capitalGains || 0) > 0,
                                                 stcgEquity: data.capitalGains || 0,
 
-                                                // Business (Not auto-detected yet)
-                                                // hasFreelance: false, 
+                                                // Business / Freelance
+                                                hasFreelance: !!data.hasFreelanceIncome,
+                                                freelanceTurnover: data.businessIncome || 0,
+                                                // If we have business income, we probably have TDS on it, but we'll ask user for expenses
+                                                // We don't have a specific field for freelance TDS right now, but we can store it or add it to salary TDS for now, or total TDS?
+                                                // Better: Add freelanceTDS to the state or combine with other.
 
-                                                // Other TDS (Sum of interest + dividend TDS)
-                                                cryptoTDS: 0,
-                                                // We should probably add interest TDS to FD interest field or similar?
-                                                // For now, let's just use what we have.
+                                                // Defaulting to 44ADA for professionals if 194J was detected
+                                                freelanceSection: data.hasFreelanceIncome ? '44ADA' : 'Regular'
                                             }));
 
                                             if (data.pan && data.pan !== 'MANUAL_ENTRY') {
@@ -1498,7 +1506,45 @@ export function SmartFilingWizard() {
                                     <CardTitle className="flex items-center gap-2 text-lg font-black text-primary">
                                         <TrendingUp className="h-5 w-5" /> Stocks & Mutual Funds (Capital Gains)
                                     </CardTitle>
-                                    <Badge className="bg-primary/10 text-primary border-none">ITR-2/3</Badge>
+                                    <div className="flex gap-2">
+                                        <Badge className="bg-primary/10 text-primary border-none">ITR-2/3</Badge>
+                                        <Button variant="ghost" size="sm" onClick={() => document.getElementById('broker-upload')?.click()} className="text-primary border border-primary/20 h-7 text-[10px] font-bold uppercase tracking-widest bg-white">
+                                            <Upload className="h-3 w-3 mr-1" /> Auto-Fill Trade P&L
+                                        </Button>
+                                        <input
+                                            id="broker-upload"
+                                            type="file"
+                                            className="hidden"
+                                            accept=".csv, .xlsx, .xls"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+
+                                                try {
+                                                    toast.info('Parsing Broker P&L statement...');
+                                                    const text = await file.text();
+
+                                                    // Dynamic import so it doesn't break if not present
+                                                    const { parseBrokerPandL } = await import('@/lib/broker-parser');
+                                                    const result = await parseBrokerPandL(text);
+
+                                                    updateIncomeField('stcgEquity', result.stcg);
+                                                    updateIncomeField('ltcgEquity', result.ltcg);
+
+                                                    if (result.businessIncome && result.businessIncome > 0) {
+                                                        toast.success(`Found F&O/Intraday Business Income: ₹${result.businessIncome}`);
+                                                        updateIncomeField('hasFreelance', true);
+                                                        updateIncomeField('freelanceGross', result.businessIncome);
+                                                    }
+
+                                                    toast.success(`Successfully parsed ${result.brokerName} P&L! STCG: ₹${result.stcg}, LTCG: ₹${result.ltcg}`);
+                                                } catch (err) {
+                                                    toast.error('Failed to parse broker statement. Try manual entry.');
+                                                    console.error(err);
+                                                }
+                                            }}
+                                        />
+                                    </div>
                                 </div>
                                 <CardContent className="pt-6 space-y-6">
                                     <StepExplainer

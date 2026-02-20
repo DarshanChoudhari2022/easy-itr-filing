@@ -252,6 +252,37 @@ export function parseAISJson(jsonData: any): AISData {
             });
         }
 
+        // Parse Professional & Business Income (194J, 194C, 194Q)
+        if (jsonData.tdsProfessional || jsonData.tdsOther) {
+            const items = jsonData.tdsProfessional || jsonData.tdsOther || [];
+            items.forEach((item: any, index: number) => {
+                const amount = Number(item.grossAmount || item.income || item.amountPaid || 0);
+                const tds = Number(item.tdsAmount || item.taxDeducted || 0);
+                const section = (item.section || '').toUpperCase();
+
+                if (section.includes('194J') || section.includes('194C') || section.includes('194Q') || section.includes('194O')) {
+                    tdsDetails.professional += tds;
+                    incomeDetails.businessIncome += amount;
+
+                    records.push({
+                        id: `BUS_${index}`,
+                        category: section.includes('194J') ? 'TDS_PROFESSIONAL' : 'OTHER_INCOME',
+                        subCategory: section.includes('194J') ? 'Professional Fees (194J)' : `Business Receipts (${section})`,
+                        informationSource: item.tan || item.deductorTan || '',
+                        sourceName: item.deductorName || 'Client/Platform',
+                        transactionDate: item.transactionDate || '',
+                        reportedValue: amount,
+                        status: 'accepted'
+                    });
+                } else if (section.includes('194S') || section.includes('115BB')) {
+                    // Crypto/VDA handled separately below
+                } else {
+                    tdsDetails.other += tds;
+                    incomeDetails.otherSources += amount;
+                }
+            });
+        }
+
         // Parse Property transactions
         if (jsonData.propertyTransactions || jsonData.sftProperty) {
             const items = jsonData.propertyTransactions || jsonData.sftProperty || [];
@@ -403,6 +434,8 @@ export function getAutoFillSuggestions(aisData: AISData) {
         dividendIncome: aisData.incomeDetails.dividend,
         dividendTDS: aisData.tdsDetails.dividend,
         capitalGains: aisData.incomeDetails.capitalGains,
+        businessIncome: aisData.incomeDetails.businessIncome,
+        businessTDS: aisData.tdsDetails.professional,
 
         // Suggested deductions based on SFT
         suggestedDeductions80C: Math.min(150000, aisData.sftTransactions.mutualFundPurchases * 0.5), // Assume 50% ELSS
@@ -412,6 +445,7 @@ export function getAutoFillSuggestions(aisData: AISData) {
             aisData.sftTransactions.propertyTransactions > 0,
         hasForeignRemittances: aisData.sftTransactions.foreignRemittances > 0,
         hasCryptoTransactions: aisData.records.some(r => r.category === 'CRYPTO_VDA'),
+        hasFreelanceIncome: aisData.incomeDetails.businessIncome > 0,
 
         // Confidence
         dataCompleteness: aisData.records.length > 0 ? 'high' : 'low',
