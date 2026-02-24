@@ -740,7 +740,7 @@ export function computeVdaTaxForFinancialYear(
         computedAt: new Date(),
         engineVersion: ENGINE_VERSION,
 
-        dataCoverage: computeDataCoverage(allRelevantTx, tdsRecords, otherVDAIncome),
+        dataCoverage: computeDataCoverage(transactions, tdsRecords, otherVDAIncome),
     };
 }
 
