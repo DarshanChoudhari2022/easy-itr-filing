@@ -1213,39 +1213,90 @@ export default function CryptoTaxPage() {
                   </CardContent>
                 </Card>
 
-                {/* ── Missing Data Alerts ── */}
-                {parsedTransactions.length > 0 && (
-                  <div className="space-y-3">
-                    {/* Alert: Missing staking rewards */}
-                    {stats.otherIncome < 500 && (
-                      <Alert className="border-amber-300 bg-amber-50">
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
-                        <AlertTitle className="text-amber-800 font-semibold">⚠️ Staking Rewards May Be Missing</AlertTitle>
-                        <AlertDescription className="text-amber-700 text-sm mt-1">
-                          <p>Your Other Income is <strong>{formatCurrency(stats.otherIncome)}</strong>. CoinDCX does <strong>not</strong> expose staking rewards via their API — they must be added manually.</p>
-                          <p className="mt-2 font-medium">KoinX reference for FY 2024-25:</p>
-                          <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
-                            <li>ADA Staking: 4 rewards totaling ~₹1,027.74 (₹232.49 + ₹414.75 + ₹49.24 + ₹331.26)</li>
-                            <li>SHIB Rewards: 2 rewards totaling ~₹103.58 (₹51.79 × 2)</li>
-                            <li>INR Cashback: ~₹709.63 (₹6.77 + ₹0.86 + ₹702.00)</li>
-                            <li><strong>Total Other Income: ~₹1,840.95</strong></li>
-                          </ul>
-                          <p className="mt-2 text-xs">📧 Check your email for "CoinDCX reward credited" messages. Then use <strong>+ Add Trade → Staking Reward / Airdrop</strong> to add each one.</p>
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    {/* Alert: TDS may be estimated (no TDS CSV uploaded) */}
-                    {parsedTDSRecords.length === 0 && stats.tdsCredit > 0 && (
-                      <Alert className="border-blue-200 bg-blue-50">
-                        <Info className="h-4 w-4 text-blue-600" />
-                        <AlertTitle className="text-blue-800 font-semibold">ℹ️ TDS is Estimated (1% of Sell Value)</AlertTitle>
-                        <AlertDescription className="text-blue-700 text-sm">
-                          No TDS certificate CSV uploaded. TDS is estimated at 1% of sell consideration. For exact figures, download your <strong>TDS Summary CSV</strong> from CoinDCX → Tax Reports, then upload it here.
-                          <br /><span className="text-xs mt-1 block">KoinX reference TDS for FY 2024-25: ₹28,770.38</span>
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                  </div>
+                {/* ── Data Coverage Score ── */}
+                {taxComputation?.dataCoverage && (
+                  <Card className={`border-2 shadow-sm ${taxComputation.dataCoverage.level === 'complete' ? 'border-emerald-300 bg-emerald-50' :
+                      taxComputation.dataCoverage.level === 'high' ? 'border-emerald-200 bg-emerald-50/50' :
+                        taxComputation.dataCoverage.level === 'medium' ? 'border-amber-300 bg-amber-50' :
+                          'border-red-300 bg-red-50'
+                    }`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                          <ShieldCheck className={`h-4 w-4 ${taxComputation.dataCoverage.score >= 75 ? 'text-emerald-600' :
+                              taxComputation.dataCoverage.score >= 50 ? 'text-amber-600' :
+                                'text-red-600'
+                            }`} />
+                          Data Coverage Score
+                        </CardTitle>
+                        <Badge className={
+                          taxComputation.dataCoverage.score >= 75 ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                            taxComputation.dataCoverage.score >= 50 ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                              'bg-red-100 text-red-800 border-red-200'
+                        }>
+                          {taxComputation.dataCoverage.score}%
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Progress Bar */}
+                      <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${taxComputation.dataCoverage.score >= 75 ? 'bg-emerald-500' :
+                              taxComputation.dataCoverage.score >= 50 ? 'bg-amber-500' :
+                                'bg-red-500'
+                            }`}
+                          style={{ width: `${taxComputation.dataCoverage.score}%` }}
+                        />
+                      </div>
+
+                      {/* Source Checklist */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                        {[
+                          { key: 'apiSync', label: 'API Sync', points: 25 },
+                          { key: 'orderHistoryCSV', label: 'Order CSV', points: 40 },
+                          { key: 'tdsSummaryCSV', label: 'TDS CSV', points: 30 },
+                          { key: 'instaHistoryCSV', label: 'Insta CSV', points: 15 },
+                          { key: 'manualRewards', label: 'Rewards', points: 15 },
+                        ].map(s => (
+                          <div key={s.key} className={`p-2 rounded-lg border text-center ${(taxComputation.dataCoverage.sources as any)[s.key]
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-slate-50 border-slate-200 opacity-60'
+                            }`}>
+                            <span className="block text-lg">
+                              {(taxComputation.dataCoverage.sources as any)[s.key] ? '✅' : '⬜'}
+                            </span>
+                            <span className="font-medium">{s.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Missing Items */}
+                      {taxComputation.dataCoverage.recommendations.length > 0 && (
+                        <div className="space-y-2 pt-2">
+                          <p className="text-xs font-semibold text-slate-600">📋 To improve accuracy:</p>
+                          {taxComputation.dataCoverage.recommendations.map((rec, i) => (
+                            <div key={i} className="flex gap-2 text-xs text-slate-700 bg-white p-2 rounded border border-slate-100">
+                              <span className="text-amber-500 shrink-0">→</span>
+                              <span>{rec}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Alert: TDS estimated (no TDS CSV) */}
+                {parsedTDSRecords.length === 0 && stats.tdsCredit > 0 && (
+                  <Alert className="border-blue-200 bg-blue-50">
+                    <Info className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-800 font-semibold">ℹ️ TDS is Computed from Sell Consideration (1%)</AlertTitle>
+                    <AlertDescription className="text-blue-700 text-sm">
+                      No TDS certificate CSV uploaded. TDS credit is auto-computed as 1% of your total sell consideration per Section 194S.
+                      For certificate-level accuracy, download your <strong>TDS Summary CSV</strong> from CoinDCX → Downloads → TDS Summary → Export CSV.
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 {/* Charts */}

@@ -298,12 +298,30 @@ export interface TaxComputationResult {
     // Order Aggregation Stats (v5)
     aggregationStats?: AggregationStats;
 
+    // Data Coverage Score (v5.1)
+    dataCoverage: DataCoverageScore;
+
     // Audit
     lotMatches: LotMatch[];
     activeLots: TaxLot[];            // Remaining inventory
     warnings: string[];
     computedAt: Date;
     engineVersion: string;
+}
+
+/** Data Coverage Score — tracks which data sources were used and what's missing */
+export interface DataCoverageScore {
+    score: number;                   // 0-100 percentage
+    level: 'critical' | 'low' | 'medium' | 'high' | 'complete';
+    sources: {
+        apiSync: boolean;            // CoinDCX API sync was done
+        orderHistoryCSV: boolean;    // Order History CSV uploaded
+        tdsSummaryCSV: boolean;      // TDS Summary CSV uploaded
+        instaHistoryCSV: boolean;    // Insta History CSV uploaded
+        manualRewards: boolean;      // At least 1 manual reward entry
+    };
+    missing: string[];               // Human-readable list of what's missing
+    recommendations: string[];       // Specific action items
 }
 
 // ============= CONSTANTS =============
@@ -721,6 +739,113 @@ export function computeVdaTaxForFinancialYear(
         warnings,
         computedAt: new Date(),
         engineVersion: ENGINE_VERSION,
+
+        dataCoverage: computeDataCoverage(allRelevantTx, tdsRecords, otherVDAIncome),
+    };
+}
+
+// ============= DATA COVERAGE SCORE =============
+
+/**
+ * Compute a data coverage score based on which data sources contributed to the computation.
+ * This tells the user exactly what % of their data is captured and what's missing.
+ */
+function computeDataCoverage(
+    transactions: NormalizedTransaction[],
+    tdsRecords: TDSRecord[],
+    otherIncome: number
+): DataCoverageScore {
+    // Detect which sources contributed data
+    const hasAPI = transactions.some(tx => tx.rawData?.source === 'api');
+    const hasOrderCSV = transactions.some(tx =>
+        tx.rawData?.source === 'csv' && (
+            tx.rawData?.fileType === 'trades' ||
+            tx.rawData?.file_type === 'trades' ||
+            tx.description?.includes('SPOT') ||
+            (tx.transactionType === 'buy' && !tx.description?.includes('TDS Summary') && !tx.description?.includes('Insta'))
+        )
+    );
+    const hasTDSCSV = tdsRecords.length > 0 || transactions.some(tx =>
+        tx.description?.includes('TDS Summary') ||
+        tx.rawData?.fileType === 'tds' ||
+        tx.rawData?.file_type === 'tds'
+    );
+    const hasInstaCSV = transactions.some(tx =>
+        tx.rawData?.fileType === 'insta' ||
+        tx.rawData?.file_type === 'insta' ||
+        tx.description?.toLowerCase().includes('insta')
+    );
+    const hasManualRewards = otherIncome > 0 && transactions.some(tx => {
+        const event = classifyVdaEvent(tx);
+        return event === 'STAKING' || event === 'INTEREST_EARNED' || event === 'AIRDROP' || event === 'REWARD' || event === 'REFERRAL_BONUS';
+    });
+
+    // Compute score
+    let score = 0;
+    const missing: string[] = [];
+    const recommendations: string[] = [];
+
+    // API or Order CSV = base trade data (40 points)
+    if (hasOrderCSV) {
+        score += 40;
+    } else if (hasAPI) {
+        score += 25; // API is incomplete (no Insta/P2P)
+        missing.push('Order History CSV (has more complete trade data than API)');
+        recommendations.push('Download Order History CSV: CoinDCX → Orders → Order History → FILLED ORDERS → Download CSV');
+    } else {
+        missing.push('No trade data! Upload Order History CSV or sync via API');
+        recommendations.push('Go to CoinDCX → Orders → Order History → FILLED ORDERS → Download CSV, then upload');
+    }
+
+    // TDS Summary CSV (30 points — critical for TDS credit + Insta/P2P sells)
+    if (hasTDSCSV) {
+        score += 30;
+    } else {
+        missing.push('TDS Summary CSV (needed for exact TDS credit and Insta/P2P sells)');
+        recommendations.push('Download TDS Summary: CoinDCX → Downloads → TDS Summary → Export CSV');
+    }
+
+    // Insta History CSV (15 points — buy-side for Insta trades)
+    if (hasInstaCSV) {
+        score += 15;
+    } else if (hasTDSCSV) {
+        // If TDS CSV has sells but no Insta CSV, we still get 5 points for having sell side
+        score += 5;
+        missing.push('Insta History CSV (provides buy-side cost basis for Instant Buy/Sell trades)');
+        recommendations.push('If you used Instant Buy/Sell: CoinDCX → Orders → Insta History → Download CSV');
+    } else {
+        missing.push('Insta History CSV');
+        recommendations.push('If you used Instant Buy/Sell: CoinDCX → Orders → Insta History → Download CSV');
+    }
+
+    // Manual Rewards (15 points)
+    if (hasManualRewards) {
+        score += 15;
+    } else {
+        missing.push('Staking rewards & airdrops (not available via API or CSV — must be added manually)');
+        recommendations.push('Use "+ Add Trade" → Staking Reward for each reward. Check your email for "CoinDCX reward credited" notifications.');
+    }
+
+    // Determine level
+    let level: DataCoverageScore['level'];
+    if (score >= 95) level = 'complete';
+    else if (score >= 75) level = 'high';
+    else if (score >= 50) level = 'medium';
+    else if (score >= 25) level = 'low';
+    else level = 'critical';
+
+    return {
+        score,
+        level,
+        sources: {
+            apiSync: hasAPI,
+            orderHistoryCSV: hasOrderCSV,
+            tdsSummaryCSV: hasTDSCSV,
+            instaHistoryCSV: hasInstaCSV,
+            manualRewards: hasManualRewards,
+        },
+        missing,
+        recommendations,
     };
 }
 

@@ -91,6 +91,7 @@ export {
     type AssetGainSummary,
     type TDSReconciliation,
     type TaxComputationResult,
+    type DataCoverageScore,
 } from './tax-computation-engine';
 
 // ============= ORDER AGGREGATION (v5 — KoinX Matching) =============
