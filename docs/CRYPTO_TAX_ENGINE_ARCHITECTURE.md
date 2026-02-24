@@ -1,8 +1,8 @@
-# TaxMitra Crypto Tax Engine — Production Architecture v5
+# TaxMitra Crypto Tax Engine — Production Architecture v5.1
 
-> **Date:** 2026-02-19 | **Engine Version:** 5.0.0  
+> **Date:** 2026-02-24 | **Engine Version:** 5.1.0  
 > **Compliance:** Section 115BBH, Section 194S, Schedule VDA  
-> **Status:** Implementation-Ready
+> **Status:** Implementation-Ready (KoinX-Matching)
 
 ---
 
@@ -94,11 +94,13 @@
 |--------|------|---------------|
 | **API Sync** | `coindcx-api.ts` | Paginated fetch, rate limiting, gap detection |
 | **CSV Ingestion** | `coindcx-ingestion.ts` | Parse all CSV types, normalize to common schema |
-| **Merge Engine** | `merge-engine.ts` (NEW) | Deduplicate API + CSV, resolve conflicts |
+| **Order Aggregator** | `order-aggregator.ts` (v5) | Aggregate fills→orders, validation gate, dedup |
+| **Merge Engine** | `merge-engine.ts` | Deduplicate API + CSV, resolve conflicts |
 | **Inventory Engine** | `tax-computation-engine.ts` | Global FIFO across all years, lot matching |
+| **KoinX Reconciliation** | `koinx-reconciliation.ts` (v5) | Compare output against KoinX reference data |
 | **Reporting** | `tax-computation-engine.ts` | FY-filtered gains, Schedule VDA generation |
-| **Reconciliation** | `reconciliation-engine.ts` (NEW) | TDS/volume/inventory cross-checks |
-| **Sync Metadata** | `sync-service.ts` (NEW) | Track sync state, gaps, last sync timestamps |
+| **Reconciliation** | `reconciliation-engine.ts` | TDS/volume/inventory cross-checks |
+| **Sync Metadata** | `sync-service.ts` | Track sync state, gaps, last sync timestamps |
 
 ---
 
@@ -971,13 +973,16 @@ def get_or_compute(user_id, target_fy):
 
 ## Summary: What Changes From Current Architecture
 
-| Current (v4) | New (v5) | Why |
+| Current (v4) | New (v5.1) | Why |
 |-------------|----------|-----|
+| Fill-level transactions | Order-level aggregation (fills→orders) | Matches KoinX counting (71 vs 210 → 71) |
+| No validation gate | Reject UNKNOWN, zero-qty, zero-value txns | Prevents noise from trial endpoints |
+| Theoretical TDS fallback | Actual TDS from trade data only | Matches KoinX TDS credit exactly |
 | Transactions stored in `crypto_trades` (flat) | Split into `raw_transactions` + `normalized_transactions` | Immutable audit trail + reprocessable normalized layer |
 | No persistent FIFO lots | `inventory_lots` table | Audit trail, CA review, debugging |
 | No disposal tracking | `disposal_events` table | Schedule VDA generation, per-trade audit |
 | No sync history | `sync_logs` table | Gap detection, incremental sync, audit |
-| No reconciliation | `reconciliation_logs` table | TDS/volume cross-checks |
+| No reconciliation | KoinX reconciliation engine + `reconciliation_logs` | Compare output against KoinX reference |
 | API fetch: single call, 500 limit | Paginated fetch with from_id | Complete trade history |
 | CSV import: separate flow | Unified merge engine with content-hash dedup | No duplicates between API + CSV |
 | No gap detection | Automatic gap detection | Proactive CSV upload prompts |
@@ -999,7 +1004,10 @@ def get_or_compute(user_id, target_fy):
 - [x] Negative inventory prevention with warnings
 - [x] Multi-year FIFO with global inventory
 - [x] Reconciliation against 26AS/TDS certificates
+- [x] Order-level aggregation (KoinX-matching)
+- [x] Transaction validation gate
+- [x] KoinX reconciliation engine
 
 ---
 
-*Document generated for TaxMitra v5.0.0 — 2026-02-19*
+*Document generated for TaxMitra v5.1.0 — 2026-02-24*

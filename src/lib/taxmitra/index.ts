@@ -93,6 +93,16 @@ export {
     type TaxComputationResult,
 } from './tax-computation-engine';
 
+// ============= ORDER AGGREGATION (v5 — KoinX Matching) =============
+export {
+    aggregateFillsToOrders,
+    deduplicateTransactions,
+    isValidTrade,
+
+    type AggregationResult,
+    type AggregationStats,
+} from './order-aggregator';
+
 // ============= PERSISTENCE LAYER =============
 export {
     // Import operations

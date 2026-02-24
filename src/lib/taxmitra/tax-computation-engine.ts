@@ -1,19 +1,22 @@
 /**
- * Tax Mitra — FIFO Tax Computation Engine v4
+ * Tax Mitra — FIFO Tax Computation Engine v5
  * ============================================
  * Production-ready Indian crypto tax computation under:
  *   - Section 115BBH: 30% flat tax on VDA gains
  *   - Section 194S: 1% TDS on consideration
  *
- * ARCHITECTURE (v4):
+ * ARCHITECTURE (v5 — KoinX-Matching):
+ *   ✓ ORDER-LEVEL AGGREGATION: Fills grouped by orderId (matches KoinX counting)
  *   ✓ FULL HISTORICAL FIFO: ALL transactions from inception are processed
  *   ✓ FY selection is REPORTING-LEVEL ONLY — never affects FIFO inventory
  *   ✓ Prior-year sells correctly consume inventory (fixes KoinX mismatch)
+ *   ✓ Transaction validation: rejects UNKNOWN assets, zero-qty, zero-value trades
  *   ✓ Stablecoin trades (USDT/USDC) treated as taxable disposals
  *   ✓ Inventory reconciliation & negative inventory prevention
  *   ✓ Brokerage does NOT reduce cost basis (per 115BBH)
  *   ✓ Losses cannot offset gains (per 115BBH)
  *   ✓ Idempotent reprocessing — full FIFO recalculation on every run
+ *   ✓ TDS: uses actual trade data only, never inflates with theoretical 1%
  *
  * Rules enforced:
  *   ✓ No set-off of VDA losses against other income heads
@@ -29,6 +32,7 @@
  */
 
 import type { NormalizedTransaction, TDSRecord } from './coindcx-ingestion';
+import { aggregateFillsToOrders, type AggregationStats } from './order-aggregator';
 
 // ============= IST TIMEZONE HELPERS =============
 
@@ -291,6 +295,9 @@ export interface TaxComputationResult {
     totalVDAEntries: number;
     uniqueAssets: number;
 
+    // Order Aggregation Stats (v5)
+    aggregationStats?: AggregationStats;
+
     // Audit
     lotMatches: LotMatch[];
     activeLots: TaxLot[];            // Remaining inventory
@@ -304,7 +311,7 @@ export interface TaxComputationResult {
 const VDA_TAX_RATE = 0.30;
 const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
-const ENGINE_VERSION = '4.0.0';
+const ENGINE_VERSION = '5.0.0';
 
 // Stablecoins are taxable VDAs — treat like any other crypto
 const STABLECOIN_SYMBOLS = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD'];
@@ -357,7 +364,8 @@ export function computeVdaTaxForFinancialYear(
     transactions: NormalizedTransaction[],
     tdsRecords: TDSRecord[],
     financialYear: string,
-    method: AccountingMethod = 'FIFO'
+    method: AccountingMethod = 'FIFO',
+    options: { aggregateOrders?: boolean } = { aggregateOrders: true }
 ): TaxComputationResult {
     const assessmentYear = getAY(financialYear);
     const warnings: string[] = [];
@@ -386,6 +394,26 @@ export function computeVdaTaxForFinancialYear(
         tdsDate: r.tdsDate instanceof Date ? r.tdsDate : new Date(r.tdsDate),
     }));
 
+    // ─── Step 0 (v5 NEW): Order-Level Aggregation ───
+    // KoinX aggregates fill-level trades into order-level transactions.
+    // This is the #1 reason for transaction count mismatch.
+    // CoinDCX API returns fills; one order may have 5 fills at different prices.
+    // We aggregate them into one order with VWAP price.
+    let aggregationStats: AggregationStats | undefined;
+    if (options.aggregateOrders !== false) {
+        console.log(`[TaxEngine v5] Running order-level aggregation on ${transactions.length} transactions...`);
+        const aggResult = aggregateFillsToOrders(transactions, {
+            validateFirst: true,
+            aggregate: true,
+        });
+        transactions = aggResult.transactions;
+        aggregationStats = aggResult.stats;
+        warnings.push(...aggResult.warnings);
+        console.log(`[TaxEngine v5] Aggregation: ${aggResult.stats.inputFillCount} fills → ${aggResult.stats.outputOrderCount} orders ` +
+            `(filtered: ${aggResult.stats.filteredCount}, ` +
+            `multi-fill orders: ${aggResult.stats.multiFillOrders})`);
+    }
+
     // ─── Step 1: Re-assign FY using IST-aware function (single source of truth) ───
     transactions = transactions.map(tx => ({
         ...tx,
@@ -393,7 +421,7 @@ export function computeVdaTaxForFinancialYear(
     }));
 
     // ═══════════════════════════════════════════════════════════════════
-    // CRITICAL ARCHITECTURE (v4):
+    // CRITICAL ARCHITECTURE (v5):
     //
     //   FIFO requires FULL HISTORICAL INVENTORY.
     //   We MUST process ALL transactions from account inception to present.
@@ -404,9 +432,8 @@ export function computeVdaTaxForFinancialYear(
     //   - ALL sells → consume from FIFO queue (all years)
     //   - Only REPORT gains/losses for disposals where disposal_date ∈ target FY
     //
-    //   Without this, prior-year sells don't consume inventory,
-    //   leading to incorrect cost basis for current-year gains.
-    //   This was the root cause of KoinX mismatches.
+    //   v5 addition: Fills are aggregated to order level BEFORE processing,
+    //   matching KoinX's transaction counting exactly.
     // ═══════════════════════════════════════════════════════════════════
 
     // Process ALL transactions for FIFO stack building
@@ -430,7 +457,7 @@ export function computeVdaTaxForFinancialYear(
     // Count prior-year transactions for logging
     const priorYearCount = allRelevantTx.filter(tx => tx.financialYear !== financialYear).length;
     const targetYearCount = allRelevantTx.filter(tx => tx.financialYear === financialYear).length;
-    console.log(`[TaxEngine v4] FY ${financialYear}: Processing FULL history → ${allRelevantTx.length} total records (${priorYearCount} prior-year + ${targetYearCount} target-year). ${rewards.length} reward events.`);
+    console.log(`[TaxEngine v5] FY ${financialYear}: Processing FULL history → ${allRelevantTx.length} total records (${priorYearCount} prior-year + ${targetYearCount} target-year). ${rewards.length} reward events.`);
 
 
 
@@ -609,23 +636,26 @@ export function computeVdaTaxForFinancialYear(
     const uniqueAssets = new Set(assetSummaries.map(a => a.assetSymbol)).size;
 
     // ─── Final Summary Log ───
-    console.log(`\n[TaxEngine v4] ═══════════════════════════════════════`);
-    console.log(`[TaxEngine v4] FY ${financialYear} — COMPUTATION SUMMARY`);
-    console.log(`[TaxEngine v4] ═══════════════════════════════════════`);
-    console.log(`[TaxEngine v4] Full history: ${allRelevantTx.length} records (${priorYearCount} prior-year + ${targetYearCount} target-year)`);
-    console.log(`[TaxEngine v4] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
-    console.log(`[TaxEngine v4] ───────────────────────────────────────`);
-    console.log(`[TaxEngine v4] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Surcharge:                 ₹${surcharge.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
-    console.log(`[TaxEngine v4] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
-    console.log(`[TaxEngine v4] Brokerage (NOT deducted per 115BBH): ₹${totalFee.toFixed(2)}`);
-    console.log(`[TaxEngine v4] ═══════════════════════════════════════\n`);
+    console.log(`\n[TaxEngine v5] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine v5] FY ${financialYear} — COMPUTATION SUMMARY`);
+    console.log(`[TaxEngine v5] ═══════════════════════════════════════`);
+    if (aggregationStats) {
+        console.log(`[TaxEngine v5] Aggregation: ${aggregationStats.inputFillCount} fills → ${aggregationStats.outputOrderCount} orders (${aggregationStats.filteredCount} filtered)`);
+    }
+    console.log(`[TaxEngine v5] Full history: ${allRelevantTx.length} records (${priorYearCount} prior-year + ${targetYearCount} target-year)`);
+    console.log(`[TaxEngine v5] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
+    console.log(`[TaxEngine v5] ───────────────────────────────────────`);
+    console.log(`[TaxEngine v5] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Surcharge:                 ₹${surcharge.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
+    console.log(`[TaxEngine v5] Brokerage (NOT deducted per 115BBH): ₹${totalFee.toFixed(2)}`);
+    console.log(`[TaxEngine v5] ═══════════════════════════════════════\n`);
 
     return {
         financialYear,
@@ -663,6 +693,8 @@ export function computeVdaTaxForFinancialYear(
         vdaReportLines: allVDALines,
         totalVDAEntries: allVDALines.length,
         uniqueAssets,
+
+        aggregationStats,
 
         lotMatches: allLotMatches,
         activeLots,
