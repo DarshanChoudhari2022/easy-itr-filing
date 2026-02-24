@@ -136,6 +136,86 @@ export default function CryptoTaxPage() {
     return parsed.map((r: any) => ({ ...r, tdsDate: new Date(r.tdsDate) }));
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // DB-FIRST PERSISTENCE (Professional SaaS — data consistent across all devices)
+  //
+  // ARCHITECTURE:
+  //   1. All writes go to Supabase FIRST (awaited, with retry)
+  //   2. localStorage is updated as a read-through cache ONLY
+  //   3. On page load: DB → state → localStorage cache
+  //   4. Debounced useEffects are BACKUP ONLY, not primary save path
+  //
+  // This guarantees the same data on every browser/device for the same user.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Persist crypto data to Supabase (primary) + localStorage (cache).
+   * This is the ONLY reliable way to save data. Called immediately after:
+   *   - API sync completes
+   *   - CSV import completes
+   *   - Manual trade added/deleted
+   *   - Settings changed
+   *
+   * Returns true if DB save succeeded, false if only localStorage was updated.
+   */
+  const persistCryptoDataToDB = useCallback(async (
+    transactions: NormalizedTransaction[],
+    tdsRecords: TDSRecord[],
+    currentSettings?: TaxSettings,
+  ): Promise<boolean> => {
+    // Always update localStorage immediately (instant local feedback)
+    if (transactions.length > 0) {
+      localStorage.setItem('taxmitra_transactions', JSON.stringify(transactions));
+    }
+    if (tdsRecords.length > 0) {
+      localStorage.setItem('taxmitra_tds', JSON.stringify(tdsRecords));
+    }
+    if (currentSettings) {
+      localStorage.setItem('taxSettings', JSON.stringify(currentSettings));
+    }
+
+    // Save to Supabase (primary — this is what makes data available on all devices)
+    if (!user) {
+      console.warn('[CryptoTax] No user — data saved to localStorage only');
+      return false;
+    }
+
+    try {
+      const savePromises: Promise<void>[] = [];
+
+      if (transactions.length > 0) {
+        savePromises.push(saveUserData('taxmitra_transactions', transactions));
+      }
+      if (tdsRecords.length > 0) {
+        savePromises.push(saveUserData('taxmitra_tds', tdsRecords));
+      }
+      if (currentSettings) {
+        savePromises.push(saveUserData('taxSettings', currentSettings));
+      }
+
+      await Promise.all(savePromises);
+      console.log(`[CryptoTax] ✅ DB SAVE COMPLETE: ${transactions.length} txns, ${tdsRecords.length} TDS records`);
+      return true;
+    } catch (err) {
+      console.error('[CryptoTax] ❌ DB save failed, retrying once...', err);
+      // Retry once after 1 second
+      try {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const retryPromises: Promise<void>[] = [];
+        if (transactions.length > 0) retryPromises.push(saveUserData('taxmitra_transactions', transactions));
+        if (tdsRecords.length > 0) retryPromises.push(saveUserData('taxmitra_tds', tdsRecords));
+        if (currentSettings) retryPromises.push(saveUserData('taxSettings', currentSettings));
+        await Promise.all(retryPromises);
+        console.log('[CryptoTax] ✅ DB SAVE SUCCEEDED on retry');
+        return true;
+      } catch (retryErr) {
+        console.error('[CryptoTax] ❌ DB save failed after retry. Data is in localStorage only.', retryErr);
+        toast.error('Failed to save data to cloud. Your data is saved locally but may not appear on other devices. Please try again.');
+        return false;
+      }
+    }
+  }, [user]);
+
   // ── LOAD DATA FROM SUPABASE (primary) → localStorage (fallback cache) ──
   useEffect(() => {
     const loadDataFromDB = async () => {
@@ -172,31 +252,30 @@ export default function CryptoTaxPage() {
           console.log('[CryptoTax] ✅ Loaded settings from database');
         }
 
-        // If no DB data, try localStorage as fallback
+        // If no DB data, try localStorage as migration source
         if (!hasDBData) {
-          console.log('[CryptoTax] No DB data found, checking localStorage...');
+          console.log('[CryptoTax] No DB data found, checking localStorage for migration...');
           try {
             const localTx = localStorage.getItem('taxmitra_transactions');
             if (localTx) {
               const parsed = JSON.parse(localTx);
               const revived = reviveTransactions(parsed);
               setParsedTransactions(revived);
-              // Migrate localStorage data to DB
-              saveUserData('taxmitra_transactions', parsed).catch(() => { });
-              console.log(`[CryptoTax] Migrated ${revived.length} transactions from localStorage to DB`);
+              // Migrate to DB immediately
+              await saveUserData('taxmitra_transactions', parsed);
+              console.log(`[CryptoTax] ✅ Migrated ${revived.length} transactions from localStorage → DB`);
             }
-          } catch (e) { console.log('Failed to restore transactions from localStorage'); }
+          } catch (e) { console.warn('[CryptoTax] localStorage migration for transactions failed:', e); }
           try {
             const localTDS = localStorage.getItem('taxmitra_tds');
             if (localTDS) {
               const parsed = JSON.parse(localTDS);
               const revived = reviveTDSRecords(parsed);
               setParsedTDSRecords(revived);
-              // Migrate localStorage data to DB
-              saveUserData('taxmitra_tds', parsed).catch(() => { });
-              console.log(`[CryptoTax] Migrated ${revived.length} TDS records from localStorage to DB`);
+              await saveUserData('taxmitra_tds', parsed);
+              console.log(`[CryptoTax] ✅ Migrated ${revived.length} TDS records from localStorage → DB`);
             }
-          } catch (e) { console.log('Failed to restore TDS from localStorage'); }
+          } catch (e) { console.warn('[CryptoTax] localStorage migration for TDS failed:', e); }
         }
 
         if (!dbSettings) {
@@ -205,7 +284,7 @@ export default function CryptoTaxPage() {
             if (localSettings) {
               const parsed = JSON.parse(localSettings);
               setSettings(parsed);
-              saveUserData('taxSettings', parsed).catch(() => { });
+              await saveUserData('taxSettings', parsed);
             }
           } catch (e) { /* ignore */ }
         }
@@ -213,7 +292,7 @@ export default function CryptoTaxPage() {
         setDataLoadedFromDB(true);
       } catch (err) {
         console.error('[CryptoTax] Error loading from DB:', err);
-        // Final fallback to localStorage
+        // Final fallback to localStorage (offline mode)
         try {
           const localTx = localStorage.getItem('taxmitra_transactions');
           if (localTx) setParsedTransactions(reviveTransactions(JSON.parse(localTx)));
@@ -229,44 +308,27 @@ export default function CryptoTaxPage() {
     loadDataFromDB();
   }, [user]);
 
-  // ── PERSIST to Supabase + localStorage cache whenever data changes ──
+  // ── BACKUP: Debounced persist as safety net (NOT the primary save path) ──
+  // These only trigger if data was changed via state updates without calling persistCryptoDataToDB
   useEffect(() => {
-    if (!dataLoadedFromDB || !user) return; // Don't save until initial load completes
-    localStorage.setItem('taxSettings', JSON.stringify(settings));
-    // Debounce DB save
+    if (!dataLoadedFromDB || !user) return;
     const timer = setTimeout(() => {
       saveUserData('taxSettings', settings).catch(e =>
-        console.warn('[CryptoTax] Failed to save settings to DB:', e)
+        console.warn('[CryptoTax] Backup settings save failed:', e)
       );
-    }, 1000);
+    }, 3000);
     return () => clearTimeout(timer);
   }, [settings, dataLoadedFromDB, user]);
 
   useEffect(() => {
-    if (!dataLoadedFromDB || !user) return;
-    if (parsedTransactions.length > 0) {
-      localStorage.setItem('taxmitra_transactions', JSON.stringify(parsedTransactions));
-      // Debounced save to DB
-      const timer = setTimeout(() => {
-        saveUserData('taxmitra_transactions', parsedTransactions).catch(e =>
-          console.warn('[CryptoTax] Failed to save transactions to DB:', e)
-        );
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
+    if (!dataLoadedFromDB || !user || parsedTransactions.length === 0) return;
+    // Only do backup save — primary save happens in persistCryptoDataToDB
+    localStorage.setItem('taxmitra_transactions', JSON.stringify(parsedTransactions));
   }, [parsedTransactions, dataLoadedFromDB, user]);
 
   useEffect(() => {
-    if (!dataLoadedFromDB || !user) return;
-    if (parsedTDSRecords.length > 0) {
-      localStorage.setItem('taxmitra_tds', JSON.stringify(parsedTDSRecords));
-      const timer = setTimeout(() => {
-        saveUserData('taxmitra_tds', parsedTDSRecords).catch(e =>
-          console.warn('[CryptoTax] Failed to save TDS to DB:', e)
-        );
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
+    if (!dataLoadedFromDB || !user || parsedTDSRecords.length === 0) return;
+    localStorage.setItem('taxmitra_tds', JSON.stringify(parsedTDSRecords));
   }, [parsedTDSRecords, dataLoadedFromDB, user]);
 
   // Assessment Year state
@@ -607,6 +669,14 @@ export default function CryptoTaxPage() {
       setParsedTransactions(allTransactions);
       setParsedTDSRecords(allTDSRecords);
 
+      // ── DB-FIRST SAVE: Persist to Supabase immediately so data is available on all devices ──
+      const dbSaved = await persistCryptoDataToDB(allTransactions, allTDSRecords, settings);
+      if (dbSaved) {
+        messages.push('☁️ Data saved to cloud — available on all your devices');
+      } else {
+        messages.push('⚠️ Could not save to cloud — data is saved locally only');
+      }
+
       // 5. Map to Trade[] for UI display
       const newTrades = mapTransactionsToTrades(allTransactions);
       setTrades(newTrades);
@@ -626,7 +696,7 @@ export default function CryptoTaxPage() {
       setTaxComputation(taxResult);
 
       // 7. Show success
-      toast.success(`Imported ${allTransactions.length} transactions! Tax computed.`);
+      toast.success(`Imported ${allTransactions.length} transactions! Tax computed.` + (dbSaved ? ' Saved to cloud ☁️' : ''));
       messages.push(`📊 Capital Gains: ₹${taxResult.grossCapitalGains.toLocaleString('en-IN')}`);
       messages.push(`💰 Tax Liability: ₹${taxResult.totalTaxLiability.toLocaleString('en-IN')}`);
       if (taxResult.totalTDSCredit > 0) {
@@ -725,6 +795,11 @@ export default function CryptoTaxPage() {
     const updatedTxs = [...parsedTransactions, manualTx];
     setParsedTransactions(updatedTxs);
 
+    // Persist to DB immediately
+    persistCryptoDataToDB(updatedTxs, parsedTDSRecords, settings).then(dbSaved => {
+      if (!dbSaved) toast.warning('Trade saved locally only — cloud sync failed');
+    });
+
     // Update trades for UI
     const newTradeUI: Trade = {
       id: manualTx.externalId,
@@ -755,6 +830,11 @@ export default function CryptoTaxPage() {
     const updatedTxs = parsedTransactions.filter(tx => tx.externalId !== id);
     setParsedTransactions(updatedTxs);
     setTrades(prev => prev.filter(t => t.id !== id));
+
+    // Persist deletion to DB immediately
+    persistCryptoDataToDB(updatedTxs, parsedTDSRecords, settings).then(dbSaved => {
+      if (!dbSaved) toast.warning('Delete saved locally only — cloud sync failed');
+    });
 
     // Recompute tax
     if (updatedTxs.length > 0) {
@@ -789,18 +869,26 @@ export default function CryptoTaxPage() {
     localStorage.removeItem('taxmitra_transactions');
     localStorage.removeItem('taxmitra_tds');
     localStorage.removeItem('taxmitra_crypto_tax_summary');
-    // Also clear from Supabase
-    deleteUserData('taxmitra_transactions').catch(() => { });
-    deleteUserData('taxmitra_tds').catch(() => { });
-    deleteUserData('taxmitra_crypto_tax_summary').catch(() => { });
 
-    // Also try DB delete (non-blocking)
+    // Clear from Supabase (awaited — ensures all devices see the deletion)
+    try {
+      await Promise.all([
+        deleteUserData('taxmitra_transactions'),
+        deleteUserData('taxmitra_tds'),
+        deleteUserData('taxmitra_crypto_tax_summary'),
+      ]);
+      console.log('[CryptoTax] ✅ All data cleared from Supabase');
+    } catch (e) {
+      console.warn('[CryptoTax] Partial DB cleanup failure:', e);
+    }
+
+    // Also try legacy DB delete (non-blocking)
     try {
       await (supabase as any).from('crypto_transactions').delete().eq('user_id', user.id);
       await (supabase as any).from('crypto_import_sessions').delete().eq('user_id', user.id);
     } catch (e) { /* silent */ }
 
-    toast.success('All trades deleted');
+    toast.success('All data cleared from local + cloud ☁️');
   };
 
   // ============= STATISTICS (FY-wise) =============
@@ -1216,16 +1304,16 @@ export default function CryptoTaxPage() {
                 {/* ── Data Coverage Score ── */}
                 {taxComputation?.dataCoverage && (
                   <Card className={`border-2 shadow-sm ${taxComputation.dataCoverage.level === 'complete' ? 'border-emerald-300 bg-emerald-50' :
-                      taxComputation.dataCoverage.level === 'high' ? 'border-emerald-200 bg-emerald-50/50' :
-                        taxComputation.dataCoverage.level === 'medium' ? 'border-amber-300 bg-amber-50' :
-                          'border-red-300 bg-red-50'
+                    taxComputation.dataCoverage.level === 'high' ? 'border-emerald-200 bg-emerald-50/50' :
+                      taxComputation.dataCoverage.level === 'medium' ? 'border-amber-300 bg-amber-50' :
+                        'border-red-300 bg-red-50'
                     }`}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-sm font-semibold flex items-center gap-2">
                           <ShieldCheck className={`h-4 w-4 ${taxComputation.dataCoverage.score >= 75 ? 'text-emerald-600' :
-                              taxComputation.dataCoverage.score >= 50 ? 'text-amber-600' :
-                                'text-red-600'
+                            taxComputation.dataCoverage.score >= 50 ? 'text-amber-600' :
+                              'text-red-600'
                             }`} />
                           Data Coverage Score
                         </CardTitle>
@@ -1243,8 +1331,8 @@ export default function CryptoTaxPage() {
                       <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${taxComputation.dataCoverage.score >= 75 ? 'bg-emerald-500' :
-                              taxComputation.dataCoverage.score >= 50 ? 'bg-amber-500' :
-                                'bg-red-500'
+                            taxComputation.dataCoverage.score >= 50 ? 'bg-amber-500' :
+                              'bg-red-500'
                             }`}
                           style={{ width: `${taxComputation.dataCoverage.score}%` }}
                         />
@@ -1260,8 +1348,8 @@ export default function CryptoTaxPage() {
                           { key: 'manualRewards', label: 'Rewards', points: 15 },
                         ].map(s => (
                           <div key={s.key} className={`p-2 rounded-lg border text-center ${(taxComputation.dataCoverage.sources as any)[s.key]
-                              ? 'bg-emerald-50 border-emerald-200'
-                              : 'bg-slate-50 border-slate-200 opacity-60'
+                            ? 'bg-emerald-50 border-emerald-200'
+                            : 'bg-slate-50 border-slate-200 opacity-60'
                             }`}>
                             <span className="block text-lg">
                               {(taxComputation.dataCoverage.sources as any)[s.key] ? '✅' : '⬜'}
@@ -1566,8 +1654,18 @@ export default function CryptoTaxPage() {
                                   if (result.tdsRecords.length > 0) {
                                     setParsedTDSRecords(result.tdsRecords);
                                   }
+
+                                  // ── DB-FIRST SAVE: Persist to Supabase immediately so data is available on all devices ──
+                                  const dbSaved = await persistCryptoDataToDB(
+                                    result.transactions,
+                                    result.tdsRecords,
+                                    settings
+                                  );
                                   const totalTradeRelated = (result.summary.totalSpotTrades || 0) + (result.summary.totalMarginTrades || 0) + (result.summary.totalFuturesTrades || 0);
-                                  toast.success(`✅ Imported ${result.transactions.length} transactions (${totalTradeRelated} trades)! Tax will recompute automatically.`);
+                                  toast.success(
+                                    `✅ Imported ${result.transactions.length} transactions (${totalTradeRelated} trades)!` +
+                                    (dbSaved ? ' Saved to cloud ☁️ — available on all devices.' : ' Saved locally only.')
+                                  );
                                   // Show staking warning if no rewards found
                                   if (result.summary.totalRewards === 0) {
                                     toast.warning('⚠️ No staking rewards found via API. Add them manually using + Add Trade → Staking Reward.', { duration: 8000 });
@@ -1709,14 +1807,23 @@ export default function CryptoTaxPage() {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
                                 setApiSyncResult(result);
                                 if (result.success && result.transactions.length > 0) {
-                                  // The API Sync result now contains the FULL merged history from the database (V5 engine)
-                                  setFyAutoDetected(false); // Reset so FY is re-detected from new data
+                                  setFyAutoDetected(false);
                                   setParsedTransactions(result.transactions);
 
                                   if (result.tdsRecords.length > 0) {
                                     setParsedTDSRecords(result.tdsRecords);
                                   }
-                                  toast.success(`✅ Re-synced ${result.summary.totalTransactions} transactions with updated rates`);
+
+                                  // DB-FIRST SAVE: Persist immediately
+                                  const dbSaved = await persistCryptoDataToDB(
+                                    result.transactions,
+                                    result.tdsRecords,
+                                    settings
+                                  );
+                                  toast.success(
+                                    `✅ Re-synced ${result.summary.totalTransactions} transactions!` +
+                                    (dbSaved ? ' Saved to cloud ☁️' : ' Saved locally only.')
+                                  );
                                 } else {
                                   toast.error(result.error || 'No transactions found');
                                 }
