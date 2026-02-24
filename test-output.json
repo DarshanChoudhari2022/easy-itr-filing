@@ -1,0 +1,176 @@
+[TaxEngine v5] Running order-level aggregation on 2 transactions...
+[OrderAggregator] Aggregated 2 fills → 2 orders (0 multi-fill orders, 0 single-fill, 2 no-orderId, 0 filtered)
+[TaxEngine v5] Aggregation: 2 fills → 2 orders (filtered: 0, multi-fill orders: 0)
+[TaxEngine v5] FY 2024-25: Processing FULL history → 2 total records (0 prior-year + 2 target-year). 0 reward events.
+[TaxEngine] Other VDA Income: ₹0.00 {
+  reward: 0,
+  staking: 0,
+  airdrop: 0,
+  interest: 0,
+  referral: 0,
+  mining: 0
+}
+[TaxEngine] TDS: source=TRADE_DATA, fromTrades=₹60000.00, fromCerts=₹0.00, fromConsideration=₹60000.00, credit=₹60000.00
+[TaxEngine] Total sell consideration: ₹6000000.00
+
+[TaxEngine v5] ═══════════════════════════════════════
+[TaxEngine v5] FY 2024-25 — COMPUTATION SUMMARY
+[TaxEngine v5] ═══════════════════════════════════════
+[TaxEngine v5] Aggregation: 2 fills → 2 orders (0 filtered)
+[TaxEngine v5] Full history: 2 records (0 prior-year + 2 target-year)
+[TaxEngine v5] Capital Gains (taxable):  ₹1000000.00
+[TaxEngine v5] Capital Losses (info):     ₹0.00
+[TaxEngine v5] Other VDA Income:          ₹0.00
+[TaxEngine v5] Total Taxable VDA:         ₹1000000.00
+[TaxEngine v5] ───────────────────────────────────────
+[TaxEngine v5] Tax @ 30%:                 ₹300000.00
+[TaxEngine v5] Surcharge:                 ₹0.00
+[TaxEngine v5] Cess @ 4%:                 ₹12000.00
+[TaxEngine v5] Total Tax Liability:       ₹312000.00
+[TaxEngine v5] Total TDS Credit:          ₹60000.00
+[TaxEngine v5] Net Tax Payable:           ₹252000.00 
+[TaxEngine v5] Brokerage (NOT deducted per 115BBH): ₹11000.00
+[TaxEngine v5] ═══════════════════════════════════════
+
+{
+  "financialYear": "2024-25",
+  "assessmentYear": "2025-26",
+  "accountingMethod": "FIFO",
+  "assetSummaries": [
+    {
+      "assetSymbol": "BTC",
+      "totalBought": 1,
+      "totalSold": 1,
+      "totalBuyValueInr": 5000000,
+      "totalSellValueInr": 6000000,
+      "grossGains": 1000000,
+      "grossLosses": 0,
+      "netGainLoss": 1000000,
+      "taxableGain": 1000000,
+      "currentHolding": 0,
+      "avgCostBasis": 0,
+      "matchedLots": [
+        {
+          "sellTransactionId": "test2",
+          "buyLotId": "lot-BTC-1",
+          "assetSymbol": "BTC",
+          "matchedQuantity": 1,
+          "buyPricePerUnit": 5000000,
+          "sellPricePerUnit": 6000000,
+          "costOfAcquisition": 5000000,
+          "saleConsideration": 6000000,
+          "gainLoss": 1000000,
+          "buyDate": "2024-05-15T10:00:00.000Z",
+          "sellDate": "2024-06-15T10:00:00.000Z",
+          "holdingDays": 31,
+          "accountingMethod": "FIFO",
+          "financialYear": "2024-25"
+        }
+      ]
+    }
+  ],
+  "totalConsiderationInr": 6000000,
+  "totalCostOfAcquisitionInr": 5000000,
+  "grossCapitalGains": 1000000,
+  "grossCapitalLosses": 0,
+  "netGainLossInfo": 1000000,
+  "taxableCapitalGains": 1000000,
+  "otherVDAIncome": 0,
+  "totalTaxableVDA": 1000000,
+  "taxOnGains30Pct": 300000,
+  "taxOnOtherIncome30Pct": 0,
+  "totalBaseTax": 300000,
+  "surcharge": 0,
+  "cess4Pct": 12000,
+  "totalTaxLiability": 312000,
+  "tdsReconciliation": {
+    "totalTDSFromTrades": 60000,
+    "totalTDSFromCertificates": 0,
+    "matchedRecords": 0,
+    "unmatchedTDSRecords": 0,
+    "discrepancyInr": 60000,
+    "discrepancyPct": 100,
+    "quarterWise": [],
+    "status": "major_discrepancy",
+    "warnings": [
+      "TDS discrepancy of INR 60000.00 (100.0%) between trade data and TDS certificates. Cross-check with Form 26AS.",
+      "No TDS certificates uploaded. Using TDS estimates from trade data. Upload CoinDCX TDS report for accurate credit."
+    ]
+  },
+  "totalTDSCredit": 60000,
+  "totalBrokerageFee": 11000,
+  "netTaxPayable": 252000,
+  "isRefund": false,
+  "vdaReportLines": [
+    {
+      "slNo": 1,
+      "dateOfTransfer": "15/06/2024",
+      "dateOfAcquisition": "15/05/2024",
+      "headOfIncome": "Capital Gains - 115BBH",
+      "descriptionOfVDA": "1.00000000 BTC",
+      "assetSymbol": "BTC",
+      "saleConsideration": 6000000,
+      "costOfAcquisition": 5000000,
+      "incomeFromTransfer": 1000000,
+      "exchange": "CoinDCX",
+      "sellTransactionId": "test2"
+    }
+  ],
+  "totalVDAEntries": 1,
+  "uniqueAssets": 1,
+  "aggregationStats": {
+    "inputFillCount": 2,
+    "outputOrderCount": 2,
+    "fillsAggregated": 0,
+    "singleFillOrders": 0,
+    "multiFillOrders": 0,
+    "noOrderIdCount": 2,
+    "filteredCount": 0,
+    "filterReasons": {}
+  },
+  "lotMatches": [
+    {
+      "sellTransactionId": "test2",
+      "buyLotId": "lot-BTC-1",
+      "assetSymbol": "BTC",
+      "matchedQuantity": 1,
+      "buyPricePerUnit": 5000000,
+      "sellPricePerUnit": 6000000,
+      "costOfAcquisition": 5000000,
+      "saleConsideration": 6000000,
+      "gainLoss": 1000000,
+      "buyDate": "2024-05-15T10:00:00.000Z",
+      "sellDate": "2024-06-15T10:00:00.000Z",
+      "holdingDays": 31,
+      "accountingMethod": "FIFO",
+      "financialYear": "2024-25"
+    }
+  ],
+  "activeLots": [],
+  "warnings": [],
+  "computedAt": "2026-02-24T11:07:28.573Z",
+  "engineVersion": "5.0.0",
+  "dataCoverage": {
+    "score": 0,
+    "level": "critical",
+    "sources": {
+      "apiSync": false,
+      "orderHistoryCSV": false,
+      "tdsSummaryCSV": false,
+      "instaHistoryCSV": false,
+      "manualRewards": false
+    },
+    "missing": [
+      "No trade data! Upload Order History CSV or sync via API",
+      "TDS Summary CSV (needed for exact TDS credit and Insta/P2P sells)",
+      "Insta History CSV",
+      "Staking rewards & airdrops (not available via API or CSV — must be added manually)"
+    ],
+    "recommendations": [
+      "Go to CoinDCX → Orders → Order History → FILLED ORDERS → Download CSV, then upload",
+      "Download TDS Summary: CoinDCX → Downloads → TDS Summary → Export CSV",
+      "If you used Instant Buy/Sell: CoinDCX → Orders → Insta History → Download CSV",
+      "Use \"+ Add Trade\" → Staking Reward for each reward. Check your email for \"CoinDCX reward credited\" notifications."
+    ]
+  }
+}

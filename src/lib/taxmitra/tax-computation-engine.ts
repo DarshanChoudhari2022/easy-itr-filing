@@ -421,7 +421,7 @@ export function computeVdaTaxForFinancialYear(
     if (options.aggregateOrders !== false) {
         console.log(`[TaxEngine v5] Running order-level aggregation on ${transactions.length} transactions...`);
         const aggResult = aggregateFillsToOrders(transactions, {
-            validateFirst: true,
+            validateFirst: false, // DO NOT FILTER! It was dropping valid old data
             aggregate: true,
         });
         transactions = aggResult.transactions;
