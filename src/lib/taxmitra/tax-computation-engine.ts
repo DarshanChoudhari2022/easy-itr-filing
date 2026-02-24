@@ -973,7 +973,10 @@ function computeAssetFIFO(
             // consume inventory, so current-year sells get correct cost basis.
             // ═══════════════════════════════════════════════════════
             let remainingToSell = tx.quantity;
-            const salePrice = tx.priceInr; // sale price per unit in INR
+            let salePrice = tx.priceInr || 0; // sale price per unit in INR
+            if (salePrice <= 0 && tx.grossAmountInr && tx.quantity > 0) {
+                salePrice = tx.grossAmountInr / tx.quantity; // Fallback if explicit price is missing
+            }
 
             totalDisposedAllTime += tx.quantity;
 
@@ -1055,6 +1058,24 @@ function computeAssetFIFO(
 
             if (remainingToSell > 0.00000001 && isTargetFY) {
                 warnings.push(`${asset}: ${remainingToSell.toFixed(8)} units could not be matched to any buy lot (missing cost basis)`);
+                // Section 115BBH: If cost basis is missing or zero, the entire proceeds are taxable
+                const unmatchedProceeds = remainingToSell * salePrice;
+                const match: LotMatch = {
+                    sellTransactionId: tx.externalId,
+                    buyLotId: 'unmatched-0-cost',
+                    assetSymbol: asset,
+                    matchedQuantity: remainingToSell,
+                    buyPricePerUnit: 0,
+                    sellPricePerUnit: salePrice,
+                    costOfAcquisition: 0,
+                    saleConsideration: Math.round(unmatchedProceeds * 100) / 100,
+                    gainLoss: Math.round(unmatchedProceeds * 100) / 100,
+                    buyDate: new Date(2000, 0, 1), // Dummy date for unknown acquisition
+                    sellDate: tx.tradeTimestamp,
+                    holdingDays: 0,
+                    accountingMethod: method,
+                    financialYear: targetFY,
+                };
             }
         }
     }

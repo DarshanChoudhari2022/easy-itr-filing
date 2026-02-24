@@ -274,9 +274,9 @@ export async function fetchCoinDCXTradeHistory(
         const body: Record<string, any> = {
             timestamp: Date.now(),
             limit,
-            sort: 'asc',
+            sort: 'desc', // Best practice for exchange APIs to get recent first
         };
-        // Pagination via from_id (start after last trade ID)
+        // Pagination via from_id (start before last trade ID)
         if (lastFromId !== undefined) body.from_id = lastFromId;
         // Optional timestamp filters
         if (options?.fromTimestamp) body.from_timestamp = options.fromTimestamp;
@@ -672,8 +672,8 @@ function validateTransaction(tx: NormalizedTransaction): { valid: boolean; reaso
         return { valid: false, reason: `Trade with no INR value: price=₹${tx.priceInr}, gross=₹${tx.grossAmountInr}` };
     }
 
-    // 4. Reject suspicious ₹1 placeholder prices on buy/sell (CoinDCX API artifact)
-    if (isTrade && tx.priceInr && tx.priceInr > 0 && tx.priceInr <= 1 && tx.grossAmountInr && tx.grossAmountInr <= 1) {
+    // 4. Reject suspicious ₹1 placeholder dummy trades (CoinDCX API artifact)
+    if (isTrade && tx.priceInr === 1 && tx.grossAmountInr === 1 && tx.quantity === 1 && symbol !== 'INR') {
         return { valid: false, reason: `Suspicious ₹1 placeholder price for ${symbol}` };
     }
 
