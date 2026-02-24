@@ -43,6 +43,8 @@ import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
 import { generateComprehensiveReport, buildComprehensiveReportData } from "@/lib/comprehensive-report-generator";
+import { KoinXReconciliationDashboard } from "@/components/taxmitra/KoinXReconciliationDashboard";
+import { reconcileWithKoinX, getKoinXReference, type ReconciliationResult } from "@/lib/taxmitra/koinx-reconciliation";
 import { PlanGate } from "@/hooks/usePlanGuard";
 import {
   fullCoinDCXSync,
@@ -105,6 +107,7 @@ export default function CryptoTaxPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
+  const [reconciliationResult, setReconciliationResult] = useState<ReconciliationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
   // Client-side parsed data — loaded from DB (primary) and localStorage (cache)
   const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
@@ -365,6 +368,14 @@ export default function CryptoTaxPage() {
     try {
       const result = computeVdaTaxForFinancialYear(txs, tds, fy, settings.accountingMethod as any);
       setTaxComputation(result);
+
+      // Run reconciliation if reference data exists
+      const refData = getKoinXReference(result.financialYear);
+      if (refData) {
+        setReconciliationResult(reconcileWithKoinX(result, refData));
+      } else {
+        setReconciliationResult(null);
+      }
 
       // ── Persist to Supabase + localStorage so the Filing Wizard can auto-read ──
       const cryptoTaxSummary = {
@@ -1104,6 +1115,7 @@ export default function CryptoTaxPage() {
                   { id: 'transactions', label: 'Transactions', icon: History },
                   { id: 'import', label: 'Import Data', icon: Upload },
                   { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+                  { id: 'reconcile', label: 'KoinX Match', icon: ShieldCheck },
                   { id: 'settings', label: 'Settings', icon: Settings }
                 ].map(tab => (
                   <button
@@ -1940,6 +1952,44 @@ export default function CryptoTaxPage() {
                 formatCurrency={formatCurrency}
                 selectedFY={selectedFY}
               />
+            )}
+
+            {/* ============= KOINX MATCH TAB ============= */}
+            {activeTab === 'reconcile' as any && (
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="h-6 w-6 text-indigo-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold">KoinX Matching Engine</h3>
+                        <p className="text-indigo-200 text-sm">Real-time validation against KoinX algorithms and reference data</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <KoinXReconciliationDashboard result={reconciliationResult} />
+
+                {!reconciliationResult && taxComputation && (
+                  <Alert className="border-indigo-200 bg-indigo-50">
+                    <Info className="h-4 w-4 text-indigo-600" />
+                    <AlertTitle className="text-indigo-800">No Reference Data</AlertTitle>
+                    <AlertDescription className="text-indigo-700">
+                      We don't have KoinX reference data configured for <strong>{taxComputation.financialYear}</strong> yet.
+                      You can manually add reference data in <code>koinx-reconciliation.ts</code>.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {!taxComputation && (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
+                    <AlertDescription className="text-amber-700">
+                      Import your crypto trades first to run the reconciliation checks.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
             )}
 
             {/* ============= SETTINGS TAB ============= */}
