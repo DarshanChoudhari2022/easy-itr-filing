@@ -293,19 +293,26 @@ function generateDetailedReport(
     return report;
 }
 
-// ============= KNOWN KOINX REFERENCE DATA =============
+// ============= OPTIONAL REFERENCE DATA (for cross-validation only) =============
 
 /**
- * Pre-populate KoinX reference data from screenshots/manual verification.
- * Update these values as you verify against KoinX's actual output.
+ * Optional KoinX reference data for cross-validation.
+ * 
+ * IMPORTANT: These values are NOT used by the tax engine.
+ * The engine is self-sufficient and computes everything from trade data.
+ * These references are ONLY used by the reconciliation dashboard
+ * to help you visually verify your engine output against a known benchmark.
+ * 
+ * Update these values from your KoinX/Form 26AS screenshots if you want
+ * to run a side-by-side comparison.
  */
 export const KOINX_REFERENCE_FY2024_25: KoinXReference = {
     financialYear: '2024-25',
     totalTransactions: 71,
     totalCapitalGains: 164000,        // ₹1.64L — from KoinX FY 2024-25
-    totalSaleConsideration: 0,         // TODO: Get exact value from KoinX
-    totalCostOfAcquisition: 0,         // TODO: Get exact value from KoinX
-    totalCapitalLosses: 0,             // TODO: Get exact value from KoinX
+    totalSaleConsideration: 0,         // Optional: fill from KoinX screenshot
+    totalCostOfAcquisition: 0,         // Optional: fill from KoinX screenshot
+    totalCapitalLosses: 0,             // Optional
     tdsCredit: 28770.38,               // ₹28,770.38 — from KoinX
     otherIncome: 1840.95,              // ₹1,840.95 — staking/rewards from KoinX
 };
@@ -313,15 +320,16 @@ export const KOINX_REFERENCE_FY2024_25: KoinXReference = {
 export const KOINX_REFERENCE_FY2025_26: KoinXReference = {
     financialYear: '2025-26',
     totalTransactions: 280,
-    totalCapitalGains: 0,              // TODO: Get exact value from KoinX
-    totalSaleConsideration: 0,         // TODO: Get exact value
-    totalCostOfAcquisition: 0,         // TODO: Get exact value
-    tdsCredit: 0,                      // TODO: Get exact value
-    otherIncome: 0,                    // TODO: Get exact value
+    totalCapitalGains: 0,              // Optional: fill from KoinX screenshot
+    totalSaleConsideration: 0,         // Optional
+    totalCostOfAcquisition: 0,         // Optional
+    tdsCredit: 0,                      // Optional
+    otherIncome: 0,                    // Optional
 };
 
 /**
  * Get KoinX reference data for a given financial year.
+ * Returns null if no reference is configured — the engine still works fine without it.
  */
 export function getKoinXReference(fy: string): KoinXReference | null {
     switch (fy) {
@@ -330,3 +338,4 @@ export function getKoinXReference(fy: string): KoinXReference | null {
         default: return null;
     }
 }
+

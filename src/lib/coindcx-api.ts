@@ -1760,12 +1760,8 @@ export async function fullCoinDCXSync(
         } else {
             warnings.push(`⚠️ IMPORTANT: No reward/staking records found via API. CoinDCX does NOT expose staking rewards, airdrops, or cashback via their public API.`);
             warnings.push(`💡 TO FIX: Use the "+ Add Trade" button → select type = "Staking Reward", "Airdrop", or "Interest" to manually add your rewards.`);
-            warnings.push(`📋 KoinX reference values for FY 2024-25:`);
-            warnings.push(`   • ADA Staking: 4 rewards totaling ~₹1,027.74 (₹232.49 + ₹414.75 + ₹49.24 + ₹331.26)`);
-            warnings.push(`   • SHIB Rewards: 2 rewards totaling ~₹103.58 (₹51.79 × 2)`);
-            warnings.push(`   • INR Rewards: ~₹709.63 (₹6.77 + ₹0.86 + ₹702.00)`);
-            warnings.push(`   • Total Other Income: ~₹1,840.95`);
-            warnings.push(`📧 Check your email for "CoinDCX reward credited" or "Staking reward" notifications to verify exact amounts.`);
+            warnings.push(`📧 Check your email for "CoinDCX reward credited" or "Staking reward" notifications and add each one manually.`);
+            warnings.push(`📋 Alternatively, download your TDS Summary CSV from CoinDCX → Tax Reports section. It captures all sell events including Insta/P2P trades.`);
         }
 
         // ── Step 12: Final Deduplication & Persistence (v5 Merge Engine) ──
@@ -1913,8 +1909,8 @@ export async function fullCoinDCXSync(
 // ============= MISSING DATA CHECKLIST =============
 
 /**
- * Build a checklist comparing current sync data against KoinX reference values.
- * This helps users identify what's missing and what to add manually.
+ * Build a checklist of potential missing data based on sync results.
+ * Uses data-driven heuristics instead of hardcoded reference values.
  */
 function buildMissingDataChecklist(
     transactions: NormalizedTransaction[],
@@ -1925,51 +1921,38 @@ function buildMissingDataChecklist(
     const items: MissingDataItem[] = [];
 
     // ── Check Other Income ──
-    // KoinX reference: ₹1,840.95 for FY 2024-25
-    const KOINX_OTHER_INCOME = 1840.95;
-    if (otherIncome < KOINX_OTHER_INCOME * 0.5) {
+    // If no rewards found, the API likely doesn't expose them
+    if (rewardCount === 0 && otherIncome < 1) {
         items.push({
             category: 'Other Income (Staking/Rewards)',
-            description: `Your other income is ₹${otherIncome.toFixed(2)} but KoinX shows ₹${KOINX_OTHER_INCOME.toFixed(2)}`,
-            expectedValue: `₹${KOINX_OTHER_INCOME.toFixed(2)}`,
-            currentValue: `₹${otherIncome.toFixed(2)}`,
-            action: 'Add staking rewards manually: ADA staking (₹1,027.74), SHIB rewards (₹103.58), INR rewards (₹709.63). Use "+ Add Trade" → type = Staking Reward.',
+            description: 'No staking/reward transactions found. CoinDCX API does not expose staking rewards, airdrops, or cashback.',
+            expectedValue: 'Your actual rewards',
+            currentValue: '₹0',
+            action: 'Add staking rewards manually: Use "+ Add Trade" → type = Staking Reward. Check CoinDCX app "Earn" section or your email for "reward credited" notifications.',
             severity: 'critical',
         });
-    } else if (otherIncome < KOINX_OTHER_INCOME * 0.9) {
+    } else if (rewardCount > 0 && otherIncome < 100) {
         items.push({
             category: 'Other Income',
-            description: `Other income is ₹${otherIncome.toFixed(2)}, close to but below KoinX (₹${KOINX_OTHER_INCOME.toFixed(2)})`,
-            expectedValue: `₹${KOINX_OTHER_INCOME.toFixed(2)}`,
-            currentValue: `₹${otherIncome.toFixed(2)}`,
-            action: 'Check for missing staking rewards or airdrops. Missing amount: ₹' + (KOINX_OTHER_INCOME - otherIncome).toFixed(2),
+            description: `Only ₹${otherIncome.toFixed(2)} in other income from ${rewardCount} rewards. Some rewards may be missing.`,
+            expectedValue: 'All staking/airdrop rewards',
+            currentValue: `₹${otherIncome.toFixed(2)} (${rewardCount} records)`,
+            action: 'Check CoinDCX "Earn" section for additional staking rewards not captured by the API.',
             severity: 'warning',
-        });
-    }
-
-    // ── Check Staking Reward Count ──
-    if (rewardCount === 0) {
-        items.push({
-            category: 'Staking Rewards',
-            description: 'No staking/reward transactions found. CoinDCX API does not expose these.',
-            expectedValue: '~9 transactions',
-            currentValue: '0 transactions',
-            action: 'Add manually: 4× ADA staking, 2× SHIB rewards, 3× INR cashback. Check CoinDCX app "Earn" section or your email.',
-            severity: 'critical',
         });
     }
 
     // ── Check TDS Credit ──
-    // KoinX reference: ₹28,770.38
-    const KOINX_TDS = 28770.38;
-    if (tdsCredit > 0 && tdsCredit < KOINX_TDS * 0.8) {
+    // If we have sells but zero TDS, something is likely missing
+    const sellCount = transactions.filter(tx => tx.transactionType === 'sell').length;
+    if (sellCount > 0 && tdsCredit < 1) {
         items.push({
             category: 'TDS Credit',
-            description: `Computed TDS is ₹${tdsCredit.toFixed(2)} but KoinX shows ₹${KOINX_TDS.toFixed(2)}`,
-            expectedValue: `₹${KOINX_TDS.toFixed(2)}`,
-            currentValue: `₹${tdsCredit.toFixed(2)}`,
-            action: 'Upload your CoinDCX TDS Summary CSV for accurate TDS figures. Download from CoinDCX → Tax Reports → TDS Summary.',
-            severity: 'warning',
+            description: `${sellCount} sell transactions found but ₹0 TDS recorded. The engine will compute TDS as 1% of sell consideration automatically.`,
+            expectedValue: '1% of sell consideration',
+            currentValue: '₹0 (from trade data)',
+            action: 'For most accurate TDS figures, upload your CoinDCX TDS Summary CSV. Download from CoinDCX → Tax Reports → TDS Summary.',
+            severity: 'info',
         });
     }
 
@@ -1977,14 +1960,32 @@ function buildMissingDataChecklist(
     const tradeTypes = transactions.filter(tx =>
         tx.transactionType === 'buy' || tx.transactionType === 'sell'
     ).length;
-    if (tradeTypes > 0 && tradeTypes < 60) {
+    if (tradeTypes > 0 && tradeTypes < 20) {
         items.push({
             category: 'Trade History',
-            description: `Only ${tradeTypes} trades found. Check if all trades were fetched.`,
-            expectedValue: '73+ trades',
+            description: `Only ${tradeTypes} trades found. If you're an active trader, some trades may be missing.`,
+            expectedValue: 'All your trades',
             currentValue: `${tradeTypes} trades`,
-            action: 'If trades seem incomplete, try syncing again. Some trades may have been during API downtime.',
+            action: 'Upload your CoinDCX Order History CSV for complete trade data. Download from coindcx.com → Orders → Order History → Download CSV.',
             severity: 'info',
+        });
+    }
+
+    // ── Check for Insta/P2P coverage ──
+    const hasInstaTrades = transactions.some(tx =>
+        tx.rawData?.source === 'api' && tx.rawData?.trail?.includes('insta')
+    );
+    const hasTDSData = transactions.some(tx =>
+        tx.description?.includes('from TDS Summary')
+    );
+    if (!hasInstaTrades && !hasTDSData && sellCount > 0) {
+        items.push({
+            category: 'Insta/P2P Trades',
+            description: 'No Instant Buy/Sell or P2P trades detected. These are NOT returned by the CoinDCX API.',
+            expectedValue: 'All trade types (Spot + Insta + P2P)',
+            currentValue: 'API Spot trades only',
+            action: 'Upload your TDS Summary CSV from CoinDCX. It captures ALL sell events including Insta and P2P, ensuring complete tax calculation.',
+            severity: 'warning',
         });
     }
 
