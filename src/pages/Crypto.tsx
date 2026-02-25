@@ -793,16 +793,32 @@ export default function CryptoTaxPage() {
       // that had fabricated TDS or other bad values
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
 
-      // REPLACE mode: clear old data and use only the new import
-      // This is intentional — re-uploading CSV should give you a fresh, correct state
-      console.log(`[CryptoImport] REPLACE mode: clearing ${parsedTransactions.length} old transactions, replacing with ${allTransactions.length} new ones`);
-      messages.push(`🔄 Replaced ${parsedTransactions.length} old transactions with ${allTransactions.length} fresh ones from CSV`);
+      // MERGE mode: combine CSV data with existing API data, deduplicating
+      // This ensures API-synced data (eg historical buys from 2021) is preserved
+      // when user uploads CSV for the current FY — critical for cross-FY FIFO cost basis
+      const existingApiTxs = parsedTransactions.filter(tx =>
+        tx.rawData?.source === 'api' && !allTransactions.some(newTx =>
+          newTx.contentHash === tx.contentHash ||
+          (newTx.orderId && newTx.orderId === tx.orderId) ||
+          (newTx.externalId && newTx.externalId === tx.externalId)
+        )
+      );
+      const existingApiTds = parsedTDSRecords.filter(tds =>
+        !allTDSRecords.some(newTds =>
+          Math.abs(newTds.tdsAmountInr - tds.tdsAmountInr) < 0.01 &&
+          newTds.tdsDate?.getTime() === tds.tdsDate?.getTime()
+        )
+      );
+      const mergedTransactions = [...existingApiTxs, ...allTransactions];
+      const mergedTDS = [...existingApiTds, ...allTDSRecords];
+      console.log(`[CryptoImport] MERGE mode: ${existingApiTxs.length} API txs preserved + ${allTransactions.length} CSV txs = ${mergedTransactions.length} total`);
+      messages.push(`🔄 Merged: ${existingApiTxs.length} API + ${allTransactions.length} CSV = ${mergedTransactions.length} total transactions`);
 
-      setParsedTransactions(allTransactions);
-      setParsedTDSRecords(allTDSRecords);
+      setParsedTransactions(mergedTransactions);
+      setParsedTDSRecords(mergedTDS);
 
       // DB-FIRST SAVE: Persist to Supabase immediately
-      await persistCryptoDataToDB(allTransactions, allTDSRecords, settings);
+      await persistCryptoDataToDB(mergedTransactions, mergedTDS, settings);
 
       // ── FAIL-SAFE: Update checklist based on uploaded file types ──
       if (fyChecklist) {
@@ -823,12 +839,12 @@ export default function CryptoTaxPage() {
       }
 
       // 5. Map to Trade[] for UI display
-      const newTrades = mapTransactionsToTrades(allTransactions);
+      const newTrades = mapTransactionsToTrades(mergedTransactions);
       setTrades(newTrades);
 
       // 6. Compute tax immediately using the FY with most trades
-      const allTxs = allTransactions;
-      const allTds = allTDSRecords;
+      const allTxs = mergedTransactions;
+      const allTds = mergedTDS;
       // Auto-detect best FY from the combined data
       const fyCounts: Record<string, number> = {};
       for (const tx of allTxs) {
@@ -1800,9 +1816,17 @@ export default function CryptoTaxPage() {
                     setApiSyncResult(result);
                     if (result.success && result.transactions.length > 0) {
                       setFyAutoDetected(false);
-                      setParsedTransactions(result.transactions);
+                      // MERGE: preserve existing CSV data, add API data
+                      const existingCsvTxs = parsedTransactions.filter(tx =>
+                        tx.rawData?.source !== 'api' && !result.transactions.some(apiTx =>
+                          apiTx.contentHash === tx.contentHash ||
+                          (apiTx.orderId && apiTx.orderId === tx.orderId)
+                        )
+                      );
+                      const merged = [...result.transactions, ...existingCsvTxs];
+                      setParsedTransactions(merged);
                       if (result.tdsRecords.length > 0) setParsedTDSRecords(result.tdsRecords);
-                      await persistCryptoDataToDB(result.transactions, result.tdsRecords, settings);
+                      await persistCryptoDataToDB(merged, result.tdsRecords, settings);
                       if (fyChecklist) {
                         const updated = updateChecklistItem(fyChecklist, 'api_sync', { status: 'uploaded', recordCount: result.transactions.length });
                         setFyChecklist(updated);
@@ -1828,9 +1852,17 @@ export default function CryptoTaxPage() {
                     setApiSyncResult(result);
                     if (result.success && result.transactions.length > 0) {
                       setFyAutoDetected(false);
-                      setParsedTransactions(result.transactions);
+                      // MERGE: preserve existing CSV data on resync
+                      const existingCsvTxs = parsedTransactions.filter(tx =>
+                        tx.rawData?.source !== 'api' && !result.transactions.some(apiTx =>
+                          apiTx.contentHash === tx.contentHash ||
+                          (apiTx.orderId && apiTx.orderId === tx.orderId)
+                        )
+                      );
+                      const merged = [...result.transactions, ...existingCsvTxs];
+                      setParsedTransactions(merged);
                       if (result.tdsRecords.length > 0) setParsedTDSRecords(result.tdsRecords);
-                      await persistCryptoDataToDB(result.transactions, result.tdsRecords, settings);
+                      await persistCryptoDataToDB(merged, result.tdsRecords, settings);
                       if (fyChecklist) {
                         const updated = updateChecklistItem(fyChecklist, 'api_sync', { status: 'uploaded', recordCount: result.transactions.length });
                         setFyChecklist(updated);
