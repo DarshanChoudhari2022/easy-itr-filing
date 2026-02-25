@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Binance API Integration Service
  * 
  * Binance uses HMAC-SHA256 signature authentication
@@ -204,7 +204,6 @@ export async function syncBinanceAccount(
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (err) {
                 // Continue with other symbols if one fails
-                console.warn(`Failed to fetch trades for ${symbol}:`, err);
             }
         }
 

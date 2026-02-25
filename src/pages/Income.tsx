@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -77,8 +77,6 @@ export default function Income() {
   };
 
   const addIncomeSource = async () => {
-    console.log("Attempting to add income source:", newSource);
-
     if (!user) {
       console.error("No user found in addIncomeSource");
       toast.error("You must be logged in to add income");
@@ -102,8 +100,6 @@ export default function Income() {
         assessment_year: "2026-27"
       };
 
-      console.log("Sending payload to Supabase:", payload);
-
       const { data, error } = await supabase.from("income_sources")
         .insert(payload)
         .select();
@@ -112,8 +108,6 @@ export default function Income() {
         console.error("Supabase insert error:", error);
         throw error;
       }
-
-      console.log("Supabase insert success:", data);
 
       toast.success("Income source added successfully");
       setDialogOpen(false);
@@ -244,7 +238,7 @@ export default function Income() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Amount (₹)</Label>
+                    <Label>Amount (â‚¹)</Label>
                     <Input
                       type="number"
                       placeholder="0"
@@ -255,7 +249,7 @@ export default function Income() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>TDS Deducted (₹)</Label>
+                    <Label>TDS Deducted (â‚¹)</Label>
                     <Input
                       type="number"
                       placeholder="0"

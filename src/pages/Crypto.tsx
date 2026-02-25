@@ -44,8 +44,6 @@ import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
 import { generateComprehensiveReport, buildComprehensiveReportData } from "@/lib/comprehensive-report-generator";
-import { KoinXReconciliationDashboard } from "@/components/taxmitra/KoinXReconciliationDashboard";
-import { reconcileWithKoinX, getKoinXReference, type ReconciliationResult } from "@/lib/taxmitra/koinx-reconciliation";
 import { PlanGate } from "@/hooks/usePlanGuard";
 import {
   fullCoinDCXSync,
@@ -137,7 +135,6 @@ export default function CryptoTaxPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
-  const [reconciliationResult, setReconciliationResult] = useState<ReconciliationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
   // Client-side parsed data â€” loaded from DB (primary) and localStorage (cache)
   const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
@@ -214,7 +211,6 @@ export default function CryptoTaxPage() {
 
     // Save to Supabase (primary â€” this is what makes data available on all devices)
     if (!user) {
-      console.warn('[CryptoTax] No user â€” data saved to localStorage only');
       return false;
     }
 
@@ -232,7 +228,6 @@ export default function CryptoTaxPage() {
       }
 
       await Promise.all(savePromises);
-      console.log(`[CryptoTax] âœ… DB SAVE COMPLETE: ${transactions.length} txns, ${tdsRecords.length} TDS records`);
       return true;
     } catch (err) {
       console.error('[CryptoTax] âŒ DB save failed, retrying once...', err);
@@ -244,7 +239,6 @@ export default function CryptoTaxPage() {
         if (tdsRecords.length > 0) retryPromises.push(saveUserData('taxmitra_tds', tdsRecords));
         if (currentSettings) retryPromises.push(saveUserData('taxSettings', currentSettings));
         await Promise.all(retryPromises);
-        console.log('[CryptoTax] âœ… DB SAVE SUCCEEDED on retry');
         return true;
       } catch (retryErr) {
         console.error('[CryptoTax] DB save failed after retry. Data is in localStorage only.', retryErr);
@@ -269,19 +263,16 @@ export default function CryptoTaxPage() {
           const revived = reviveTransactions(dbTransactions);
           setParsedTransactions(revived);
           localStorage.setItem('taxmitra_transactions', JSON.stringify(dbTransactions));
-          console.log(`[CryptoTax] âœ… Loaded ${revived.length} transactions from database`);
         } else {
           // No DB data for this user â€” start fresh (do NOT load from localStorage)
           setParsedTransactions([]);
           localStorage.removeItem('taxmitra_transactions');
-          console.log('[CryptoTax] No transaction data in DB for this user â€” starting fresh');
         }
 
         if (dbTDS && Array.isArray(dbTDS) && dbTDS.length > 0) {
           const revived = reviveTDSRecords(dbTDS);
           setParsedTDSRecords(revived);
           localStorage.setItem('taxmitra_tds', JSON.stringify(dbTDS));
-          console.log(`[CryptoTax] âœ… Loaded ${revived.length} TDS records from database`);
         } else {
           setParsedTDSRecords([]);
           localStorage.removeItem('taxmitra_tds');
@@ -290,7 +281,6 @@ export default function CryptoTaxPage() {
         if (dbSettings) {
           setSettings(dbSettings);
           localStorage.setItem('taxSettings', JSON.stringify(dbSettings));
-          console.log('[CryptoTax] âœ… Loaded settings from database');
         } else {
           setSettings(DEFAULT_TAX_SETTINGS);
           localStorage.removeItem('taxSettings');
@@ -313,9 +303,7 @@ export default function CryptoTaxPage() {
   useEffect(() => {
     if (!dataLoadedFromDB || !user) return;
     const timer = setTimeout(() => {
-      saveUserData('taxSettings', settings).catch(e =>
-        console.warn('[CryptoTax] Backup settings save failed:', e)
-      );
+      saveUserData('taxSettings', settings).catch(() => { /* silent */ });
     }, 3000);
     return () => clearTimeout(timer);
   }, [settings, dataLoadedFromDB, user]);
@@ -448,14 +436,6 @@ export default function CryptoTaxPage() {
       const result = computeVdaTaxForFinancialYear(txs, tds, fy, settings.accountingMethod as any);
       setTaxComputation(result);
 
-      // Run reconciliation if reference data exists
-      const refData = getKoinXReference(result.financialYear);
-      if (refData) {
-        setReconciliationResult(reconcileWithKoinX(result, refData));
-      } else {
-        setReconciliationResult(null);
-      }
-
       // â”€â”€ Persist to Supabase + localStorage so the Filing Wizard can auto-read â”€â”€
       const cryptoTaxSummary = {
         taxableCapitalGains: result.taxableCapitalGains,
@@ -473,12 +453,8 @@ export default function CryptoTaxPage() {
       };
       localStorage.setItem('taxmitra_crypto_tax_summary', JSON.stringify(cryptoTaxSummary));
       // Also save to Supabase for cross-device access
-      saveUserData('taxmitra_crypto_tax_summary', cryptoTaxSummary).catch(e =>
-        console.warn('[CryptoTax] Failed to save tax summary to DB:', e)
-      );
-      console.log('[CryptoTax] Saved tax summary to DB + localStorage:', cryptoTaxSummary);
-
-      // â”€â”€ Persist to Supabase income_sources so it appears in Filing Wizard â”€â”€
+      saveUserData('taxmitra_crypto_tax_summary', cryptoTaxSummary).catch(() => { /* silent */ });
+      // Persist to Supabase income_sources so it appears in Filing Wizard
       if (user) {
         const ay = result.assessmentYear || '2026-27';
         saveIncomeSources({
@@ -486,11 +462,7 @@ export default function CryptoTaxPage() {
           has_crypto: true,
           crypto_gains: Math.round(result.taxableCapitalGains),
           crypto_tds: Math.round(result.totalTDSCredit),
-        }).then(() => {
-          console.log('[CryptoTax] âœ… Saved crypto data to income_sources for filing wizard');
-        }).catch(err => {
-          console.warn('[CryptoTax] Could not save to income_sources:', err.message);
-        });
+        }).catch(() => { /* silent */ });
       }
     } catch (err) {
       console.error('Tax computation error:', err);
@@ -527,7 +499,6 @@ export default function CryptoTaxPage() {
       }
       // Silently ignore errors (table may not exist)
     } catch (err) {
-      console.log('DB tables not available, using client-side mode');
     }
   }, [user]);
 
@@ -568,7 +539,6 @@ export default function CryptoTaxPage() {
         if (fyEntries.length > 0) {
           const bestFY = fyEntries[0][0];
           if (bestFY !== selectedFY) {
-            console.log(`[CryptoTax] Auto-detected FY ${bestFY} from data (${fyEntries[0][1]} trades). Was: ${selectedFY}`);
             setSelectedFY(bestFY);
           }
           setFyAutoDetected(true);
@@ -658,7 +628,6 @@ export default function CryptoTaxPage() {
       setFyChecklist(updatedChecklist);
       saveChecklist(updatedChecklist);
 
-      console.log(`[FailSafe] Reconciliation complete: ${recon.passCount} pass, ${recon.warningCount} warn, ${recon.failCount} fail | Filing: ${gate.canFile ? 'OK' : 'BLOCKED'}`);
     } catch (err) {
       console.error('[FailSafe] Reconciliation error:', err);
     }
@@ -722,17 +691,7 @@ export default function CryptoTaxPage() {
       }
 
       // Log parsing details for debugging
-      console.log('[CryptoImport] Import result:', {
-        exchange: selectedExchange,
-        selectedFY,
-        totalFiles: importResult.files.length,
-        totalTransactions: importResult.totalTransactions,
-        totalErrors: importResult.totalErrors,
-        totalDuplicates: importResult.totalDuplicates,
-        warnings: importResult.warnings,
-      });
       for (const f of importResult.files) {
-        console.log(`[CryptoImport] File "${f.fileName}": type=${f.fileType}, rows=${f.totalRows}, success=${f.successCount}, errors=${f.errorCount}, dups=${f.duplicateCount}`);
         if (f.errors.length > 0) console.log(`[CryptoImport] File errors:`, f.errors.slice(0, 10));
         if (f.warnings.length > 0) console.log(`[CryptoImport] File warnings:`, f.warnings.slice(0, 10));
       }
@@ -805,7 +764,6 @@ export default function CryptoTaxPage() {
 
       // REPLACE mode: clear old data and use only the new import
       // This is intentional â€” re-uploading CSV should give you a fresh, correct state
-      console.log(`[CryptoImport] REPLACE mode: clearing ${parsedTransactions.length} old transactions, replacing with ${allTransactions.length} new ones`);
       messages.push(`ðŸ”„ Replaced ${parsedTransactions.length} old transactions with ${allTransactions.length} fresh ones from CSV`);
 
       setParsedTransactions(allTransactions);
@@ -1040,9 +998,7 @@ export default function CryptoTaxPage() {
         deleteUserData('taxmitra_tds'),
         deleteUserData('taxmitra_crypto_tax_summary'),
       ]);
-      console.log('[CryptoTax] âœ… All data cleared from Supabase');
     } catch (e) {
-      console.warn('[CryptoTax] Partial DB cleanup failure:', e);
     }
 
     // Also try legacy DB delete (non-blocking)
@@ -1070,7 +1026,7 @@ export default function CryptoTaxPage() {
 
     // Use engine computation if available
     if (taxComputation) {
-      // â”€â”€ Use engine's sell count (VDA report lines = unique sell events, matches KoinX) â”€â”€
+      // â”€â”€ Use engine's sell count (VDA report lines = unique sell events, matches FIFO sell events) â”€â”€
       // totalVDAEntries = number of sell events processed by FIFO engine
       // This is more accurate than raw fySells.length which counts raw CSV rows
       const engineSellCount = taxComputation.totalVDAEntries || fySells.length;
@@ -1368,7 +1324,6 @@ export default function CryptoTaxPage() {
                   { id: 'drilldown', label: 'Tax Drill-Down', icon: Target },
                   { id: 'import', label: 'Import Data', icon: Upload },
                   { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
-                  { id: 'reconcile', label: 'KoinX Match', icon: Zap },
                   { id: 'settings', label: 'Settings', icon: Settings }
                 ].map(tab => (
                   <button
@@ -1887,43 +1842,6 @@ export default function CryptoTaxPage() {
               />
             )}
 
-            {/* ============= KOINX MATCH TAB ============= */}
-            {activeTab === 'reconcile' as any && (
-              <div className="space-y-6">
-                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-3">
-                      <ShieldCheck className="h-6 w-6 text-indigo-400" />
-                      <div>
-                        <h3 className="text-lg font-semibold">KoinX Matching Engine</h3>
-                        <p className="text-indigo-200 text-sm">Real-time validation against KoinX algorithms and reference data</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <KoinXReconciliationDashboard result={reconciliationResult} />
-
-                {!reconciliationResult && taxComputation && (
-                  <Alert className="border-indigo-200 bg-indigo-50">
-                    <Info className="h-4 w-4 text-indigo-600" />
-                    <AlertTitle className="text-indigo-800">No Reference Data</AlertTitle>
-                    <AlertDescription className="text-indigo-700">
-                      We don't have KoinX reference data configured for <strong>{taxComputation.financialYear}</strong> yet.
-                      You can manually add reference data in <code>koinx-reconciliation.ts</code>.
-                    </AlertDescription>
-                  </Alert>
-                )}
-                {!taxComputation && (
-                  <Alert className="border-amber-200 bg-amber-50">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
-                    <AlertDescription className="text-amber-700">
-                      Import your crypto trades first to run the reconciliation checks.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            )}
 
             {/* ============= DATA COVERAGE TAB ============= */}
             {activeTab === 'coverage' as any && (
@@ -2282,7 +2200,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
 
   // BUG FIX: sellCount must be number of SELL TRANSACTIONS (VDA report lines), NOT total token quantity sold.
   // totalSold is the sum of token quantities (e.g. 91,828 ADA tokens) â€” completely wrong for "Number of Transfers".
-  // totalVDAEntries = number of Schedule VDA rows = number of sell events = matches KoinX's "73 transfers".
+  // totalVDAEntries = number of Schedule VDA rows = number of sell events = matches FIFO sell events's "73 transfers".
   const sellCount = taxComputation?.totalVDAEntries ?? trades.filter(t => t.trade_type === 'sell').length;
 
   // BUG FIX: buyVolume must be cost of acquisition for SOLD assets only (from FIFO lot matches).

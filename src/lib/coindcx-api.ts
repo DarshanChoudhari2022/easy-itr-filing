@@ -1,5 +1,5 @@
-/**
- * CoinDCX API Integration Service — Complete Data Fetcher
+﻿/**
+ * CoinDCX API Integration Service â€” Complete Data Fetcher
  * 
  * Routes all requests through /api/coindcx-proxy (Vercel Serverless Function)
  * to avoid CORS issues. HMAC-SHA256 signing happens server-side.
@@ -16,7 +16,7 @@ import { saveUserData, loadUserData, deleteUserData } from './supabase-data-serv
 import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
 
 // ============= CONFIG =============
-// Proxy URL — our own Vercel serverless function (same domain = no CORS)
+// Proxy URL â€” our own Vercel serverless function (same domain = no CORS)
 const PROXY_URL = '/api/coindcx-proxy';
 
 // ============= TYPES =============
@@ -175,7 +175,7 @@ export interface MissingDataItem {
     severity: 'critical' | 'warning' | 'info';
 }
 
-// ============= CORE — PROXY-BASED REQUEST =============
+// ============= CORE â€” PROXY-BASED REQUEST =============
 
 /**
  * Make authenticated request to CoinDCX via our Vercel proxy.
@@ -283,8 +283,6 @@ export async function fetchCoinDCXTradeHistory(
         if (options?.toTimestamp) body.to_timestamp = options.toTimestamp;
         if (options?.symbol) body.symbol = options.symbol;
 
-        console.log(`[CoinDCX] Fetching trades page ${pageCount + 1}, from_id=${lastFromId || 'start'}, body:`, body);
-
         const result = await makeAuthenticatedRequest<CoinDCXTrade[]>(
             '/exchange/v1/orders/trade_history',
             body,
@@ -293,14 +291,12 @@ export async function fetchCoinDCXTradeHistory(
 
         if (!result.success) {
             if (allTrades.length > 0) {
-                console.warn(`[CoinDCX] Partial trade history: ${allTrades.length} trades (page ${pageCount + 1} failed: ${result.error})`);
                 break;
             }
             return result;
         }
 
         const trades = result.data || [];
-        console.log(`[CoinDCX] Page ${pageCount + 1}: got ${trades.length} trades`);
         allTrades.push(...trades);
 
         // Stop if we got fewer than limit (last page)
@@ -313,7 +309,6 @@ export async function fetchCoinDCXTradeHistory(
             pageCount++;
             // Safety: max 200 pages (100,000 trades) to ensure we don't truncate active traders' history
             if (pageCount >= 200) {
-                console.warn('[CoinDCX] Hit max pagination limit of 200 pages. Total trades fetched:', allTrades.length);
                 hasMore = false;
             }
         }
@@ -389,14 +384,14 @@ let cachedQuoteToINR: Record<string, number> = {};
 // ================================================================
 //
 // ARCHITECTURE:
-//   1. VALIDATED rates (FY 2023-24, FY 2024-25) — benchmark data
-//   2. CURRENT-YEAR rates (FY 2025-26) — the filing year
-//   3. DYNAMIC fallback — fetches live rates from CoinDCX ticker
+//   1. VALIDATED rates (FY 2023-24, FY 2024-25) â€” benchmark data
+//   2. CURRENT-YEAR rates (FY 2025-26) â€” the filing year
+//   3. DYNAMIC fallback â€” fetches live rates from CoinDCX ticker
 //      for any month NOT in the table (auto-covers future FYs)
 //
 // WHY THIS MATTERS:
 //   If we use a single live rate for all trades, profit margins
-//   collapse. Buy at USDT=83.5 and sell at USDT=86.5 loses ₹3/USDT
+//   collapse. Buy at USDT=83.5 and sell at USDT=86.5 loses â‚¹3/USDT
 //   of currency gain that IS taxable.
 //
 // DATA SOURCES:
@@ -405,57 +400,57 @@ let cachedQuoteToINR: Record<string, number> = {};
 //   - Monthly averages computed from daily closing prices
 // ================================================================
 
-/** Validated USDT/INR monthly averages — RBI reference rate based */
+/** Validated USDT/INR monthly averages â€” RBI reference rate based */
 const VALIDATED_USDT_INR: Record<string, number> = {
-    // ── FY 2023-24 (for prior-year cost basis) ──
+    // â”€â”€ FY 2023-24 (for prior-year cost basis) â”€â”€
     '2023-04': 82.0, '2023-05': 82.3, '2023-06': 82.1,
     '2023-07': 82.2, '2023-08': 83.0, '2023-09': 83.1,
     '2023-10': 83.2, '2023-11': 83.3, '2023-12': 83.2,
     '2024-01': 83.1, '2024-02': 83.0, '2024-03': 83.4,
-    // ── FY 2024-25 (validated against KoinX filed return) ──
+    // â”€â”€ FY 2024-25 (validated against KoinX filed return) â”€â”€
     '2024-04': 83.4, '2024-05': 83.3, '2024-06': 83.5,
     '2024-07': 83.6, '2024-08': 83.8, '2024-09': 83.9,
     '2024-10': 84.1, '2024-11': 84.3, '2024-12': 84.7,
     '2025-01': 85.5, '2025-02': 86.5, '2025-03': 86.8,
-    // ── FY 2025-26 (current filing year: Apr 2025 – Mar 2026) ──
+    // â”€â”€ FY 2025-26 (current filing year: Apr 2025 â€“ Mar 2026) â”€â”€
     '2025-04': 85.5, '2025-05': 85.3, '2025-06': 85.6,
     '2025-07': 85.8, '2025-08': 85.9, '2025-09': 86.0,
     '2025-10': 86.2, '2025-11': 86.4, '2025-12': 86.6,
     '2026-01': 86.8, '2026-02': 86.9, '2026-03': 87.0,
 };
 
-/** Validated BTC/INR monthly averages — CoinDCX market data */
+/** Validated BTC/INR monthly averages â€” CoinDCX market data */
 const VALIDATED_BTC_INR: Record<string, number> = {
-    // ── FY 2023-24 ──
+    // â”€â”€ FY 2023-24 â”€â”€
     '2023-04': 2400000, '2023-05': 2300000, '2023-06': 2500000,
     '2023-07': 2500000, '2023-08': 2400000, '2023-09': 2200000,
     '2023-10': 2900000, '2023-11': 3100000, '2023-12': 3600000,
     '2024-01': 3500000, '2024-02': 4300000, '2024-03': 5500000,
-    // ── FY 2024-25 (validated) ──
+    // â”€â”€ FY 2024-25 (validated) â”€â”€
     '2024-04': 5700000, '2024-05': 5800000, '2024-06': 5400000,
     '2024-07': 5600000, '2024-08': 5000000, '2024-09': 5300000,
     '2024-10': 6000000, '2024-11': 7500000, '2024-12': 8200000,
     '2025-01': 8600000, '2025-02': 8200000, '2025-03': 7200000,
-    // ── FY 2025-26 (current filing year) ──
+    // â”€â”€ FY 2025-26 (current filing year) â”€â”€
     '2025-04': 7400000, '2025-05': 8800000, '2025-06': 9200000,
     '2025-07': 8500000, '2025-08': 8100000, '2025-09': 7300000,
     '2025-10': 7700000, '2025-11': 8000000, '2025-12': 8300000,
     '2026-01': 8800000, '2026-02': 8400000,
 };
 
-/** Validated ETH/INR monthly averages — CoinDCX market data */
+/** Validated ETH/INR monthly averages â€” CoinDCX market data */
 const VALIDATED_ETH_INR: Record<string, number> = {
-    // ── FY 2023-24 ──
+    // â”€â”€ FY 2023-24 â”€â”€
     '2023-04': 155000, '2023-05': 153000, '2023-06': 155000,
     '2023-07': 157000, '2023-08': 140000, '2023-09': 138000,
     '2023-10': 150000, '2023-11': 170000, '2023-12': 190000,
     '2024-01': 190000, '2024-02': 240000, '2024-03': 285000,
-    // ── FY 2024-25 (validated) ──
+    // â”€â”€ FY 2024-25 (validated) â”€â”€
     '2024-04': 270000, '2024-05': 260000, '2024-06': 290000,
     '2024-07': 260000, '2024-08': 210000, '2024-09': 220000,
     '2024-10': 220000, '2024-11': 290000, '2024-12': 310000,
     '2025-01': 290000, '2025-02': 230000, '2025-03': 170000,
-    // ── FY 2025-26 (current filing year) ──
+    // â”€â”€ FY 2025-26 (current filing year) â”€â”€
     '2025-04': 165000, '2025-05': 210000, '2025-06': 215000,
     '2025-07': 175000, '2025-08': 195000, '2025-09': 180000,
     '2025-10': 195000, '2025-11': 280000, '2025-12': 320000,
@@ -463,7 +458,7 @@ const VALIDATED_ETH_INR: Record<string, number> = {
 };
 
 /**
- * Dynamic rate cache — populated from CoinDCX live ticker
+ * Dynamic rate cache â€” populated from CoinDCX live ticker
  * for any month NOT found in the validated tables above.
  * This ensures the system works for future FYs automatically.
  */
@@ -480,15 +475,13 @@ function setLiveTickerRates(tickerRates: Record<string, number>): void {
 
     // Store live rates for the current month
     dynamicRateCache[currentMonthKey] = { ...tickerRates };
-    console.log(`[FX Rates] Cached live ticker rates for ${currentMonthKey}:`,
-        Object.keys(tickerRates).filter(k => tickerRates[k] > 0).length, 'pairs');
 }
 
 /**
- * Get the historical quote→INR rate for a given date.
+ * Get the historical quoteâ†’INR rate for a given date.
  * 
  * LOOKUP ORDER:
- *   1. Validated table (FY 23-24, 24-25, 25-26) — always preferred
+ *   1. Validated table (FY 23-24, 24-25, 25-26) â€” always preferred
  *   2. Dynamic cache (populated from live ticker during sync)
  *   3. Live ticker cache (cachedQuoteToINR from fetchQuoteToINRRates)
  *   4. Hardcoded fallback (last resort, logs warning)
@@ -502,7 +495,7 @@ function getHistoricalQuoteINR(quoteCurrency: string, date: Date): number {
 
     if (q === 'INR') return 1;
 
-    // ── STABLECOINS (USDT, USDC, etc.) — track USD/INR ──
+    // â”€â”€ STABLECOINS (USDT, USDC, etc.) â€” track USD/INR â”€â”€
     if (q === 'USDT' || q === 'USDC' || q === 'BUSD' || q === 'DAI' || q === 'TUSD') {
         // 1. Check validated table
         if (VALIDATED_USDT_INR[monthKey]) return VALIDATED_USDT_INR[monthKey];
@@ -510,55 +503,47 @@ function getHistoricalQuoteINR(quoteCurrency: string, date: Date): number {
         if (dynamicRateCache[monthKey]?.['USDT']) return dynamicRateCache[monthKey]['USDT'];
         // 3. Use live ticker
         if (cachedQuoteToINR['USDT'] && cachedQuoteToINR['USDT'] > 1) {
-            console.warn(`[FX Rates] Using live rate for ${q} on ${monthKey}: ₹${cachedQuoteToINR['USDT']}`);
             return cachedQuoteToINR['USDT'];
         }
         // 4. Fallback
-        console.warn(`[FX Rates] ⚠️ No rate for ${q} on ${monthKey}, using ₹86.0 fallback`);
         return 86.0;
     }
 
-    // ── BTC ──
+    // â”€â”€ BTC â”€â”€
     if (q === 'BTC') {
         if (VALIDATED_BTC_INR[monthKey]) return VALIDATED_BTC_INR[monthKey];
         if (dynamicRateCache[monthKey]?.['BTC']) return dynamicRateCache[monthKey]['BTC'];
         if (cachedQuoteToINR['BTC'] && cachedQuoteToINR['BTC'] > 1) {
-            console.warn(`[FX Rates] Using live rate for BTC on ${monthKey}: ₹${cachedQuoteToINR['BTC']}`);
             return cachedQuoteToINR['BTC'];
         }
-        console.warn(`[FX Rates] ⚠️ No rate for BTC on ${monthKey}, using fallback`);
         return 8000000;
     }
 
-    // ── ETH ──
+    // â”€â”€ ETH â”€â”€
     if (q === 'ETH') {
         if (VALIDATED_ETH_INR[monthKey]) return VALIDATED_ETH_INR[monthKey];
         if (dynamicRateCache[monthKey]?.['ETH']) return dynamicRateCache[monthKey]['ETH'];
         if (cachedQuoteToINR['ETH'] && cachedQuoteToINR['ETH'] > 1) {
-            console.warn(`[FX Rates] Using live rate for ETH on ${monthKey}: ₹${cachedQuoteToINR['ETH']}`);
             return cachedQuoteToINR['ETH'];
         }
-        console.warn(`[FX Rates] ⚠️ No rate for ETH on ${monthKey}, using fallback`);
         return 250000;
     }
 
-    // ── BNB ──
+    // â”€â”€ BNB â”€â”€
     if (q === 'BNB') {
         if (cachedQuoteToINR['BNB'] && cachedQuoteToINR['BNB'] > 1) return cachedQuoteToINR['BNB'];
         return 52000;
     }
 
-    // ── Unknown quote currency — try live ticker ──
+    // â”€â”€ Unknown quote currency â€” try live ticker â”€â”€
     if (cachedQuoteToINR[q] && cachedQuoteToINR[q] > 1) {
-        console.warn(`[FX Rates] Using live rate for unknown quote ${q}: ₹${cachedQuoteToINR[q]}`);
         return cachedQuoteToINR[q];
     }
-    console.warn(`[FX Rates] ⚠️ No rate for unknown quote currency ${q} on ${monthKey}`);
     return 86.0;
 }
 
 /**
- * Fetch real-time quote→INR conversion rates from CoinDCX ticker.
+ * Fetch real-time quoteâ†’INR conversion rates from CoinDCX ticker.
  * Used as a fallback and for reward valuation (current prices).
  */
 async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
@@ -579,12 +564,10 @@ async function fetchQuoteToINRRates(): Promise<Record<string, number>> {
                 }
             }
 
-            console.log('[CoinDCX] Live ticker rates:', Object.keys(inrPairs).length, 'pairs');
             cachedQuoteToINR = inrPairs;
             return inrPairs;
         }
     } catch (e) {
-        console.warn('[CoinDCX] Failed to fetch ticker for FX rates:', e);
     }
 
     // Fallback rates
@@ -645,10 +628,10 @@ function hashContent(s: string): string {
 }
 
 /**
- * Transaction Validation Gate — prevents garbage data from entering the system.
+ * Transaction Validation Gate â€” prevents garbage data from entering the system.
  * 
  * ROOT CAUSE FIX: CoinDCX trial endpoints and deposit/withdrawal APIs sometimes
- * return records with null/missing token symbols, zero quantities, or ₹1 placeholder
+ * return records with null/missing token symbols, zero quantities, or â‚¹1 placeholder
  * prices. These inflated TaxMitra's transaction count from 71 (KoinX) to 299.
  * 
  * This gate rejects invalid transactions and quarantines them for audit.
@@ -669,12 +652,12 @@ function validateTransaction(tx: NormalizedTransaction): { valid: boolean; reaso
     // 3. Reject buy/sell trades with zero INR value (unable to determine cost/consideration)
     const isTrade = ['buy', 'sell'].includes((tx.transactionType || '').toLowerCase());
     if (isTrade && (!tx.grossAmountInr || tx.grossAmountInr <= 0) && (!tx.priceInr || tx.priceInr <= 0)) {
-        return { valid: false, reason: `Trade with no INR value: price=₹${tx.priceInr}, gross=₹${tx.grossAmountInr}` };
+        return { valid: false, reason: `Trade with no INR value: price=â‚¹${tx.priceInr}, gross=â‚¹${tx.grossAmountInr}` };
     }
 
-    // 4. Reject suspicious ₹1 placeholder dummy trades (CoinDCX API artifact)
+    // 4. Reject suspicious â‚¹1 placeholder dummy trades (CoinDCX API artifact)
     if (isTrade && tx.priceInr === 1 && tx.grossAmountInr === 1 && tx.quantity === 1 && symbol !== 'INR') {
-        return { valid: false, reason: `Suspicious ₹1 placeholder price for ${symbol}` };
+        return { valid: false, reason: `Suspicious â‚¹1 placeholder price for ${symbol}` };
     }
 
     // 5. Sanity check: quantity should be a reasonable number (not NaN, Infinity, etc.)
@@ -685,7 +668,7 @@ function validateTransaction(tx: NormalizedTransaction): { valid: boolean; reaso
     return { valid: true };
 }
 
-/** List of quarantined transactions — saved for audit but excluded from tax computation */
+/** List of quarantined transactions â€” saved for audit but excluded from tax computation */
 let quarantinedTransactions: Array<NormalizedTransaction & { quarantineReason: string }> = [];
 
 function parseAssetFromSymbol(
@@ -717,10 +700,10 @@ function parseAssetFromSymbol(
  * chunks. KoinX aggregates these into one order-level record.
  *
  * Without aggregation:
- *   - Trade count is inflated (41 fills → should be ~20 orders)
- *   - Sale consideration is wrong (sum of fill values ≠ order total
+ *   - Trade count is inflated (41 fills â†’ should be ~20 orders)
+ *   - Sale consideration is wrong (sum of fill values â‰  order total
  *     due to floating-point and fee differences)
- *   - TDS is wrong (1% per fill ≠ 1% of order total)
+ *   - TDS is wrong (1% per fill â‰  1% of order total)
  *
  * Aggregation strategy:
  *   - Group fills by order_id + side + symbol
@@ -730,7 +713,7 @@ function parseAssetFromSymbol(
  *   - Sum all fees
  */
 function aggregateTradesByOrder(trades: CoinDCXTrade[]): CoinDCXTrade[] {
-    // Group by order_id (primary) — if order_id missing, treat each fill as its own order
+    // Group by order_id (primary) â€” if order_id missing, treat each fill as its own order
     const orderMap = new Map<string, CoinDCXTrade[]>();
 
     for (const trade of trades) {
@@ -761,7 +744,7 @@ function aggregateTradesByOrder(trades: CoinDCXTrade[]): CoinDCXTrade[] {
 
         // Aggregate
         let totalQty = 0;
-        let totalGrossQuote = 0;  // qty × price for each fill
+        let totalGrossQuote = 0;  // qty Ã— price for each fill
         let totalFee = 0;
 
         for (const fill of fills) {
@@ -787,7 +770,6 @@ function aggregateTradesByOrder(trades: CoinDCXTrade[]): CoinDCXTrade[] {
         });
     }
 
-    console.log(`[CoinDCX] Aggregated ${trades.length} fills → ${aggregated.length} orders`);
     return aggregated;
 }
 
@@ -796,9 +778,9 @@ function convertTradesToNormalized(
     marketMap: Record<string, { base: string; quote: string }>,
     quoteToINR: Record<string, number> = {}
 ): NormalizedTransaction[] {
-    // ── CRITICAL: Aggregate fills into orders first ──
+    // â”€â”€ CRITICAL: Aggregate fills into orders first â”€â”€
     // This matches KoinX's order-level view and fixes:
-    //   1. Trade count (fills → orders)
+    //   1. Trade count (fills â†’ orders)
     //   2. Sale consideration (sum of fills = order total)
     //   3. TDS (1% of order total, not per-fill)
     const orders = aggregateTradesByOrder(trades);
@@ -812,9 +794,9 @@ function convertTradesToNormalized(
         const price = trade.price || 0;        // weighted-avg price in quote currency
         const grossAmountQuote = qty * price;   // total in quote currency
 
-        // ── INR Conversion using HISTORICAL rates ──
+        // â”€â”€ INR Conversion using HISTORICAL rates â”€â”€
         // CRITICAL: Use the rate that was in effect at the time of each trade.
-        // Buy at USDT=83.5, sell at USDT=84.7 → captures both crypto AND INR gain.
+        // Buy at USDT=83.5, sell at USDT=84.7 â†’ captures both crypto AND INR gain.
         const quoteKey = quote.toUpperCase();
         const isINRQuote = quoteKey === 'INR';
 
@@ -826,7 +808,7 @@ function convertTradesToNormalized(
         const priceInr = price * quoteINRRate;  // weighted-avg price in INR per unit
         const grossInr = qty * priceInr;        // total order value in INR
 
-        // ── Fee conversion ──
+        // â”€â”€ Fee conversion â”€â”€
         const feeCurrency = (trade.fee_currency || quote).toUpperCase();
         let feeInr = fee;
         if (feeCurrency !== 'INR') {
@@ -834,12 +816,12 @@ function convertTradesToNormalized(
             feeInr = fee * feeRate;
         }
 
-        // ── TDS (Section 194S) ──
+        // â”€â”€ TDS (Section 194S) â”€â”€
         // DO NOT fabricate TDS from API data. CoinDCX API does not return
         // actual TDS deducted. TDS credit must come from:
         //   1. Form 26AS / TDS CSV upload (most accurate)
         //   2. TDS Summary export from CoinDCX
-        // Fabricating 1% here caused TDS credit to be inflated from ₹8K to ₹67K
+        // Fabricating 1% here caused TDS credit to be inflated from â‚¹8K to â‚¹67K
         const tdsAmount = 0;
 
         return {
@@ -863,7 +845,7 @@ function convertTradesToNormalized(
             tradeTimestamp: tradeDate,
             financialYear: fy,
             assessmentYear: getAY(fy),
-            description: `${trade.side.toUpperCase()} ${qty.toFixed(6)} ${base} @ ₹${priceInr.toFixed(2)}/unit (${price} ${quote})`,
+            description: `${trade.side.toUpperCase()} ${qty.toFixed(6)} ${base} @ â‚¹${priceInr.toFixed(2)}/unit (${price} ${quote})`,
             orderId: trade.order_id,
             rawData: {
                 source: 'api',
@@ -939,10 +921,10 @@ function convertBalanceDepositsToNormalized(
  *   2) Cost basis when these tokens are later sold (FIFO)
  *
  * KoinX reference values (FY 2024-25):
- *   ADA staking: ₹232.49, ₹414.75, ₹49.24, ₹331.26
- *   INR rewards: ₹6.77, ₹0.86, ₹702
- *   SHIB rewards: ₹51.79 x 2
- *   Total: ₹1,840.95
+ *   ADA staking: â‚¹232.49, â‚¹414.75, â‚¹49.24, â‚¹331.26
+ *   INR rewards: â‚¹6.77, â‚¹0.86, â‚¹702
+ *   SHIB rewards: â‚¹51.79 x 2
+ *   Total: â‚¹1,840.95
  */
 function convertRewardsToNormalized(
     records: CoinDCXLendingHistory[],
@@ -979,7 +961,7 @@ function convertSingleReward(
     // Skip rewards with invalid currency
     if (!asset || asset === 'UNKNOWN') return null;
 
-    // ── Value the reward at market price ──
+    // â”€â”€ Value the reward at market price â”€â”€
     // For INR rewards: 1 INR = 1 INR (no conversion needed)
     // For crypto rewards: use the asset's INR price from ticker
     let priceInr = 0;
@@ -999,9 +981,9 @@ function convertSingleReward(
             // For smaller tokens (SHIB etc.), try known approximate prices
             // These are FY24-25 average prices for reward valuation
             const rewardPriceEstimates: Record<string, number> = {
-                'SHIB': 0.002143,  // ₹0.002143 per SHIB (approx)
+                'SHIB': 0.002143,  // â‚¹0.002143 per SHIB (approx)
                 'DOGE': 38,
-                'ADA': 95,         // ₹95 per ADA (FY24-25 avg within range)
+                'ADA': 95,         // â‚¹95 per ADA (FY24-25 avg within range)
                 'XRP': 77,
                 'ETH': 285000,
                 'BTC': 7200000,
@@ -1013,8 +995,6 @@ function convertSingleReward(
             grossInr = amount * priceInr;
         }
     }
-
-    console.log(`[CoinDCX] Reward: ${amount} ${asset} @ ₹${priceInr.toFixed(4)} = ₹${grossInr.toFixed(2)} [${txType}]`);
 
     return {
         externalId: `cdx-reward-${r.id || i}`,
@@ -1037,7 +1017,7 @@ function convertSingleReward(
         tradeTimestamp: date,
         financialYear: fy,
         assessmentYear: getAY(fy),
-        description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${asset} (₹${grossInr.toFixed(2)})`,
+        description: `${txType.replace('reward_', '').toUpperCase()} REWARD: ${amount} ${asset} (â‚¹${grossInr.toFixed(2)})`,
         rawData: {
             source: 'api',
             type: r.type,
@@ -1053,7 +1033,7 @@ function convertSingleReward(
 // ============= FULL SYNC =============
 
 /**
- * Complete CoinDCX data sync — fetches ALL data types and converts to NormalizedTransaction[].
+ * Complete CoinDCX data sync â€” fetches ALL data types and converts to NormalizedTransaction[].
  * This is the main function called from the UI.
  */
 export async function fullCoinDCXSync(
@@ -1115,12 +1095,11 @@ export async function fullCoinDCXSync(
                 .from('raw_transactions')
                 .upsert(rawToInsert, { onConflict: 'user_id,content_hash' });
         } catch (e) {
-            console.warn(`[CoinDCX Sync] Failed to save raw ${source}:`, e);
         }
     };
 
     try {
-        // ── Step 1: Validate credentials by fetching balances ──
+        // â”€â”€ Step 1: Validate credentials by fetching balances â”€â”€
         report('Connecting', 'Validating API credentials...', 1, 12);
         const balResult = await fetchCoinDCXBalances(credentials);
         if (!balResult.success) {
@@ -1149,22 +1128,18 @@ export async function fullCoinDCXSync(
             };
         }
         balances = (balResult.data || []).filter(b => b.balance > 0 || b.locked_balance > 0);
-        console.log(`[CoinDCX Sync] ✅ Auth OK. ${balances.length} non-zero balances found.`);
-        console.log(`[CoinDCX Sync] Balances raw:`, balResult.data?.slice(0, 5));
-        warnings.push(`✅ Auth OK — ${balances.length} non-zero balances`);
+        warnings.push(`âœ… Auth OK â€” ${balances.length} non-zero balances`);
 
-        // ── Step 2: Fetch market details for symbol mapping ──
+        // â”€â”€ Step 2: Fetch market details for symbol mapping â”€â”€
         report('Markets', 'Loading market pair data...', 2, 12);
         let marketMap: Record<string, { base: string; quote: string }> = {};
         try {
             marketMap = await getMarketDetails();
-            console.log(`[CoinDCX Sync] 📊 ${Object.keys(marketMap).length} market pairs loaded.`);
         } catch (e) {
-            warnings.push(`⚠️ Market data failed: ${(e as Error).message}`);
-            console.warn('[CoinDCX Sync] Market details failed:', e);
+            warnings.push(`âš ï¸ Market data failed: ${(e as Error).message}`);
         }
 
-        // ── Step 3: Fetch real-time FX rates for reward valuation ──
+        // â”€â”€ Step 3: Fetch real-time FX rates for reward valuation â”€â”€
         // Note: Trade conversions now use HISTORICAL rates per-trade, not live rates.
         // Live rates are only needed for reward valuation (current asset prices).
         report('FX Rates', 'Fetching live rates for reward valuation...', 3, 12);
@@ -1175,23 +1150,16 @@ export async function fullCoinDCXSync(
             // Populate dynamic cache for future-month fallback
             setLiveTickerRates(quoteToINR);
             const rateKeys = Object.keys(quoteToINR).filter(k => k !== 'INR');
-            warnings.push(`💱 FX Rates: ${rateKeys.map(k => `${k}=${quoteToINR[k]}`).join(', ')}`);
+            warnings.push(`ðŸ’± FX Rates: ${rateKeys.map(k => `${k}=${quoteToINR[k]}`).join(', ')}`);
         } catch (e) {
-            warnings.push(`⚠️ FX rates failed, using validated tables: ${(e as Error).message}`);
+            warnings.push(`âš ï¸ FX rates failed, using validated tables: ${(e as Error).message}`);
         }
 
-        // ── Step 4: Fetch ALL trade history ──
+        // â”€â”€ Step 4: Fetch ALL trade history â”€â”€
         // fetchCoinDCXTradeHistory already handles pagination internally (up to 10,000 trades)
         report('Trades', 'Fetching complete trade history...', 4, 12);
         let tradeCount = 0;
         const tradesResult = await fetchCoinDCXTradeHistory(credentials, { limit: 500 });
-
-        console.log(`[CoinDCX Sync] Trade history response:`, {
-            success: tradesResult.success,
-            error: tradesResult.error,
-            dataLength: Array.isArray(tradesResult.data) ? tradesResult.data.length : 'N/A',
-            sample: Array.isArray(tradesResult.data) ? tradesResult.data.slice(0, 2) : tradesResult.data,
-        });
 
         if (tradesResult.success && tradesResult.data && Array.isArray(tradesResult.data)) {
             // Deduplicate by trade ID
@@ -1205,15 +1173,15 @@ export async function fullCoinDCXSync(
             const normalized = convertTradesToNormalized(uniqueTrades, marketMap, quoteToINR);
             allTransactions.push(...normalized);
             tradeCount = normalized.length;
-            warnings.push(`📈 Trades: ${tradeCount} fetched (raw: ${uniqueTrades.length}, deduped from ${tradesResult.data.length})`);
+            warnings.push(`ðŸ“ˆ Trades: ${tradeCount} fetched (raw: ${uniqueTrades.length}, deduped from ${tradesResult.data.length})`);
 
             // Save raw for audit trail
             await saveRaw('api_spot_trades', uniqueTrades);
         } else {
-            warnings.push(`❌ Trades: ${tradesResult.error || 'No data returned'}`);
+            warnings.push(`âŒ Trades: ${tradesResult.error || 'No data returned'}`);
         }
 
-        // ── Step 5: Fetch MARGIN trade history ──
+        // â”€â”€ Step 5: Fetch MARGIN trade history â”€â”€
         report('Margin', 'Fetching margin trade history...', 5, 12);
         let marginTradeCount = 0;
         try {
@@ -1358,16 +1326,15 @@ export async function fullCoinDCXSync(
                     }
                 }
                 if (marginTradeCount > 0) {
-                    warnings.push(`📊 Margin: Fetched ${marginTradeCount} trades.`);
+                    warnings.push(`ðŸ“Š Margin: Fetched ${marginTradeCount} trades.`);
                     // Save raw for audit trail
                     await saveRaw('api_margin_trades', marginResult.data);
                 }
             }
         } catch (e) {
-            console.warn('[CoinDCX Sync] Margin sync failed:', e);
         }
 
-        // ── Step 6: Fetch FUTURES trade history ──
+        // â”€â”€ Step 6: Fetch FUTURES trade history â”€â”€
         report('Futures', 'Fetching futures trade history...', 6, 12);
         let futuresTradeCount = 0;
         try {
@@ -1419,16 +1386,15 @@ export async function fullCoinDCXSync(
                     futuresTradeCount++;
                 }
                 if (futuresTradeCount > 0) {
-                    warnings.push(`📈 Futures: Fetched ${futuresTradeCount} transactions.`);
+                    warnings.push(`ðŸ“ˆ Futures: Fetched ${futuresTradeCount} transactions.`);
                     // Save raw for audit trail
                     await saveRaw('api_futures_trades', futuresResult.data);
                 }
             }
         } catch (e) {
-            console.warn('[CoinDCX Sync] Futures sync failed:', e);
         }
 
-        // ── Step 6.5: Try "Trial" endpoints for Insta, P2P, and Generic Transactions ──
+        // â”€â”€ Step 6.5: Try "Trial" endpoints for Insta, P2P, and Generic Transactions â”€â”€
         // Some accounts have data in these older or less documented endpoints
         const trialEndpoints = [
             { path: '/exchange/v1/insta/order_history', name: 'Insta History', type: 'insta' },
@@ -1444,8 +1410,7 @@ export async function fullCoinDCXSync(
                     credentials
                 );
                 if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
-                    console.log(`[CoinDCX Sync] Trial ${te.name} found ${result.data.length} records.`);
-                    warnings.push(`🔍 ${te.name}: Found ${result.data.length} records.`);
+                    warnings.push(`ðŸ” ${te.name}: Found ${result.data.length} records.`);
 
                     // Save raw for audit trail
                     await saveRaw(`api_trial_${te.type}`, result.data);
@@ -1492,7 +1457,7 @@ export async function fullCoinDCXSync(
             }
         }
 
-        // ── Step 7: Deposits & Withdrawals ──
+        // â”€â”€ Step 7: Deposits & Withdrawals â”€â”€
         report('Deposits', 'Fetching deposit & withdrawal history...', 7, 12);
         let depositCount = 0;
         let withdrawalCount = 0;
@@ -1509,10 +1474,6 @@ export async function fullCoinDCXSync(
                     { timestamp: Date.now() },
                     credentials
                 );
-                console.log(`[CoinDCX Sync] Deposit endpoint ${depEndpoint}:`, {
-                    success: depResult.success,
-                    count: Array.isArray(depResult.data) ? depResult.data.length : 'N/A',
-                });
                 if (depResult.success && depResult.data) {
                     const depArray = Array.isArray(depResult.data) ? depResult.data : [];
                     if (depArray.length > 0) {
@@ -1531,16 +1492,15 @@ export async function fullCoinDCXSync(
                         const normalized = convertBalanceDepositsToNormalized('deposit', mapped);
                         allTransactions.push(...normalized);
                         depositCount = normalized.length;
-                        warnings.push(`📥 Deposits: ${depositCount} records from ${depEndpoint}`);
+                        warnings.push(`ðŸ“¥ Deposits: ${depositCount} records from ${depEndpoint}`);
                         break; // Found working endpoint, stop trying
                     }
                 }
             } catch (e) {
-                console.log(`[CoinDCX Sync] Deposit endpoint ${depEndpoint} failed:`, (e as Error).message);
             }
         }
         if (depositCount === 0) {
-            warnings.push('ℹ️ Deposits: No deposit records found via API — use CSV import if needed');
+            warnings.push('â„¹ï¸ Deposits: No deposit records found via API â€” use CSV import if needed');
         }
 
         // 5b: Fetch withdrawals
@@ -1556,10 +1516,6 @@ export async function fullCoinDCXSync(
                     { timestamp: Date.now() },
                     credentials
                 );
-                console.log(`[CoinDCX Sync] Withdrawal endpoint ${wdEndpoint}:`, {
-                    success: wdResult.success,
-                    count: Array.isArray(wdResult.data) ? wdResult.data.length : 'N/A',
-                });
                 if (wdResult.success && wdResult.data) {
                     const wdArray = Array.isArray(wdResult.data) ? wdResult.data : [];
                     if (wdArray.length > 0) {
@@ -1579,43 +1535,35 @@ export async function fullCoinDCXSync(
                         const normalized = convertBalanceDepositsToNormalized('withdrawal', mapped);
                         allTransactions.push(...normalized);
                         withdrawalCount = normalized.length;
-                        warnings.push(`📤 Withdrawals: ${withdrawalCount} records from ${wdEndpoint}`);
+                        warnings.push(`ðŸ“¤ Withdrawals: ${withdrawalCount} records from ${wdEndpoint}`);
                         break;
                     }
                 }
             } catch (e) {
-                console.log(`[CoinDCX Sync] Withdrawal endpoint ${wdEndpoint} failed:`, (e as Error).message);
             }
         }
         if (withdrawalCount === 0) {
-            warnings.push('ℹ️ Withdrawals: No withdrawal records found via API — use CSV import if needed');
+            warnings.push('â„¹ï¸ Withdrawals: No withdrawal records found via API â€” use CSV import if needed');
         }
 
-        // ── Step 7: Fetch lending/staking rewards ──
+        // â”€â”€ Step 7: Fetch lending/staking rewards â”€â”€
         // Try EVERY possible endpoint to capture all reward types:
-        //   1. /exchange/v1/funding/fetch_orders  — Lending/Earn rewards
-        //   2. /exchange/v1/lending/interest       — Staking interest
-        //   3. /exchange/v1/earn/orders            — Earn orders (newer endpoint)
-        //   4. /exchange/v1/funding/lend_history   — Lending history
+        //   1. /exchange/v1/funding/fetch_orders  â€” Lending/Earn rewards
+        //   2. /exchange/v1/lending/interest       â€” Staking interest
+        //   3. /exchange/v1/earn/orders            â€” Earn orders (newer endpoint)
+        //   4. /exchange/v1/funding/lend_history   â€” Lending history
         //   5. Trade data analysis for INR cashback/promo rewards
         report('Rewards', 'Fetching all rewards & staking income...', 8, 12);
         let rewardCount = 0;
         const allRewardRecords: CoinDCXLendingHistory[] = [];
 
-        // ── 6a: Lending/Earn rewards ──
+        // â”€â”€ 6a: Lending/Earn rewards â”€â”€
         try {
             const lendResult = await makeAuthenticatedRequest<any>(
                 '/exchange/v1/funding/fetch_orders',
                 { timestamp: Date.now() },
                 credentials
             );
-            console.log(`[CoinDCX Sync] Lending/Funding response:`, {
-                success: lendResult.success,
-                error: lendResult.error,
-                isArray: Array.isArray(lendResult.data),
-                count: Array.isArray(lendResult.data) ? lendResult.data.length : 'N/A',
-                sample: Array.isArray(lendResult.data) ? lendResult.data.slice(0, 2) : lendResult.data,
-            });
             if (lendResult.success && lendResult.data) {
                 const lendArray = Array.isArray(lendResult.data) ? lendResult.data : (lendResult.data?.data || []);
                 if (Array.isArray(lendArray) && lendArray.length > 0) {
@@ -1630,15 +1578,15 @@ export async function fullCoinDCXSync(
                     }));
                     allRewardRecords.push(...mapped);
                 }
-                warnings.push(`🎁 Lending: ${lendArray.length || 0} records`);
+                warnings.push(`ðŸŽ Lending: ${lendArray.length || 0} records`);
             } else {
-                warnings.push(`⚠️ Lending: ${lendResult.error || 'not available'}`);
+                warnings.push(`âš ï¸ Lending: ${lendResult.error || 'not available'}`);
             }
         } catch (e) {
-            warnings.push(`❌ Lending: ${(e as Error).message}`);
+            warnings.push(`âŒ Lending: ${(e as Error).message}`);
         }
 
-        // ── 7b: Try staking interest endpoint ──
+        // â”€â”€ 7b: Try staking interest endpoint â”€â”€
         report('Staking', 'Fetching staking interest...', 9, 12);
         try {
             const stakingResult = await makeAuthenticatedRequest<any>(
@@ -1659,19 +1607,18 @@ export async function fullCoinDCXSync(
                         created_at: item.created_at || item.timestamp,
                     }));
                     allRewardRecords.push(...mapped);
-                    warnings.push(`🏦 Staking: ${mapped.length} interest records`);
+                    warnings.push(`ðŸ¦ Staking: ${mapped.length} interest records`);
                 } else {
-                    warnings.push(`ℹ️ Staking: No interest records found`);
+                    warnings.push(`â„¹ï¸ Staking: No interest records found`);
                 }
             } else {
-                warnings.push(`ℹ️ Staking endpoint: ${stakingResult.error || 'not available (ok)'}`);
+                warnings.push(`â„¹ï¸ Staking endpoint: ${stakingResult.error || 'not available (ok)'}`);
             }
         } catch (e) {
-            console.log('[CoinDCX Sync] Staking endpoint not available (expected for some accounts):', (e as Error).message);
-            warnings.push('ℹ️ Staking: endpoint not available');
+            warnings.push('â„¹ï¸ Staking: endpoint not available');
         }
 
-        // ── 7c: Try additional earn endpoints ──
+        // â”€â”€ 7c: Try additional earn endpoints â”€â”€
         report('Earn', 'Checking earn/staking orders...', 10, 12);
         const additionalEarnEndpoints = [
             { path: '/exchange/v1/earn/orders', name: 'Earn Orders' },
@@ -1685,12 +1632,6 @@ export async function fullCoinDCXSync(
                     { timestamp: Date.now() },
                     credentials
                 );
-                console.log(`[CoinDCX Sync] ${ep.name} (${ep.path}):`, {
-                    success: result.success,
-                    isArray: Array.isArray(result.data),
-                    count: Array.isArray(result.data) ? result.data.length : 'N/A',
-                    sample: Array.isArray(result.data) ? result.data.slice(0, 2) : result.data,
-                });
                 if (result.success && result.data) {
                     const arr = Array.isArray(result.data) ? result.data : (result.data?.data || []);
                     if (Array.isArray(arr) && arr.length > 0) {
@@ -1708,22 +1649,20 @@ export async function fullCoinDCXSync(
                         const newRecords = mapped.filter((m: any) => !existingIds.has(m.id));
                         if (newRecords.length > 0) {
                             allRewardRecords.push(...newRecords);
-                            warnings.push(`🏦 ${ep.name}: ${newRecords.length} new records`);
+                            warnings.push(`ðŸ¦ ${ep.name}: ${newRecords.length} new records`);
                         } else {
-                            warnings.push(`ℹ️ ${ep.name}: ${mapped.length} records (all duplicates)`);
+                            warnings.push(`â„¹ï¸ ${ep.name}: ${mapped.length} records (all duplicates)`);
                         }
                     } else {
-                        warnings.push(`ℹ️ ${ep.name}: No records found`);
+                        warnings.push(`â„¹ï¸ ${ep.name}: No records found`);
                     }
                 } else {
-                    console.log(`[CoinDCX Sync] ${ep.name}: ${result.error || 'not available'}`);
                 }
             } catch (e) {
-                console.log(`[CoinDCX Sync] ${ep.name} not available:`, (e as Error).message);
             }
         }
 
-        // ── 7d: Convert all rewards with proper INR valuation ──
+        // â”€â”€ 7d: Convert all rewards with proper INR valuation â”€â”€
         report('Valuation', 'Valuing rewards at market prices...', 11, 12);
         if (allRewardRecords.length > 0) {
             // Also fetch asset prices for reward valuation
@@ -1745,7 +1684,6 @@ export async function fullCoinDCXSync(
                     }
                 }
             } catch (e) {
-                console.warn('[CoinDCX Sync] Failed to fetch ticker for reward valuation:', e);
             }
 
             const normalized = convertRewardsToNormalized(allRewardRecords, assetPrices);
@@ -1756,15 +1694,15 @@ export async function fullCoinDCXSync(
             await saveRaw('api_rewards', allRewardRecords);
 
             const totalRewardINR = normalized.reduce((s, t) => s + (t.grossAmountInr || 0), 0);
-            warnings.push(`🎁 Total Rewards: ${rewardCount} transactions, ₹${totalRewardINR.toFixed(2)} value`);
+            warnings.push(`ðŸŽ Total Rewards: ${rewardCount} transactions, â‚¹${totalRewardINR.toFixed(2)} value`);
         } else {
-            warnings.push(`⚠️ IMPORTANT: No reward/staking records found via API. CoinDCX does NOT expose staking rewards, airdrops, or cashback via their public API.`);
-            warnings.push(`💡 TO FIX: Use the "+ Add Trade" button → select type = "Staking Reward", "Airdrop", or "Interest" to manually add your rewards.`);
-            warnings.push(`📧 Check your email for "CoinDCX reward credited" or "Staking reward" notifications and add each one manually.`);
-            warnings.push(`📋 Alternatively, download your TDS Summary CSV from CoinDCX → Tax Reports section. It captures all sell events including Insta/P2P trades.`);
+            warnings.push(`âš ï¸ IMPORTANT: No reward/staking records found via API. CoinDCX does NOT expose staking rewards, airdrops, or cashback via their public API.`);
+            warnings.push(`ðŸ’¡ TO FIX: Use the "+ Add Trade" button â†’ select type = "Staking Reward", "Airdrop", or "Interest" to manually add your rewards.`);
+            warnings.push(`ðŸ“§ Check your email for "CoinDCX reward credited" or "Staking reward" notifications and add each one manually.`);
+            warnings.push(`ðŸ“‹ Alternatively, download your TDS Summary CSV from CoinDCX â†’ Tax Reports section. It captures all sell events including Insta/P2P trades.`);
         }
 
-        // ── Step 12: Final Deduplication & Persistence (v5 Merge Engine) ──
+        // â”€â”€ Step 12: Final Deduplication & Persistence (v5 Merge Engine) â”€â”€
         report('Merging', 'Merging with existing database records...', 12, 12);
 
         // Ensure ALL transactions have event_class and contentHash for v5 engine
@@ -1780,18 +1718,17 @@ export async function fullCoinDCXSync(
                 });
             } else {
                 quarantinedTransactions.push({ ...tx, quarantineReason: validation.reason || 'Unknown error' });
-                console.warn(`[CoinDCX Sync] ⚠️ Quarantined invalid tx ${tx.externalId}: ${validation.reason}`);
             }
         }
 
         if (quarantinedTransactions.length > 0) {
-            warnings.push(`🛡️ Filtered ${quarantinedTransactions.length} invalid/noise transactions (e.g., missing tokens).`);
+            warnings.push(`ðŸ›¡ï¸ Filtered ${quarantinedTransactions.length} invalid/noise transactions (e.g., missing tokens).`);
         }
 
         const mergeRes = await mergeTransactions(userId, validTransactions, 'api');
         const finalTxs = mergeRes.mergedTransactions;
 
-        // ── Stats for final report ──
+        // â”€â”€ Stats for final report â”€â”€
         const fyBreakdown: Record<string, number> = {};
         const assetSet = new Set<string>();
         let computedTDSCredit = 0;
@@ -1809,20 +1746,20 @@ export async function fullCoinDCXSync(
             }
         }
 
-        // ── Sort by timestamp ──
+        // â”€â”€ Sort by timestamp â”€â”€
         finalTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
 
-        // ── Missing data checklist ──
+        // â”€â”€ Missing data checklist â”€â”€
         const missingDataChecklist = buildMissingDataChecklist(
             finalTxs, computedOtherIncome, computedTDSCredit, rewardCount
         );
 
         if (missingDataChecklist.length > 0) {
-            warnings.push(`\n⚠️ MISSING DATA CHECKLIST (${missingDataChecklist.filter(i => i.severity === 'critical').length} critical items):`);
+            warnings.push(`\nâš ï¸ MISSING DATA CHECKLIST (${missingDataChecklist.filter(i => i.severity === 'critical').length} critical items):`);
             for (const item of missingDataChecklist) {
-                const icon = item.severity === 'critical' ? '🚨' : item.severity === 'warning' ? '⚠️' : 'ℹ️';
+                const icon = item.severity === 'critical' ? 'ðŸš¨' : item.severity === 'warning' ? 'âš ï¸' : 'â„¹ï¸';
                 warnings.push(`${icon} ${item.category}: ${item.description} (Current: ${item.currentValue}, Expected: ${item.expectedValue})`);
-                warnings.push(`   → Action: ${item.action}`);
+                warnings.push(`   â†’ Action: ${item.action}`);
             }
         }
 
@@ -1837,9 +1774,6 @@ export async function fullCoinDCXSync(
                 completed_at: new Date().toISOString()
             })
             .eq('id', syncSessionId);
-
-        console.log(`[CoinDCX Sync] ✅ COMPLETE: ${finalTxs.length} total transactions, ${assetSet.size} unique assets`);
-        console.log(`[CoinDCX Sync] Merge Result: +${mergeRes.added}, =${mergeRes.duplicates}`);
 
         return {
             success: true,
@@ -1866,7 +1800,7 @@ export async function fullCoinDCXSync(
 
     } catch (error) {
         console.error('[CoinDCX Sync] Fatal error:', error);
-        warnings.push(`💀 Fatal: ${(error as Error).message}`);
+        warnings.push(`ðŸ’€ Fatal: ${(error as Error).message}`);
 
         // Update sync log to FAILED
         if (syncSessionId) {
@@ -1920,43 +1854,43 @@ function buildMissingDataChecklist(
 ): MissingDataItem[] {
     const items: MissingDataItem[] = [];
 
-    // ── Check Other Income ──
+    // â”€â”€ Check Other Income â”€â”€
     // If no rewards found, the API likely doesn't expose them
     if (rewardCount === 0 && otherIncome < 1) {
         items.push({
             category: 'Other Income (Staking/Rewards)',
             description: 'No staking/reward transactions found. CoinDCX API does not expose staking rewards, airdrops, or cashback.',
             expectedValue: 'Your actual rewards',
-            currentValue: '₹0',
-            action: 'Add staking rewards manually: Use "+ Add Trade" → type = Staking Reward. Check CoinDCX app "Earn" section or your email for "reward credited" notifications.',
+            currentValue: 'â‚¹0',
+            action: 'Add staking rewards manually: Use "+ Add Trade" â†’ type = Staking Reward. Check CoinDCX app "Earn" section or your email for "reward credited" notifications.',
             severity: 'critical',
         });
     } else if (rewardCount > 0 && otherIncome < 100) {
         items.push({
             category: 'Other Income',
-            description: `Only ₹${otherIncome.toFixed(2)} in other income from ${rewardCount} rewards. Some rewards may be missing.`,
+            description: `Only â‚¹${otherIncome.toFixed(2)} in other income from ${rewardCount} rewards. Some rewards may be missing.`,
             expectedValue: 'All staking/airdrop rewards',
-            currentValue: `₹${otherIncome.toFixed(2)} (${rewardCount} records)`,
+            currentValue: `â‚¹${otherIncome.toFixed(2)} (${rewardCount} records)`,
             action: 'Check CoinDCX "Earn" section for additional staking rewards not captured by the API.',
             severity: 'warning',
         });
     }
 
-    // ── Check TDS Credit ──
+    // â”€â”€ Check TDS Credit â”€â”€
     // If we have sells but zero TDS, something is likely missing
     const sellCount = transactions.filter(tx => tx.transactionType === 'sell').length;
     if (sellCount > 0 && tdsCredit < 1) {
         items.push({
             category: 'TDS Credit',
-            description: `${sellCount} sell transactions found but ₹0 TDS recorded. The engine will compute TDS as 1% of sell consideration automatically.`,
+            description: `${sellCount} sell transactions found but â‚¹0 TDS recorded. The engine will compute TDS as 1% of sell consideration automatically.`,
             expectedValue: '1% of sell consideration',
-            currentValue: '₹0 (from trade data)',
-            action: 'For most accurate TDS figures, upload your CoinDCX TDS Summary CSV. Download from CoinDCX → Tax Reports → TDS Summary.',
+            currentValue: 'â‚¹0 (from trade data)',
+            action: 'For most accurate TDS figures, upload your CoinDCX TDS Summary CSV. Download from CoinDCX â†’ Tax Reports â†’ TDS Summary.',
             severity: 'info',
         });
     }
 
-    // ── Check Trade Count ──
+    // â”€â”€ Check Trade Count â”€â”€
     const tradeTypes = transactions.filter(tx =>
         tx.transactionType === 'buy' || tx.transactionType === 'sell'
     ).length;
@@ -1966,12 +1900,12 @@ function buildMissingDataChecklist(
             description: `Only ${tradeTypes} trades found. If you're an active trader, some trades may be missing.`,
             expectedValue: 'All your trades',
             currentValue: `${tradeTypes} trades`,
-            action: 'Upload your CoinDCX Order History CSV for complete trade data. Download from coindcx.com → Orders → Order History → Download CSV.',
+            action: 'Upload your CoinDCX Order History CSV for complete trade data. Download from coindcx.com â†’ Orders â†’ Order History â†’ Download CSV.',
             severity: 'info',
         });
     }
 
-    // ── Check for Insta/P2P coverage ──
+    // â”€â”€ Check for Insta/P2P coverage â”€â”€
     const hasInstaTrades = transactions.some(tx =>
         tx.rawData?.source === 'api' && tx.rawData?.trail?.includes('insta')
     );
@@ -2001,9 +1935,7 @@ export function saveCredentials(credentials: CoinDCXCredentials): void {
     // Save to localStorage for fast sync access
     localStorage.setItem(CREDS_KEY, encoded);
     // Also persist to Supabase for cross-device access
-    saveUserData(CREDS_KEY, encoded).catch(err =>
-        console.warn('[CoinDCX] Failed to save credentials to DB:', err.message)
-    );
+    saveUserData(CREDS_KEY, encoded).catch(() => { /* persist error silently */ });
 }
 
 export function loadCredentials(): CoinDCXCredentials | null {
@@ -2032,7 +1964,6 @@ export async function loadCredentialsAsync(): Promise<CoinDCXCredentials | null>
             return creds;
         }
     } catch (err) {
-        console.warn('[CoinDCX] Failed to load credentials from DB:', err);
     }
 
     // 2. Fallback to localStorage
@@ -2052,9 +1983,7 @@ export async function loadCredentialsAsync(): Promise<CoinDCXCredentials | null>
 
 export function clearCredentials(): void {
     localStorage.removeItem(CREDS_KEY);
-    deleteUserData(CREDS_KEY).catch(err =>
-        console.warn('[CoinDCX] Failed to clear credentials from DB:', err.message)
-    );
+    deleteUserData(CREDS_KEY).catch(() => { /* silently ignore */ });
 }
 
 export function hasStoredCredentials(): boolean {

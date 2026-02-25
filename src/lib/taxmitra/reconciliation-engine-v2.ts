@@ -1,5 +1,5 @@
-/**
- * TaxMitra — Reconciliation Engine
+﻿/**
+ * TaxMitra â€” Reconciliation Engine
  * ==================================
  * Full reconciliation pipeline that runs after every data import.
  * Orchestrates all checks: duplicates, gaps, cross-source matching,
@@ -8,10 +8,10 @@
  * 8-Step Pipeline:
  *   1. Duplicate Detection (3-layer)
  *   2. Date Range Coverage
- *   3. Cross-Source Reconciliation (Order CSV ↔ TDS CSV matching)
+ *   3. Cross-Source Reconciliation (Order CSV â†” TDS CSV matching)
  *   4. TDS Integrity Check
  *   5. Inventory Balance Check (negative inventory = missing buys)
- *   6. Transaction Classification (UNKNOWN → Needs Review)
+ *   6. Transaction Classification (UNKNOWN â†’ Needs Review)
  *   7. Cancelled Order Filter
  *   8. Internal Transfer Detection
  */
@@ -91,9 +91,7 @@ export function runFullReconciliation(
 ): FullReconciliationResult {
     const checks: ReconciliationCheck[] = [];
 
-    console.log(`[Reconciliation] Starting full pipeline for FY ${financialYear} with ${transactions.length} transactions...`);
-
-    // ─── Step 1: Duplicate Detection ───
+    // â”€â”€â”€ Step 1: Duplicate Detection â”€â”€â”€
     const duplicateResult = detectDuplicates(transactions);
     checks.push({
         id: 'duplicates',
@@ -113,7 +111,7 @@ export function runFullReconciliation(
     // Use deduplicated transactions for remaining checks
     let cleanTransactions = duplicateResult.deduplicatedTransactions;
 
-    // ─── Step 2: Date Range Coverage ───
+    // â”€â”€â”€ Step 2: Date Range Coverage â”€â”€â”€
     const gapResult = detectGaps(cleanTransactions, financialYear);
     const criticalGaps = gapResult.gaps.filter(g => g.severity === 'blocker' || g.severity === 'critical');
     checks.push({
@@ -131,7 +129,7 @@ export function runFullReconciliation(
         },
     });
 
-    // ─── Step 3: Cross-Source Reconciliation ───
+    // â”€â”€â”€ Step 3: Cross-Source Reconciliation â”€â”€â”€
     let crossSourceMatch: CrossSourceMatch | null = null;
     const orderCsvItem = checklist.items.find(i => i.source === 'order_history_csv');
     const tdsCsvItem = checklist.items.find(i => i.source === 'tds_summary_csv');
@@ -202,7 +200,7 @@ export function runFullReconciliation(
         });
     }
 
-    // ─── Step 4: TDS Integrity Check ───
+    // â”€â”€â”€ Step 4: TDS Integrity Check â”€â”€â”€
     let tdsDiscrepancyPct = 0;
     if (tdsRecords.length > 0) {
         const tdsCsvTotal = tdsRecords
@@ -226,7 +224,7 @@ export function runFullReconciliation(
             name: 'TDS Integrity',
             status: tdsDiscrepancyPct > 10 ? 'fail' :
                 tdsDiscrepancyPct > 5 ? 'warning' : 'pass',
-            detail: `TDS from CSV: ₹${tdsCsvTotal.toFixed(0)}, Theoretical (1% of sells): ₹${theoreticalTds.toFixed(0)} (${tdsDiscrepancyPct.toFixed(1)}% diff)`,
+            detail: `TDS from CSV: â‚¹${tdsCsvTotal.toFixed(0)}, Theoretical (1% of sells): â‚¹${theoreticalTds.toFixed(0)} (${tdsDiscrepancyPct.toFixed(1)}% diff)`,
             metadata: {
                 tdsCsvTotal,
                 theoreticalTds,
@@ -239,11 +237,11 @@ export function runFullReconciliation(
             id: 'tds_integrity',
             name: 'TDS Integrity',
             status: tdsCsvItem?.status === 'pending' ? 'fail' : 'skipped',
-            detail: 'TDS Summary CSV not uploaded — TDS credit will be estimated',
+            detail: 'TDS Summary CSV not uploaded â€” TDS credit will be estimated',
         });
     }
 
-    // ─── Step 5: Inventory Balance Check ───
+    // â”€â”€â”€ Step 5: Inventory Balance Check â”€â”€â”€
     const inventoryChecks = computeInventoryBalances(cleanTransactions);
     const negativeAssets = inventoryChecks.filter(c => c.isNegative);
 
@@ -260,7 +258,7 @@ export function runFullReconciliation(
         },
     });
 
-    // ─── Step 6: Transaction Classification ───
+    // â”€â”€â”€ Step 6: Transaction Classification â”€â”€â”€
     const needsReviewResult = classifyAndReview(cleanTransactions, existingReviews);
     checks.push({
         id: 'classification',
@@ -280,7 +278,7 @@ export function runFullReconciliation(
     // Use classified transactions from here on
     cleanTransactions = needsReviewResult.classifiedTransactions;
 
-    // ─── Step 7: Cancelled Order Filter ───
+    // â”€â”€â”€ Step 7: Cancelled Order Filter â”€â”€â”€
     const cancelledCount = transactions.filter(tx => {
         const status = (tx.rawData?.status || '').toLowerCase();
         return status === 'cancelled' || status === 'rejected';
@@ -295,7 +293,7 @@ export function runFullReconciliation(
             : 'No cancelled orders found',
     });
 
-    // ─── Step 8: Internal Transfer Detection ───
+    // â”€â”€â”€ Step 8: Internal Transfer Detection â”€â”€â”€
     const transferCount = cleanTransactions.filter(tx => {
         const event = classifyVdaEvent(tx);
         return event === 'TRANSFER_SELF';
@@ -310,7 +308,7 @@ export function runFullReconciliation(
             : 'No internal transfers detected',
     });
 
-    // ─── Summary ───
+    // â”€â”€â”€ Summary â”€â”€â”€
     const passCount = checks.filter(c => c.status === 'pass').length;
     const warningCount = checks.filter(c => c.status === 'warning').length;
     const failCount = checks.filter(c => c.status === 'fail').length;
@@ -318,8 +316,6 @@ export function runFullReconciliation(
     const overallStatus: FullReconciliationResult['overallStatus'] =
         failCount > 0 ? 'issues' :
             warningCount > 0 ? 'warnings' : 'healthy';
-
-    console.log(`[Reconciliation] Complete: ${passCount} pass, ${warningCount} warnings, ${failCount} failures`);
 
     return {
         financialYear,

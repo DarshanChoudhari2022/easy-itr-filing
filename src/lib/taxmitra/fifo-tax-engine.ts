@@ -1,5 +1,5 @@
-/**
- * TaxMitra — FIFO Capital Gains Tax Engine
+﻿/**
+ * TaxMitra â€” FIFO Capital Gains Tax Engine
  * ==========================================
  * Implements Indian crypto tax calculation per Section 115BBH.
  *
@@ -8,7 +8,7 @@
  *   - Losses CANNOT offset gains or other income
  *   - Losses CANNOT be carried forward
  *   - Only deduction: Cost of Acquisition (purchase price + fee)
- *   - TDS deducted under Sec 194S → credit against tax payable
+ *   - TDS deducted under Sec 194S â†’ credit against tax payable
  *   - FIFO: First In, First Out lot matching
  *
  * This module is a pure computation engine. It accepts a Supabase client
@@ -17,7 +17,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-// ─── Types ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Financial year date range */
 interface FYDateRange {
@@ -61,7 +61,7 @@ interface TaxLot {
     is_exhausted: boolean;
 }
 
-/** A sell↔lot computation match */
+/** A sellâ†”lot computation match */
 interface TaxComputation {
     user_id: string;
     sell_txn_id: string;
@@ -102,13 +102,13 @@ export interface TaxComputationResult {
     errors: string[];
 }
 
-// ─── Constants ───────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TAX_RATE = 0.30;        // 30% flat tax on VDA gains
 const CESS_RATE = 0.04;       // 4% Health & Education Cess
 const BATCH_SIZE = 500;
 
-// ─── Main Entry Point ────────────────────────────────────────────────
+// â”€â”€â”€ Main Entry Point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Run the full FIFO tax computation for a user + financial year.
@@ -132,13 +132,9 @@ export async function computeCryptoTax(
         return errorResult(financialYear, [`Invalid financial year format: ${financialYear}`]);
     }
 
-    console.log(`[FIFO] Starting computation for ${financialYear} (${fyRange.start} → ${fyRange.end})`);
-
-    // ═══════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // STEP 1: Clear previous computation
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('[FIFO] Step 1: Clearing previous computation...');
-
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const { error: delCompErr } = await supabase
         .from('crypto_tax_computations')
         .delete()
@@ -160,11 +156,9 @@ export async function computeCryptoTax(
         errors.push(`Failed to clear lots: ${delLotsErr.message}`);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // STEP 2: Create tax lots from ALL BUY transactions
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('[FIFO] Step 2: Creating tax lots from BUY transactions...');
-
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Fetch ALL BUY transactions for this user (across ALL FYs)
     // because we need the full purchase history for FIFO matching.
     // A BTC bought in FY2023-24 might be sold in FY2024-25.
@@ -215,13 +209,9 @@ export async function computeCryptoTax(
         }
     }
 
-    console.log(`[FIFO] Created ${lotsCreated} tax lots from ${buys.length} BUY transactions`);
-
-    // ═══════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // STEP 3: Process SELL transactions with FIFO
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('[FIFO] Step 3: Processing SELL transactions with FIFO...');
-
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Fetch SELL transactions within the target FY date range
     const { data: sellTxns, error: sellErr } = await supabase
         .from('crypto_transactions')
@@ -339,7 +329,7 @@ export async function computeCryptoTax(
             }
 
             // Update in-memory lot too (in case same lot is reused for another sell
-            // within the same process — though we re-fetch per sell)
+            // within the same process â€” though we re-fetch per sell)
             lot.remaining_qty = isExhausted ? 0 : newRemaining;
             lot.is_exhausted = isExhausted;
 
@@ -383,13 +373,9 @@ export async function computeCryptoTax(
         }
     }
 
-    console.log(`[FIFO] Processed ${sells.length} sells → ${computationsCreated} computation records (${unknownLotsCount} unknown lots)`);
-
-    // ═══════════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // STEP 4: Compute tax summary
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('[FIFO] Step 4: Computing tax summary...');
-
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     const { data: computations, error: compFetchErr } = await supabase
         .from('crypto_tax_computations')
         .select('sale_consideration, cost_of_acquisition, capital_gain, tds_attributed, is_unknown_lot')
@@ -410,7 +396,7 @@ export async function computeCryptoTax(
     );
     const grossCapitalGain = round2(totalSaleConsideration - totalCostOfAcquisition);
 
-    // Section 115BBH: Losses NOT deductible — taxable gain = max(gain, 0)
+    // Section 115BBH: Losses NOT deductible â€” taxable gain = max(gain, 0)
     const taxableGain = Math.max(grossCapitalGain, 0);
     const grossTax = round2(taxableGain * TAX_RATE);
     const cess = round2(grossTax * CESS_RATE);
@@ -455,25 +441,16 @@ export async function computeCryptoTax(
         errors,
     };
 
-    console.log(`[FIFO] ✅ Computation complete:`, {
-        grossCapitalGain,
-        taxableGain,
-        totalTax,
-        totalTdsCredit,
-        netPayable,
-        tdsRefundEligible,
-    });
-
     return result;
 }
 
 
-// ─── TDS Attribution ─────────────────────────────────────────────────
+// â”€â”€â”€ TDS Attribution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Get total TDS for a sell transaction.
  * Sources:
- *   1. tds_inr directly on the SELL record (from ORDER_CSV → TDS_CSV match)
+ *   1. tds_inr directly on the SELL record (from ORDER_CSV â†’ TDS_CSV match)
  *   2. TDS_CSV standalone records matching the sell's date + asset
  */
 async function getTDSForSell(
@@ -485,7 +462,7 @@ async function getTDSForSell(
     let totalTds = sell.tds_inr || 0;
 
     // 2. TDS_CSV standalone records that match this sell
-    // Match criteria: same asset, same date (±1 day for timing differences)
+    // Match criteria: same asset, same date (Â±1 day for timing differences)
     const sellDate = new Date(sell.timestamp);
     const dayBefore = new Date(sellDate.getTime() - 86400000).toISOString();
     const dayAfter = new Date(sellDate.getTime() + 86400000).toISOString();
@@ -508,11 +485,11 @@ async function getTDSForSell(
 }
 
 
-// ─── FY Utilities ────────────────────────────────────────────────────
+// â”€â”€â”€ FY Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * Parse 'FY2024-25' → date range { start, end }
- * FY2024-25 = April 1, 2024 → March 31, 2025
+ * Parse 'FY2024-25' â†’ date range { start, end }
+ * FY2024-25 = April 1, 2024 â†’ March 31, 2025
  */
 function parseFYDateRange(fy: string): FYDateRange | null {
     const match = fy.match(/^FY(\d{4})-(\d{2})$/);
@@ -527,7 +504,7 @@ function parseFYDateRange(fy: string): FYDateRange | null {
 }
 
 
-// ─── Rounding Helpers ────────────────────────────────────────────────
+// â”€â”€â”€ Rounding Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function round2(n: number): number {
     return Math.round(n * 100) / 100;
@@ -542,7 +519,7 @@ function round10(n: number): number {
 }
 
 
-// ─── Error Result Helper ─────────────────────────────────────────────
+// â”€â”€â”€ Error Result Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function errorResult(fy: string, errors: string[]): TaxComputationResult {
     return {
