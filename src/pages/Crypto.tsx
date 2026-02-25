@@ -698,7 +698,16 @@ export default function CryptoTaxPage() {
       const messages: string[] = [];
 
       for (const fileResult of importResult.files) {
-        allTransactions.push(...fileResult.transactions);
+        // Tag each transaction with fileType so the wizard can filter by step
+        const taggedTxs = fileResult.transactions.map(tx => ({
+          ...tx,
+          rawData: {
+            ...tx.rawData,
+            fileType: fileResult.fileType,
+            source: 'csv',
+          }
+        }));
+        allTransactions.push(...taggedTxs);
         allTDSRecords.push(...fileResult.tdsRecords);
         if (fileResult.successCount > 0) {
           messages.push(`✅ ${fileResult.fileName}: ${fileResult.successCount} transactions parsed`);
