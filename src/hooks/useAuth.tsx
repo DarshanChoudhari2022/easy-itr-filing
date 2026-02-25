@@ -45,12 +45,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Clear localStorage when user signs out to prevent data leaking
         if (event === 'SIGNED_OUT') {
-          const cryptoKeys = [
+          const userDataKeys = [
             'taxmitra_transactions', 'taxmitra_tds', 'taxSettings',
-            'coinDCXCredentials', 'crypto_sync_state',
+            'taxmitra_coindcx_creds',       // CoinDCX API credentials (actual key)
+            'taxmitra_fy_checklist',         // Data coverage checklist per FY
+            'taxmitra_crypto_tax_summary',   // Computed tax summary
+            'taxmitra_needs_review',         // Needs review items
+            'taxmitra_review_items',         // Review items per FY
+            'crypto_sync_state',             // Sync state
           ];
-          cryptoKeys.forEach(key => localStorage.removeItem(key));
-          console.log('[Auth] Cleared localStorage crypto data on sign out');
+          userDataKeys.forEach(key => localStorage.removeItem(key));
+          console.log('[Auth] Cleared all user-specific localStorage data on sign out');
         }
       }
     );

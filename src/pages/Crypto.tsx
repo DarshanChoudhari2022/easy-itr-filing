@@ -50,9 +50,8 @@ import {
   fullCoinDCXSync,
   validateCoinDCXCredentials,
   saveCredentials,
-  loadCredentials,
+  loadCredentialsAsync,
   clearCredentials,
-  hasStoredCredentials,
   type SyncProgress,
   type FullSyncResult,
   type MissingDataItem
@@ -348,15 +347,32 @@ export default function CryptoTaxPage() {
   // File input ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // CoinDCX API Connect state
-  const [apiKey, setApiKey] = useState(() => loadCredentials()?.apiKey || '');
-  const [apiSecret, setApiSecret] = useState(() => loadCredentials()?.apiSecret || '');
-  const [apiConnected, setApiConnected] = useState(() => hasStoredCredentials());
+  // CoinDCX API Connect state — start empty, load from user-specific DB
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [apiConnected, setApiConnected] = useState(false);
   const [apiSyncing, setApiSyncing] = useState(false);
   const [apiSyncProgress, setApiSyncProgress] = useState<SyncProgress | null>(null);
   const [apiSyncResult, setApiSyncResult] = useState<FullSyncResult | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
+
+  // Load CoinDCX credentials from user-specific DB (not localStorage)
+  useEffect(() => {
+    if (!user) {
+      setApiKey('');
+      setApiSecret('');
+      setApiConnected(false);
+      return;
+    }
+    loadCredentialsAsync().then(creds => {
+      if (creds) {
+        setApiKey(creds.apiKey);
+        setApiSecret(creds.apiSecret);
+        setApiConnected(true);
+      }
+    }).catch(() => { /* ignore */ });
+  }, [user]);
 
   // Financial Year state and helper
   // Smart FY: auto-detect from data, default to current FY (2025-26)
@@ -740,6 +756,47 @@ export default function CryptoTaxPage() {
         return;
       }
 
+      // 3.5. CSV Date Range Validation — Check if data falls within selected FY
+      {
+        const fy = FINANCIAL_YEARS.find(f => f.value === selectedFY);
+        if (fy) {
+          const fyStart = new Date(fy.start);
+          const fyEnd = new Date(fy.end + 'T23:59:59');
+          let outsideCount = 0;
+          let insideCount = 0;
+          let minDate: Date | null = null;
+          let maxDate: Date | null = null;
+
+          for (const tx of allTransactions) {
+            const txDate = tx.tradeTimestamp instanceof Date ? tx.tradeTimestamp : new Date(tx.tradeTimestamp);
+            if (!minDate || txDate < minDate) minDate = txDate;
+            if (!maxDate || txDate > maxDate) maxDate = txDate;
+
+            if (txDate >= fyStart && txDate <= fyEnd) {
+              insideCount++;
+            } else {
+              outsideCount++;
+            }
+          }
+
+          if (outsideCount > 0 && insideCount === 0) {
+            // ALL transactions are outside the selected FY
+            const dateRange = minDate && maxDate
+              ? `${minDate.toLocaleDateString('en-IN')} to ${maxDate.toLocaleDateString('en-IN')}`
+              : 'unknown range';
+            toast.warning(
+              `⚠️ None of the ${allTransactions.length} transactions fall within FY ${selectedFY}. ` +
+              `Data range: ${dateRange}. The FY will auto-adjust.`,
+              { duration: 8000 }
+            );
+            messages.push(`⚠️ CSV date range (${dateRange}) is outside selected FY ${selectedFY} — auto-adjusting FY`);
+          } else if (outsideCount > 0) {
+            // Some transactions are outside
+            const pct = Math.round((outsideCount / allTransactions.length) * 100);
+            messages.push(`ℹ️ ${outsideCount} of ${allTransactions.length} transactions (${pct}%) are outside FY ${selectedFY} — they'll be used for FIFO cost basis from prior years`);
+          }
+        }
+      }
       // 4. Store parsed data in state — REPLACE all old data (not append)
       // This prevents stale data accumulation from old API syncs/imports
       // that had fabricated TDS or other bad values
@@ -1959,8 +2016,8 @@ export default function CryptoTaxPage() {
                         <div className="flex gap-3">
                           <Button
                             onClick={async () => {
-                              const creds = loadCredentials();
-                              if (!creds) { toast.error('No stored credentials'); return; }
+                              if (!apiKey || !apiSecret) { toast.error('No stored credentials'); return; }
+                              const creds = { apiKey, apiSecret };
                               setApiSyncing(true);
                               try {
                                 const result = await fullCoinDCXSync(creds, setApiSyncProgress);
