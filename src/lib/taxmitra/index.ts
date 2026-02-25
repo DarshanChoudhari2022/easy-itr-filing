@@ -133,3 +133,88 @@ export {
     type PersistenceResult,
     type ImportProgress,
 } from './persistence-service';
+
+// ============= FAIL-SAFE COVERAGE TRACKER =============
+export {
+    createFYChecklist,
+    updateChecklistItem,
+    detectConditionalRequirements,
+    applyConditionalRequirements,
+    computeCoverageScore,
+    mapFileTypeToSource,
+    getFYDateRange,
+    getOrCreateChecklist,
+    saveChecklist,
+    loadChecklist,
+
+    type DataSourceType,
+    type ChecklistItemStatus,
+    type CoverageLevel,
+    type TaxPreviewState,
+    type ChecklistItem,
+    type FYChecklist,
+    type ConditionalRequirement,
+    type CoverageResult,
+} from './coverage-tracker';
+
+// ============= GAP DETECTOR =============
+export {
+    detectGaps,
+
+    type GapType,
+    type GapSeverity,
+    type DataGap,
+    type GapDetectionResult,
+    type MonthActivity,
+} from './gap-detector';
+
+// ============= DUPLICATE DETECTOR =============
+export {
+    detectDuplicates,
+
+    type DuplicateMatchType,
+    type DuplicateResolution,
+    type DuplicateCandidate,
+    type DuplicateDetectionResult,
+} from './duplicate-detector';
+
+// ============= NEEDS REVIEW SERVICE =============
+export {
+    classifyAndReview,
+    resolveReviewItem,
+    allItemsResolved,
+    saveReviewItems,
+    loadReviewItems,
+
+    type ReviewReason,
+    type SuggestedAction,
+    type NeedsReviewItem,
+    type NeedsReviewResult,
+} from './needs-review-service';
+
+// ============= RECONCILIATION ENGINE v2 =============
+export {
+    runFullReconciliation,
+
+    type ReconciliationCheckStatus,
+    type ReconciliationCheck,
+    type CrossSourceMatch,
+    type InventoryCheck,
+    type FullReconciliationResult,
+} from './reconciliation-engine-v2';
+
+// ============= FILING GATE =============
+export {
+    evaluateFilingGate,
+    validateOverride,
+    createOverrideRecord,
+    saveOverride,
+    loadOverride,
+    hasActiveOverride,
+
+    type HardBlockerType,
+    type SoftBlockerType,
+    type FilingBlocker,
+    type FilingGateResult,
+    type OverrideRecord,
+} from './filing-gate';

@@ -23,7 +23,7 @@ import {
   BarChart3, Settings, Zap, Coins, RefreshCw, ShieldCheck, AlertTriangle,
   CheckCircle, Upload, Eye, EyeOff, Trash2, ArrowUpRight, ArrowDownRight,
   Filter, Sparkles, Target, Activity, Info, XCircle, FileText, Clock,
-  Calendar, CheckCircle2, FileCheck, Gift, Receipt
+  Calendar, CheckCircle2, FileCheck, Gift, Receipt, ChevronRight
 } from "lucide-react";
 import {
   // Client-side engine (no DB required)
@@ -57,6 +57,36 @@ import {
   type FullSyncResult,
   type MissingDataItem
 } from "@/lib/coindcx-api";
+
+// ============= FAIL-SAFE SYSTEM IMPORTS =============
+import {
+  getOrCreateChecklist,
+  updateChecklistItem,
+  detectConditionalRequirements,
+  applyConditionalRequirements,
+  mapFileTypeToSource,
+  saveChecklist,
+  type FYChecklist,
+} from "@/lib/taxmitra/coverage-tracker";
+import {
+  runFullReconciliation,
+  type FullReconciliationResult,
+} from "@/lib/taxmitra/reconciliation-engine-v2";
+import {
+  classifyAndReview,
+  resolveReviewItem,
+  saveReviewItems,
+  loadReviewItems,
+  type NeedsReviewItem,
+} from "@/lib/taxmitra/needs-review-service";
+import {
+  evaluateFilingGate,
+  type FilingGateResult,
+} from "@/lib/taxmitra/filing-gate";
+import { CoverageDashboard } from "@/components/taxmitra/CoverageDashboard";
+import { FilingGateModal } from "@/components/taxmitra/FilingGateModal";
+import { NeedsReviewPanel } from "@/components/taxmitra/NeedsReviewPanel";
+import { TaxDrillDown } from "@/components/taxmitra/TaxDrillDown";
 
 // Types
 interface Trade {
@@ -103,7 +133,7 @@ const CHART_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f
 
 export default function CryptoTaxPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'import' | 'reports' | 'settings' | 'coverage' | 'drilldown' | 'reconcile'>('overview');
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
@@ -114,6 +144,14 @@ export default function CryptoTaxPage() {
   const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
   const [settings, setSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
   const [dataLoadedFromDB, setDataLoadedFromDB] = useState(false);
+
+  // ═══ FAIL-SAFE SYSTEM STATE ═══
+  const [fyChecklist, setFyChecklist] = useState<FYChecklist | null>(null);
+  const [reconResult, setReconResult] = useState<FullReconciliationResult | null>(null);
+  const [reviewItems, setReviewItems] = useState<NeedsReviewItem[]>([]);
+  const [filingGate, setFilingGate] = useState<FilingGateResult | null>(null);
+  const [showFilingGateModal, setShowFilingGateModal] = useState(false);
+  const [instructionSource, setInstructionSource] = useState<string | null>(null);
 
   // Helper: revive transaction data from JSON (fix Date objects and numeric fields)
   const reviveTransactions = (parsed: any[]): NormalizedTransaction[] => {
@@ -563,6 +601,90 @@ export default function CryptoTaxPage() {
     }
   }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades, fyAutoDetected]);
 
+  // ═══ FAIL-SAFE: Initialize checklist whenever FY changes ═══
+  useEffect(() => {
+    const checklist = getOrCreateChecklist(selectedFY);
+    setFyChecklist(checklist);
+    // Load saved review items
+    const savedReviews = loadReviewItems(selectedFY);
+    setReviewItems(savedReviews);
+  }, [selectedFY]);
+
+  // ═══ FAIL-SAFE: Run reconciliation + filing gate after data changes ═══
+  useEffect(() => {
+    if (!fyChecklist || parsedTransactions.length === 0) return;
+
+    try {
+      // Update checklist: mark order_history as uploaded if we have trade data
+      let updatedChecklist = { ...fyChecklist };
+      const hasTrades = parsedTransactions.some(tx =>
+        tx.transactionType === 'buy' || tx.transactionType === 'sell'
+      );
+      if (hasTrades && updatedChecklist.items.find(i => i.source === 'order_history_csv')?.status === 'pending') {
+        updatedChecklist = updateChecklistItem(updatedChecklist, 'order_history_csv', {
+          status: 'uploaded',
+          recordCount: parsedTransactions.length,
+        });
+      }
+      const hasTDS = parsedTDSRecords.length > 0;
+      if (hasTDS && updatedChecklist.items.find(i => i.source === 'tds_summary_csv')?.status === 'pending') {
+        updatedChecklist = updateChecklistItem(updatedChecklist, 'tds_summary_csv', {
+          status: 'uploaded',
+          recordCount: parsedTDSRecords.length,
+        });
+      }
+
+      // Detect conditional requirements
+      const orderHistoryTxs = parsedTransactions.filter(tx =>
+        tx.rawData?.source === 'csv' && (tx.rawData?.fileType === 'trades' || tx.rawData?.file_type === 'trades')
+      );
+      const tdsSummaryTxs = parsedTransactions.filter(tx =>
+        tx.rawData?.source === 'csv' && (tx.rawData?.fileType === 'tds' || tx.rawData?.file_type === 'tds')
+      );
+      if (orderHistoryTxs.length > 0 && tdsSummaryTxs.length > 0) {
+        const requirements = detectConditionalRequirements(orderHistoryTxs, tdsSummaryTxs, parsedTransactions);
+        if (requirements.length > 0) {
+          updatedChecklist = applyConditionalRequirements(updatedChecklist, requirements);
+        }
+      }
+
+      // Run full reconciliation
+      const recon = runFullReconciliation(
+        parsedTransactions,
+        parsedTDSRecords,
+        selectedFY,
+        updatedChecklist,
+        reviewItems,
+      );
+      setReconResult(recon);
+
+      // Update review items from reconciliation
+      if (recon.needsReviewResult.items.length > 0) {
+        setReviewItems(recon.needsReviewResult.items);
+      }
+
+      // Evaluate filing gate
+      const gate = evaluateFilingGate(updatedChecklist, {
+        needsReviewItems: recon.needsReviewResult.items,
+        gaps: recon.gapResult?.gaps || [],
+        unresolvedDuplicates: recon.duplicateResult?.candidates.filter(c => !c.autoResolved) || [],
+        negativeInventoryAssets: recon.negativeInventoryAssets,
+        tdsDiscrepancyPct: recon.tdsDiscrepancyPct,
+        transactionCount: parsedTransactions.length,
+      });
+      setFilingGate(gate);
+
+      // Save updated checklist
+      setFyChecklist(updatedChecklist);
+      saveChecklist(updatedChecklist);
+
+      console.log(`[FailSafe] Reconciliation complete: ${recon.passCount} pass, ${recon.warningCount} warn, ${recon.failCount} fail | Filing: ${gate.canFile ? 'OK' : 'BLOCKED'}`);
+    } catch (err) {
+      console.error('[FailSafe] Reconciliation error:', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedTransactions.length, parsedTDSRecords.length, selectedFY]);
+
   useEffect(() => {
     if (user) {
       fetchTrades();
@@ -671,6 +793,24 @@ export default function CryptoTaxPage() {
       // DB-FIRST SAVE: Persist to Supabase immediately
       await persistCryptoDataToDB(allTransactions, allTDSRecords, settings);
 
+      // ── FAIL-SAFE: Update checklist based on uploaded file types ──
+      if (fyChecklist) {
+        let updatedChecklist = { ...fyChecklist };
+        for (const fileResult of importResult.files) {
+          const source = mapFileTypeToSource(fileResult.fileType);
+          if (source) {
+            updatedChecklist = updateChecklistItem(updatedChecklist, source, {
+              status: 'uploaded',
+              fileName: fileResult.fileName,
+              recordCount: fileResult.successCount,
+            });
+          }
+        }
+        setFyChecklist(updatedChecklist);
+        saveChecklist(updatedChecklist);
+        messages.push(`🛡️ Data Coverage updated — ${importResult.files.length} source(s) marked as uploaded`);
+      }
+
       // 5. Map to Trade[] for UI display
       const newTrades = mapTransactionsToTrades(allTransactions);
       setTrades(newTrades);
@@ -730,7 +870,7 @@ export default function CryptoTaxPage() {
       setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [user, selectedFY, selectedExchange, parsedTransactions, parsedTDSRecords, settings.accountingMethod, mapTransactionsToTrades]);
+  }, [user, selectedFY, selectedExchange, parsedTransactions, parsedTDSRecords, settings.accountingMethod, mapTransactionsToTrades, fyChecklist]);
 
   // ============= MANUAL TRADE ADD =============
   const handleAddTrade = async () => {
@@ -854,6 +994,18 @@ export default function CryptoTaxPage() {
     setTrades([]);
     setImportSessions([]);
     setImportResult(null);
+
+    // ── FAIL-SAFE: Reset checklist + review items ──
+    const freshChecklist = getOrCreateChecklist(selectedFY);
+    // Force a clean checklist by creating a brand new one
+    const { createFYChecklist } = await import('@/lib/taxmitra/coverage-tracker');
+    const resetChecklist = createFYChecklist(selectedFY);
+    setFyChecklist(resetChecklist);
+    saveChecklist(resetChecklist);
+    setReconResult(null);
+    setReviewItems([]);
+    setFilingGate(null);
+    saveReviewItems(selectedFY, []);
 
     // Clear localStorage + database
     localStorage.removeItem('taxmitra_transactions');
@@ -1190,10 +1342,12 @@ export default function CryptoTaxPage() {
               <div className="flex gap-1 mt-6 border-b border-slate-200 -mb-px overflow-x-auto">
                 {[
                   { id: 'overview', label: 'Overview', icon: BarChart3 },
+                  { id: 'coverage', label: 'Data Coverage', icon: ShieldCheck },
                   { id: 'transactions', label: 'Transactions', icon: History },
+                  { id: 'drilldown', label: 'Tax Drill-Down', icon: Target },
                   { id: 'import', label: 'Import Data', icon: Upload },
                   { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
-                  { id: 'reconcile', label: 'KoinX Match', icon: ShieldCheck },
+                  { id: 'reconcile', label: 'KoinX Match', icon: Zap },
                   { id: 'settings', label: 'Settings', icon: Settings }
                 ].map(tab => (
                   <button
@@ -1206,6 +1360,16 @@ export default function CryptoTaxPage() {
                   >
                     <tab.icon className="h-4 w-4" />
                     <span>{tab.label}</span>
+                    {tab.id === 'coverage' && fyChecklist && fyChecklist.blockerCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded-full">
+                        {fyChecklist.blockerCount}
+                      </span>
+                    )}
+                    {tab.id === 'coverage' && reconResult && reconResult.needsReviewResult.blockerCount > 0 && (
+                      <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full">
+                        !
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1363,6 +1527,42 @@ export default function CryptoTaxPage() {
                       )}
                     </CardContent>
                   </Card>
+                )}
+
+                {/* ── Fail-Safe Filing Readiness Banner ── */}
+                {fyChecklist && filingGate && (
+                  <div className={`flex items-center gap-3 p-4 rounded-xl border-2 shadow-sm ${filingGate.canFile
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : filingGate.overrideAvailable
+                      ? 'border-amber-300 bg-amber-50'
+                      : 'border-red-300 bg-red-50'
+                    }`}>
+                    {filingGate.canFile ? (
+                      <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                    ) : (
+                      <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0" />
+                    )}
+                    <div className="flex-1">
+                      <p className={`text-sm font-semibold ${filingGate.canFile ? 'text-emerald-800' : 'text-red-800'
+                        }`}>
+                        {filingGate.canFile
+                          ? '✅ Filing Ready — All data validated'
+                          : filingGate.overrideAvailable
+                            ? `⚠️ ${filingGate.blockers.length} issue(s) detected — override available`
+                            : `🔴 Filing Blocked — ${filingGate.blockers.length} issue(s) must be resolved`}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Coverage: {fyChecklist.coverageScore}% · {reconResult?.passCount || 0} checks passed
+                        · {reconResult?.warningCount || 0} warnings · {reconResult?.failCount || 0} failures
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('coverage' as any)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap flex items-center gap-1"
+                    >
+                      View Details <ChevronRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 )}
 
                 {/* Alert: TDS estimated (no TDS CSV) */}
@@ -1651,6 +1851,15 @@ export default function CryptoTaxPage() {
                                     result.tdsRecords,
                                     settings
                                   );
+                                  // ── FAIL-SAFE: Mark API sync as uploaded ──
+                                  if (fyChecklist) {
+                                    const updated = updateChecklistItem(fyChecklist, 'api_sync', {
+                                      status: 'uploaded',
+                                      recordCount: result.transactions.length,
+                                    });
+                                    setFyChecklist(updated);
+                                    saveChecklist(updated);
+                                  }
                                   const totalTradeRelated = (result.summary.totalSpotTrades || 0) + (result.summary.totalMarginTrades || 0) + (result.summary.totalFuturesTrades || 0);
                                   toast.success(`Imported ${result.transactions.length} transactions (${totalTradeRelated} trades)`);
                                   // Show staking warning if no rewards found
@@ -1807,6 +2016,15 @@ export default function CryptoTaxPage() {
                                     result.tdsRecords,
                                     settings
                                   );
+                                  // ── FAIL-SAFE: Mark API sync as uploaded ──
+                                  if (fyChecklist) {
+                                    const updated = updateChecklistItem(fyChecklist, 'api_sync', {
+                                      status: 'uploaded',
+                                      recordCount: result.transactions.length,
+                                    });
+                                    setFyChecklist(updated);
+                                    saveChecklist(updated);
+                                  }
                                   toast.success(`Synced ${result.summary.totalTransactions} transactions`);
                                 } else {
                                   toast.error(result.error || 'No transactions found');
@@ -2093,6 +2311,8 @@ export default function CryptoTaxPage() {
                 user={user}
                 formatCurrency={formatCurrency}
                 selectedFY={selectedFY}
+                filingGate={filingGate}
+                onShowFilingGate={() => setShowFilingGateModal(true)}
               />
             )}
 
@@ -2128,6 +2348,158 @@ export default function CryptoTaxPage() {
                     <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
                     <AlertDescription className="text-amber-700">
                       Import your crypto trades first to run the reconciliation checks.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* ============= DATA COVERAGE TAB ============= */}
+            {activeTab === 'coverage' as any && (
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="h-6 w-6 text-indigo-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold">Data Coverage & Filing Readiness</h3>
+                        <p className="text-indigo-200 text-sm">Upload all required files to unlock accurate tax computation. Filing is blocked until all data gaps are resolved.</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {fyChecklist && (
+                  <CoverageDashboard
+                    checklist={fyChecklist}
+                    reconciliation={reconResult}
+                    onUploadFile={(source) => {
+                      toast.info(`To upload ${source}, switch to the "Import Data" tab and upload the CSV.`);
+                      setActiveTab('import');
+                    }}
+                    onMarkNotApplicable={(source) => {
+                      if (!fyChecklist) return;
+                      const updated = updateChecklistItem(fyChecklist, source as any, {
+                        status: 'not_applicable',
+                      });
+                      setFyChecklist(updated);
+                      saveChecklist(updated);
+                      toast.success(`Marked "${source}" as Not Applicable`);
+                    }}
+                    onShowInstructions={(source) => {
+                      const item = fyChecklist?.items.find(i => i.source === source);
+                      if (item) {
+                        toast.info(item.howToGetInstructions, { duration: 10000 });
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Needs Review Panel */}
+                {reviewItems.length > 0 && (
+                  <Card className="border-0 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        Needs Review
+                      </CardTitle>
+                      <CardDescription>Transactions that require your manual classification before filing</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <NeedsReviewPanel
+                        items={reviewItems}
+                        onResolve={(updatedItems) => {
+                          setReviewItems(updatedItems);
+                          saveReviewItems(selectedFY, updatedItems);
+                          // Re-evaluate filing gate
+                          if (fyChecklist) {
+                            const gate = evaluateFilingGate(fyChecklist, {
+                              needsReviewItems: updatedItems,
+                              gaps: reconResult?.gapResult?.gaps || [],
+                              unresolvedDuplicates: reconResult?.duplicateResult?.candidates.filter(c => !c.autoResolved) || [],
+                              negativeInventoryAssets: reconResult?.negativeInventoryAssets || [],
+                              tdsDiscrepancyPct: reconResult?.tdsDiscrepancyPct || 0,
+                              transactionCount: parsedTransactions.length,
+                            });
+                            setFilingGate(gate);
+                          }
+                          toast.success('Review item resolved');
+                        }}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Filing Gate Status */}
+                {filingGate && (
+                  <Card className={`border-2 shadow-sm ${filingGate.canFile ? 'border-emerald-300 bg-emerald-50' :
+                    filingGate.overrideAvailable ? 'border-amber-300 bg-amber-50' :
+                      'border-red-300 bg-red-50'
+                    }`}>
+                    <CardContent className="p-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {filingGate.canFile ? (
+                            <CheckCircle className="h-6 w-6 text-emerald-600" />
+                          ) : (
+                            <XCircle className="h-6 w-6 text-red-600" />
+                          )}
+                          <div>
+                            <p className={`text-sm font-semibold ${filingGate.canFile ? 'text-emerald-800' : 'text-red-800'
+                              }`}>
+                              {filingGate.canFile ? '✅ Ready to File' :
+                                filingGate.overrideAvailable ? '⚠️ Filing Possible with Override' :
+                                  '🔴 Filing Blocked'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {filingGate.blockers.length} blocker(s) · {filingGate.warnings.length} warning(s) · Coverage: {filingGate.coverageScore}%
+                            </p>
+                          </div>
+                        </div>
+                        {filingGate.overrideAvailable && !filingGate.canFile && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                            onClick={() => setShowFilingGateModal(true)}
+                          >
+                            Override & Proceed
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ============= TAX DRILL-DOWN TAB ============= */}
+            {activeTab === 'drilldown' as any && (
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-purple-950 text-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3">
+                      <Target className="h-6 w-6 text-purple-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold">Tax Drill-Down — Per-Asset Breakdown</h3>
+                        <p className="text-purple-200 text-sm">FIFO lot matching details for each asset and trade in FY {selectedFY}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {taxComputation ? (
+                  <Card className="border-0 shadow-sm">
+                    <CardContent className="p-5">
+                      <TaxDrillDown taxResult={taxComputation} />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
+                    <AlertDescription className="text-amber-700">
+                      Import your crypto trades first to see the per-asset tax breakdown.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -2202,6 +2574,22 @@ export default function CryptoTaxPage() {
             )}
           </div>
         </div>
+
+        {/* Filing Gate Modal */}
+        {filingGate && (
+          <FilingGateModal
+            isOpen={showFilingGateModal}
+            onClose={() => setShowFilingGateModal(false)}
+            onOverrideSuccess={() => {
+              setShowFilingGateModal(false);
+              toast.success('Filing override accepted. You may now proceed with filing.');
+              // Update gate to allow filing
+              setFilingGate(prev => prev ? { ...prev, canFile: true } : prev);
+            }}
+            gateResult={filingGate}
+            financialYear={selectedFY}
+          />
+        )}
       </PlanGate>
     </AppLayout>
   );
@@ -2236,19 +2624,31 @@ function StatCard({ label, value, subtext, icon, highlight }: {
 }
 
 // ============= REPORTS SECTION COMPONENT =============
-function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputation, selectedFY }: {
+function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputation, selectedFY, filingGate, onShowFilingGate }: {
   trades: Trade[];
   portfolio?: any;
   taxComputation?: TaxComputationResult | null;
   user: any;
   formatCurrency: (v: number) => string;
   selectedFY?: string;
+  filingGate?: FilingGateResult | null;
+  onShowFilingGate?: () => void;
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
 
   const handleDownloadScheduleVDA = async () => {
     if (!taxComputation) { toast.error('No tax computation available. Import your CSV first.'); return; }
+    // Filing gate check — warn (but don't block) if data incomplete
+    if (filingGate && !filingGate.canFile) {
+      const proceed = confirm(
+        `⚠️ Data Coverage Warning\n\n` +
+        `Your data has ${filingGate.blockers.length} issue(s) that may affect accuracy:\n` +
+        filingGate.blockers.slice(0, 3).map(b => `• ${b.message}`).join('\n') +
+        `\n\nDownload anyway? (You can resolve issues in the "Data Coverage" tab)`
+      );
+      if (!proceed) return;
+    }
     setGenerating('vda');
     try {
       const csv = generateScheduleVDACSV(taxComputation);
@@ -2272,6 +2672,15 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
 
   const handleDownloadTDS = async () => {
     if (!taxComputation) { toast.error('No tax computation available. Import your CSV first.'); return; }
+    // Filing gate check
+    if (filingGate && !filingGate.canFile) {
+      const proceed = confirm(
+        `⚠️ Data Coverage Warning\n\n` +
+        `Your data has ${filingGate.blockers.length} issue(s) that may affect TDS accuracy.\n\n` +
+        `Download anyway?`
+      );
+      if (!proceed) return;
+    }
     setGenerating('tds');
     try {
       const csv = generateTDSReconciliationCSV(taxComputation);
@@ -2334,6 +2743,21 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
         </CardContent>
       </Card>
 
+      {/* Filing Gate Warning */}
+      {filingGate && !filingGate.canFile && (
+        <Alert className={`${filingGate.overrideAvailable ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}`}>
+          <AlertTriangle className={`h-4 w-4 ${filingGate.overrideAvailable ? 'text-amber-600' : 'text-red-600'}`} />
+          <AlertTitle className={`${filingGate.overrideAvailable ? 'text-amber-800' : 'text-red-800'}`}>
+            {filingGate.overrideAvailable ? 'Data Gaps Detected' : 'Filing Blocked'}
+          </AlertTitle>
+          <AlertDescription className="text-slate-600">
+            {filingGate.blockers.slice(0, 2).map(b => b.message).join(' · ')}
+            {filingGate.blockers.length > 2 && ` ...and ${filingGate.blockers.length - 2} more`}
+            {' — '}
+            <span className="text-xs">Reports downloaded now may be inaccurate. Resolve issues in the <strong>Data Coverage</strong> tab first.</span>
+          </AlertDescription>
+        </Alert>
+      )}
       {/* In-Page Tax Summary Preview */}
       {showPreview && (taxComputation || portfolio) && (
         <Card className="border-2 border-indigo-200">
