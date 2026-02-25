@@ -1788,8 +1788,19 @@ export async function fullCoinDCXSync(
             warnings.push(`🛡️ Filtered ${quarantinedTransactions.length} invalid/noise transactions (e.g., missing tokens).`);
         }
 
-        const mergeRes = await mergeTransactions(userId, validTransactions, 'api');
-        const finalTxs = mergeRes.mergedTransactions;
+        // Try DB merge (best-effort — DB tables may not exist yet)
+        let finalTxs = validTransactions;
+        try {
+            const mergeRes = await mergeTransactions(userId, validTransactions, 'api');
+            if (mergeRes.mergedTransactions && mergeRes.mergedTransactions.length > 0) {
+                finalTxs = mergeRes.mergedTransactions;
+                warnings.push(`📦 DB Merge: +${mergeRes.added} new, ${mergeRes.duplicates} duplicates`);
+            } else if (mergeRes.errors.length > 0) {
+                warnings.push(`⚠️ DB merge skipped: ${mergeRes.errors[0]}. Using in-memory data.`);
+            }
+        } catch (mergeErr) {
+            warnings.push(`⚠️ DB persist skipped: ${(mergeErr as Error).message}. Using in-memory data.`);
+        }
 
         // ── Stats for final report ──
         const fyBreakdown: Record<string, number> = {};
@@ -1826,20 +1837,20 @@ export async function fullCoinDCXSync(
             }
         }
 
-        // Update sync log to COMPLETED
-        await supabase
-            .from('sync_logs')
-            .update({
-                status: 'completed',
-                total_records_fetched: allTransactions.length,
-                new_records_added: mergeRes.added,
-                duplicate_records: mergeRes.duplicates,
-                completed_at: new Date().toISOString()
-            })
-            .eq('id', syncSessionId);
+        // Update sync log to COMPLETED (best-effort)
+        try {
+            await supabase
+                .from('sync_logs')
+                .update({
+                    status: 'completed',
+                    total_records_fetched: allTransactions.length,
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', syncSessionId);
+        } catch (_) {
+            // sync_logs table may not exist
+        }
 
-        console.log(`[CoinDCX Sync] ✅ COMPLETE: ${finalTxs.length} total transactions, ${assetSet.size} unique assets`);
-        console.log(`[CoinDCX Sync] Merge Result: +${mergeRes.added}, =${mergeRes.duplicates}`);
 
         return {
             success: true,
