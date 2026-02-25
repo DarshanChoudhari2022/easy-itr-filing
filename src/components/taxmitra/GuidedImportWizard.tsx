@@ -1,14 +1,12 @@
 /**
- * TaxMitra — Guided Import Wizard
- * ================================
- * Step-by-step wizard for importing crypto data from CoinDCX.
- * Guides users through the correct sequence:
- *   Step 1: Connect CoinDCX API & Sync
- *   Step 2: Upload Order History CSV
- *   Step 3: Upload TDS Summary CSV
- *   Step 4: Upload Insta History CSV (if applicable)
- *   Step 5: Upload Rewards/Other CSVs
- *   Step 6: Review Combined Data + KoinX Comparison
+ * TaxMitra — Guided Import Wizard (v2)
+ * =====================================
+ * Professional step-by-step wizard for importing crypto data.
+ * - FY-aware download instructions with direct CoinDCX links
+ * - Immediate transaction display after each upload
+ * - Reset button to clear all data and start fresh
+ * - Synced with Data Coverage tab
+ * - No KoinX references
  */
 
 import React, { useState, useMemo, useRef, useCallback } from 'react';
@@ -22,9 +20,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     CheckCircle2, Circle, Upload, Zap, FileSpreadsheet, Eye, EyeOff,
-    RefreshCw, AlertTriangle, ArrowRight, ArrowLeft, ChevronRight,
-    Download, Trash2, Info, Shield, Clock, FileCheck, Receipt,
-    ExternalLink, Search, Filter
+    RefreshCw, ArrowRight, ArrowLeft, ChevronRight, ChevronDown,
+    Download, Trash2, Info, Clock, FileCheck, Receipt,
+    ExternalLink, Filter, RotateCcw, FileText, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -44,13 +42,11 @@ interface WizardStep {
 }
 
 interface GuidedImportWizardProps {
-    // Data
     parsedTransactions: NormalizedTransaction[];
     parsedTDSRecords: TDSRecord[];
     checklist: FYChecklist | null;
     selectedFY: string;
 
-    // CoinDCX API state
     apiKey: string;
     apiSecret: string;
     apiConnected: boolean;
@@ -58,18 +54,30 @@ interface GuidedImportWizardProps {
     apiSyncProgress: SyncProgress | null;
     apiSyncResult: FullSyncResult | null;
 
-    // Setters
     setApiKey: (v: string) => void;
     setApiSecret: (v: string) => void;
 
-    // Handlers
     onApiConnect: () => Promise<void>;
     onApiResync: () => Promise<void>;
     onCsvUpload: (files: FileList, fileType?: string) => Promise<void>;
     onDisconnect: () => void;
+    onReset?: () => void;
 
-    // Formatting
     formatCurrency: (v: number | string | undefined | null) => string;
+}
+
+// ============= FY HELPERS =============
+
+function getFYDates(fy: string): { start: string; end: string; label: string } {
+    // Parse "2024-25" -> April 1, 2024 to March 31, 2025
+    const match = fy.match(/(\d{4})/);
+    const startYear = match ? parseInt(match[1]) : 2024;
+    const endYear = startYear + 1;
+    return {
+        start: `1 April ${startYear}`,
+        end: `31 March ${endYear}`,
+        label: `FY ${startYear}-${String(endYear).slice(2)}`,
+    };
 }
 
 // ============= WIZARD STEPS =============
@@ -78,7 +86,7 @@ const WIZARD_STEPS: WizardStep[] = [
     {
         id: 'api',
         label: 'CoinDCX API Sync',
-        description: 'Connect your CoinDCX API to fetch all spot trades, deposits, and withdrawals automatically.',
+        description: 'Connect your CoinDCX API to auto-fetch all spot trades, deposits & withdrawals.',
         source: 'api_sync',
         isRequired: false,
         icon: <Zap className="h-5 w-5" />,
@@ -86,7 +94,7 @@ const WIZARD_STEPS: WizardStep[] = [
     {
         id: 'order_csv',
         label: 'Order History CSV',
-        description: 'Upload your CoinDCX order history (filled orders). This is the PRIMARY source for buy/sell trades.',
+        description: 'Upload filled orders from CoinDCX. This is the primary source for buy/sell trades.',
         source: 'order_history_csv',
         isRequired: true,
         icon: <FileSpreadsheet className="h-5 w-5" />,
@@ -94,7 +102,7 @@ const WIZARD_STEPS: WizardStep[] = [
     {
         id: 'tds_csv',
         label: 'TDS Summary CSV',
-        description: 'Upload TDS Summary — this captures ALL sell events including Insta and P2P trades with accurate TDS amounts.',
+        description: 'Upload TDS Summary — captures ALL sell events including Insta & P2P trades with accurate TDS amounts.',
         source: 'tds_summary_csv',
         isRequired: true,
         icon: <Receipt className="h-5 w-5" />,
@@ -110,68 +118,20 @@ const WIZARD_STEPS: WizardStep[] = [
     {
         id: 'rewards',
         label: 'Rewards & Other',
-        description: 'Upload staking rewards, airdrops, interest CSV. Or add manually using "+ Add Trade".',
+        description: 'Upload staking rewards, airdrops, interest CSV or add manually via "Add Trade".',
         source: 'rewards_csv',
         isRequired: false,
         icon: <FileCheck className="h-5 w-5" />,
     },
     {
         id: 'review',
-        label: 'Review & Compare',
-        description: 'Review all imported transactions side by side with source labels for KoinX comparison.',
+        label: 'Review & Export',
+        description: 'Review all imported transactions. Download combined CSV or generate tax report.',
         source: null,
         isRequired: false,
-        icon: <Search className="h-5 w-5" />,
+        icon: <FileText className="h-5 w-5" />,
     },
 ];
-
-// ============= HELPER: How to download instructions =============
-
-const DOWNLOAD_INSTRUCTIONS: Record<string, { title: string; steps: string[] }> = {
-    order_csv: {
-        title: 'How to download Order History CSV from CoinDCX',
-        steps: [
-            'Go to coindcx.com → Login',
-            'Click "Orders" in the top menu',
-            'Select "Order History" tab',
-            'Click "FILLED ORDERS" filter',
-            'Set date range: 1 April 2024 → 31 March 2025 (or your FY)',
-            'Click "Download CSV" button',
-            'Upload the downloaded file here',
-        ],
-    },
-    tds_csv: {
-        title: 'How to download TDS Summary CSV from CoinDCX',
-        steps: [
-            'Go to coindcx.com → Login',
-            'Click your Profile icon → "Reports"',
-            'Select "TDS Summary"',
-            'Choose your Financial Year (e.g. FY 2024-25)',
-            'Click "Export CSV"',
-            'Upload the downloaded file here',
-        ],
-    },
-    insta_csv: {
-        title: 'How to download Insta History CSV from CoinDCX',
-        steps: [
-            'Go to coindcx.com → Login',
-            'Click "Orders" → "Insta History"',
-            'Set date range for your FY',
-            'Click "Download" or "Export CSV"',
-            'Upload the downloaded file here',
-        ],
-    },
-    rewards: {
-        title: 'How to find your Rewards & Staking data',
-        steps: [
-            'CoinDCX does NOT provide a rewards CSV download',
-            'Check your email for "CoinDCX reward credited" notifications',
-            'Use "+ Add Trade" → select "Staking Reward" or "Airdrop"',
-            'Enter the asset, quantity, date, and value from each email',
-            'Or check CoinDCX App → "Earn" section for staking details',
-        ],
-    },
-};
 
 // ============= MAIN COMPONENT =============
 
@@ -192,22 +152,25 @@ export function GuidedImportWizard({
     onApiResync,
     onCsvUpload,
     onDisconnect,
+    onReset,
     formatCurrency,
 }: GuidedImportWizardProps) {
     const [currentStep, setCurrentStep] = useState(0);
     const [showApiKey, setShowApiKey] = useState(false);
     const [showApiSecret, setShowApiSecret] = useState(false);
-    const [showInstructions, setShowInstructions] = useState<string | null>(null);
+    const [expandedInstructions, setExpandedInstructions] = useState<string | null>(null);
     const [filterSource, setFilterSource] = useState<string>('all');
     const [filterType, setFilterType] = useState<string>('all');
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Get step completion status from checklist
+    const fyDates = useMemo(() => getFYDates(selectedFY), [selectedFY]);
+
+    // Step completion status
     const getStepStatus = useCallback((stepId: string): 'pending' | 'done' | 'skipped' => {
         if (!checklist) return 'pending';
         const step = WIZARD_STEPS.find(s => s.id === stepId);
         if (!step?.source) return stepId === 'review' ? (parsedTransactions.length > 0 ? 'done' : 'pending') : 'pending';
-
         const item = checklist.items.find(i => i.source === step.source);
         if (!item) return 'pending';
         if (item.status === 'uploaded') return 'done';
@@ -215,33 +178,29 @@ export function GuidedImportWizard({
         return 'pending';
     }, [checklist, parsedTransactions.length]);
 
-    // Count completed steps
     const completedSteps = useMemo(() =>
         WIZARD_STEPS.filter(s => getStepStatus(s.id) === 'done').length,
         [getStepStatus]
     );
 
-    // Transaction source breakdown
+    // Source breakdown
     const sourceBreakdown = useMemo(() => {
-        const breakdown: Record<string, number> = {};
+        const bd: Record<string, number> = {};
         for (const tx of parsedTransactions) {
             const src = tx.rawData?.source === 'api' ? 'API Sync' :
-                tx.rawData?.fileType === 'trades' || tx.rawData?.file_type === 'trades' ? 'Order History CSV' :
-                    tx.rawData?.fileType === 'tds' || tx.rawData?.file_type === 'tds' ? 'TDS Summary CSV' :
-                        tx.rawData?.fileType === 'insta' || tx.rawData?.file_type === 'insta' ? 'Insta History CSV' :
-                            tx.rawData?.fileType === 'rewards' || tx.rawData?.file_type === 'rewards' ? 'Rewards CSV' :
-                                tx.description?.includes('Manual') ? 'Manual' :
-                                    'Other';
-            breakdown[src] = (breakdown[src] || 0) + 1;
+                (tx.rawData?.fileType || tx.rawData?.file_type) === 'trades' ? 'Order CSV' :
+                    (tx.rawData?.fileType || tx.rawData?.file_type) === 'tds' ? 'TDS CSV' :
+                        (tx.rawData?.fileType || tx.rawData?.file_type) === 'insta' ? 'Insta CSV' :
+                            (tx.rawData?.fileType || tx.rawData?.file_type) === 'rewards' ? 'Rewards' :
+                                tx.description?.includes('Manual') ? 'Manual' : 'Other';
+            bd[src] = (bd[src] || 0) + 1;
         }
-        return breakdown;
+        return bd;
     }, [parsedTransactions]);
 
-    // Filtered transactions for the review step
+    // Filtered transactions
     const filteredTransactions = useMemo(() => {
         let txs = [...parsedTransactions];
-
-        // Filter by source
         if (filterSource !== 'all') {
             txs = txs.filter(tx => {
                 const src = tx.rawData?.source === 'api' ? 'api' :
@@ -249,19 +208,14 @@ export function GuidedImportWizard({
                 return src === filterSource;
             });
         }
-
-        // Filter by type
         if (filterType !== 'all') {
             txs = txs.filter(tx => tx.transactionType === filterType);
         }
-
-        // Sort by date descending
         txs.sort((a, b) => new Date(b.tradeTimestamp).getTime() - new Date(a.tradeTimestamp).getTime());
-
         return txs;
     }, [parsedTransactions, filterSource, filterType]);
 
-    // Get source badge for a transaction
+    // Source & type badges
     const getSourceBadge = (tx: NormalizedTransaction) => {
         if (tx.rawData?.source === 'api') return { label: 'API', color: 'bg-amber-100 text-amber-700 border-amber-200' };
         const ft = tx.rawData?.fileType || tx.rawData?.file_type;
@@ -276,28 +230,26 @@ export function GuidedImportWizard({
     const getTypeBadge = (type: string) => {
         if (type === 'buy') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
         if (type === 'sell') return 'bg-red-50 text-red-700 border-red-200';
-        if (type.startsWith('reward') || type === 'airdrop' || type === 'staking_reward') return 'bg-purple-50 text-purple-700 border-purple-200';
+        if (type.includes('reward') || type === 'airdrop' || type === 'staking_reward') return 'bg-purple-50 text-purple-700 border-purple-200';
         if (type === 'deposit') return 'bg-blue-50 text-blue-700 border-blue-200';
         if (type === 'withdrawal') return 'bg-orange-50 text-orange-700 border-orange-200';
         return 'bg-slate-50 text-slate-600 border-slate-200';
     };
 
-    // CSV upload handler for a specific step
+    // Upload handler
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             await onCsvUpload(e.target.files);
         }
-        // Reset the input
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // Download combined CSV for KoinX comparison
+    // Download combined CSV
     const downloadCombinedCSV = () => {
         if (parsedTransactions.length === 0) {
             toast.error('No transactions to export');
             return;
         }
-
         const headers = ['Date', 'Type', 'Asset', 'Quantity', 'Price (INR)', 'Value (INR)', 'Fee (INR)', 'TDS (INR)', 'Exchange', 'Source', 'FY', 'Order ID'];
         const rows = parsedTransactions
             .sort((a, b) => new Date(a.tradeTimestamp).getTime() - new Date(b.tradeTimestamp).getTime())
@@ -319,32 +271,150 @@ export function GuidedImportWizard({
                     tx.orderId || '',
                 ].join(',');
             });
-
         const csv = [headers.join(','), ...rows].join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `TaxMitra_Combined_Transactions_FY${selectedFY}.csv`;
+        a.download = `TaxMitra_Transactions_${selectedFY}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success(`Exported ${parsedTransactions.length} transactions to CSV`);
+        toast.success(`Exported ${parsedTransactions.length} transactions`);
     };
+
+    // FY-specific download instructions
+    const getInstructions = (stepId: string) => {
+        const fy = fyDates;
+        switch (stepId) {
+            case 'order_csv':
+                return {
+                    title: `Download Order History for ${fy.label}`,
+                    link: 'https://coindcx.com/orders',
+                    steps: [
+                        `Go to CoinDCX → Orders → Order History`,
+                        `Click "FILLED ORDERS" tab`,
+                        `Set date range: ${fy.start} to ${fy.end}`,
+                        `Click "Download CSV"`,
+                        `Upload the downloaded file below`,
+                    ],
+                };
+            case 'tds_csv':
+                return {
+                    title: `Download TDS Summary for ${fy.label}`,
+                    link: 'https://coindcx.com/profile/reports',
+                    steps: [
+                        `Go to CoinDCX → Profile → Reports`,
+                        `Select "TDS Summary"`,
+                        `Choose Financial Year: ${fy.label}`,
+                        `Click "Export CSV"`,
+                        `Upload the downloaded file below`,
+                    ],
+                };
+            case 'insta_csv':
+                return {
+                    title: `Download Insta History for ${fy.label}`,
+                    link: 'https://coindcx.com/orders',
+                    steps: [
+                        `Go to CoinDCX → Orders → Insta History`,
+                        `Set date range: ${fy.start} to ${fy.end}`,
+                        `Click "Download" or "Export CSV"`,
+                        `Upload the downloaded file below`,
+                    ],
+                };
+            case 'rewards':
+                return {
+                    title: 'Rewards & Staking Data',
+                    link: null,
+                    steps: [
+                        'CoinDCX does NOT provide a rewards CSV download',
+                        'Check your email for "CoinDCX reward credited" notifications',
+                        'Use "+ Add Trade" → select "Staking Reward" or "Airdrop"',
+                        'Enter the asset, quantity, date, and value from each email',
+                        'Or check CoinDCX App → "Earn" section for staking details',
+                    ],
+                };
+            default:
+                return null;
+        }
+    };
+
+    // Recent transactions for current step source
+    const getStepTransactions = (stepId: string) => {
+        const sourceMap: Record<string, string> = {
+            api: 'api',
+            order_csv: 'trades',
+            tds_csv: 'tds',
+            insta_csv: 'insta',
+            rewards: 'rewards',
+        };
+        const src = sourceMap[stepId];
+        if (!src) return [];
+        return parsedTransactions.filter(tx => {
+            if (src === 'api') return tx.rawData?.source === 'api';
+            return (tx.rawData?.fileType || tx.rawData?.file_type) === src;
+        }).sort((a, b) => new Date(b.tradeTimestamp).getTime() - new Date(a.tradeTimestamp).getTime());
+    };
+
+    // Handle reset
+    const handleReset = () => {
+        if (onReset) {
+            onReset();
+            setCurrentStep(0);
+            setShowResetConfirm(false);
+            toast.success('All data cleared. Start fresh!');
+        }
+    };
+
+    const activeStep = WIZARD_STEPS[currentStep];
+    const stepTxs = getStepTransactions(activeStep.id);
 
     return (
         <div className="space-y-6">
-            {/* Progress Header */}
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-50 to-purple-50">
-                <CardContent className="p-6">
+            {/* ========== HEADER: Progress + Reset ========== */}
+            <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50">
+                <CardContent className="p-5">
                     <div className="flex items-center justify-between mb-4">
                         <div>
-                            <h2 className="text-lg font-bold text-slate-900">Import Data — Step by Step</h2>
-                            <p className="text-sm text-slate-500">Follow each step to ensure complete & accurate tax calculation</p>
+                            <h2 className="text-lg font-bold text-slate-900">
+                                Import Data for {fyDates.label}
+                            </h2>
+                            <p className="text-sm text-slate-500">
+                                {fyDates.start} → {fyDates.end} · Follow each step for accurate tax calculation
+                            </p>
                         </div>
-                        <Badge variant="outline" className="text-sm px-3 py-1 bg-white">
-                            {completedSteps}/{WIZARD_STEPS.length} Complete
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-sm px-3 py-1 bg-white font-semibold">
+                                {completedSteps}/{WIZARD_STEPS.length} Done
+                            </Badge>
+                            {onReset && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowResetConfirm(true)}
+                                    className="text-red-600 border-red-200 hover:bg-red-50"
+                                >
+                                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                                    Reset
+                                </Button>
+                            )}
+                        </div>
                     </div>
+
+                    {/* Reset Confirmation */}
+                    {showResetConfirm && (
+                        <Alert className="mb-4 border-red-200 bg-red-50">
+                            <AlertTriangle className="h-4 w-4 text-red-500" />
+                            <AlertDescription className="text-red-700 text-sm flex items-center justify-between">
+                                <span>This will clear ALL imported data. Are you sure?</span>
+                                <div className="flex gap-2 ml-4">
+                                    <Button size="sm" variant="outline" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
+                                    <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleReset}>
+                                        Yes, Reset Everything
+                                    </Button>
+                                </div>
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
                     {/* Step Progress Bar */}
                     <div className="flex items-center gap-1">
@@ -356,12 +426,12 @@ export function GuidedImportWizard({
                                     <button
                                         onClick={() => setCurrentStep(i)}
                                         className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isActive
-                                                ? 'bg-indigo-600 text-white shadow-md scale-105'
-                                                : status === 'done'
-                                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                    : status === 'skipped'
-                                                        ? 'bg-slate-100 text-slate-400'
-                                                        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                                            ? 'bg-indigo-600 text-white shadow-md scale-105'
+                                            : status === 'done'
+                                                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                : status === 'skipped'
+                                                    ? 'bg-slate-100 text-slate-400'
+                                                    : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
                                             }`}
                                     >
                                         {status === 'done' ? (
@@ -379,36 +449,48 @@ export function GuidedImportWizard({
                             );
                         })}
                     </div>
+
+                    {/* Live Transaction Count */}
+                    {parsedTransactions.length > 0 && (
+                        <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
+                            <span className="font-semibold text-slate-700">
+                                {parsedTransactions.length} transactions loaded
+                            </span>
+                            {Object.entries(sourceBreakdown).map(([src, count]) => (
+                                <span key={src}>{src}: {count}</span>
+                            ))}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
-            {/* Current Step Content */}
+            {/* ========== STEP CONTENT ========== */}
             <Card className="border-0 shadow-sm">
                 <CardHeader>
                     <div className="flex items-center gap-3">
-                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${getStepStatus(WIZARD_STEPS[currentStep].id) === 'done'
-                                ? 'bg-emerald-100 text-emerald-600'
-                                : 'bg-indigo-100 text-indigo-600'
+                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${getStepStatus(activeStep.id) === 'done'
+                            ? 'bg-emerald-100 text-emerald-600'
+                            : 'bg-indigo-100 text-indigo-600'
                             }`}>
-                            {WIZARD_STEPS[currentStep].icon}
+                            {activeStep.icon}
                         </div>
                         <div>
                             <CardTitle className="text-base">
-                                Step {currentStep + 1}: {WIZARD_STEPS[currentStep].label}
-                                {WIZARD_STEPS[currentStep].isRequired && (
+                                Step {currentStep + 1}: {activeStep.label}
+                                {activeStep.isRequired && (
                                     <Badge className="ml-2 bg-red-100 text-red-700 border-red-200 text-[10px]">REQUIRED</Badge>
                                 )}
-                                {getStepStatus(WIZARD_STEPS[currentStep].id) === 'done' && (
+                                {getStepStatus(activeStep.id) === 'done' && (
                                     <Badge className="ml-2 bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">✅ DONE</Badge>
                                 )}
                             </CardTitle>
-                            <CardDescription>{WIZARD_STEPS[currentStep].description}</CardDescription>
+                            <CardDescription>{activeStep.description}</CardDescription>
                         </div>
                     </div>
                 </CardHeader>
 
                 <CardContent>
-                    {/* Step 1: API Sync */}
+                    {/* ===== STEP 1: API SYNC ===== */}
                     {currentStep === 0 && (
                         <div className="space-y-4">
                             {!apiConnected ? (
@@ -455,8 +537,12 @@ export function GuidedImportWizard({
                                     <Alert className="bg-indigo-50 border-indigo-200">
                                         <Info className="h-4 w-4 text-indigo-500" />
                                         <AlertDescription className="text-indigo-700 text-xs">
-                                            <strong>How to get your API key:</strong> coindcx.com → API Dashboard → Create New Key.
-                                            Your keys stay in your browser — we never send them to our servers.
+                                            <strong>How to get your API key:</strong>{' '}
+                                            <a href="https://coindcx.com/api-dashboard" target="_blank" rel="noopener noreferrer"
+                                                className="underline hover:text-indigo-900 inline-flex items-center gap-1">
+                                                coindcx.com → API Dashboard <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                            {' '}→ Create New Key. Your keys stay in your browser and are encrypted.
                                         </AlertDescription>
                                     </Alert>
 
@@ -466,7 +552,7 @@ export function GuidedImportWizard({
                                         className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold"
                                     >
                                         {apiSyncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
-                                        {apiSyncing ? 'Connecting & Syncing...' : 'Connect & Fetch All Data'}
+                                        {apiSyncing ? 'Connecting & Syncing...' : `Connect & Fetch All Data for ${fyDates.label}`}
                                     </Button>
                                 </div>
                             ) : (
@@ -483,7 +569,6 @@ export function GuidedImportWizard({
                                             )}
                                         </div>
                                     </div>
-
                                     <div className="flex gap-3">
                                         <Button onClick={onApiResync} disabled={apiSyncing} variant="outline" size="sm">
                                             <RefreshCw className={`h-4 w-4 mr-2 ${apiSyncing ? 'animate-spin' : ''}`} />
@@ -513,10 +598,25 @@ export function GuidedImportWizard({
                                     <p className="text-xs text-slate-500 mt-1">{apiSyncProgress.detail}</p>
                                 </div>
                             )}
+
+                            {/* Show API transactions immediately */}
+                            {stepTxs.length > 0 && (
+                                <div className="mt-4">
+                                    <p className="text-sm font-semibold text-slate-700 mb-2">
+                                        ✅ {stepTxs.length} transactions fetched via API
+                                    </p>
+                                    {renderMiniTable(stepTxs.slice(0, 10), formatCurrency, getSourceBadge, getTypeBadge)}
+                                    {stepTxs.length > 10 && (
+                                        <p className="text-xs text-slate-400 mt-1 text-center">
+                                            + {stepTxs.length - 10} more (visible in Review step)
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {/* Steps 2-5: CSV Upload */}
+                    {/* ===== STEPS 2-5: CSV UPLOAD ===== */}
                     {currentStep >= 1 && currentStep <= 4 && (
                         <div className="space-y-4">
                             {/* CSV Upload Area */}
@@ -526,10 +626,10 @@ export function GuidedImportWizard({
                             >
                                 <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
                                 <p className="text-sm font-medium text-slate-700">
-                                    Click to upload or drag & drop your CSV file
+                                    Click to upload your {activeStep.label}
                                 </p>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Accepts .csv files from CoinDCX
+                                    Accepts .csv files · Date range: {fyDates.start} to {fyDates.end}
                                 </p>
                             </div>
 
@@ -542,60 +642,92 @@ export function GuidedImportWizard({
                                 multiple
                             />
 
-                            {/* How-to Instructions */}
-                            {DOWNLOAD_INSTRUCTIONS[WIZARD_STEPS[currentStep].id] && (
-                                <div className="rounded-xl border border-slate-200 overflow-hidden">
-                                    <button
-                                        onClick={() => setShowInstructions(
-                                            showInstructions === WIZARD_STEPS[currentStep].id ? null : WIZARD_STEPS[currentStep].id
-                                        )}
-                                        className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-50 transition-colors"
-                                    >
-                                        <span className="text-sm font-medium text-indigo-600 flex items-center gap-2">
-                                            <Info className="h-4 w-4" />
-                                            {DOWNLOAD_INSTRUCTIONS[WIZARD_STEPS[currentStep].id].title}
-                                        </span>
-                                        <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${showInstructions === WIZARD_STEPS[currentStep].id ? 'rotate-90' : ''
-                                            }`} />
-                                    </button>
+                            {/* FY-specific Download Instructions */}
+                            {(() => {
+                                const instr = getInstructions(activeStep.id);
+                                if (!instr) return null;
+                                const isExpanded = expandedInstructions === activeStep.id;
+                                return (
+                                    <div className="rounded-xl border border-indigo-100 overflow-hidden bg-indigo-50/50">
+                                        <button
+                                            onClick={() => setExpandedInstructions(isExpanded ? null : activeStep.id)}
+                                            className="w-full flex items-center justify-between p-4 text-left hover:bg-indigo-50 transition-colors"
+                                        >
+                                            <span className="text-sm font-medium text-indigo-700 flex items-center gap-2">
+                                                <Info className="h-4 w-4" />
+                                                {instr.title}
+                                            </span>
+                                            {isExpanded ? (
+                                                <ChevronDown className="h-4 w-4 text-indigo-400" />
+                                            ) : (
+                                                <ChevronRight className="h-4 w-4 text-indigo-400" />
+                                            )}
+                                        </button>
 
-                                    {showInstructions === WIZARD_STEPS[currentStep].id && (
-                                        <div className="px-4 pb-4 space-y-2">
-                                            {DOWNLOAD_INSTRUCTIONS[WIZARD_STEPS[currentStep].id].steps.map((step, i) => (
-                                                <div key={i} className="flex items-start gap-3 text-sm">
-                                                    <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                                                        {i + 1}
-                                                    </span>
-                                                    <span className="text-slate-600">{step}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                        {isExpanded && (
+                                            <div className="px-4 pb-4 space-y-2">
+                                                {instr.steps.map((step, i) => (
+                                                    <div key={i} className="flex items-start gap-3 text-sm">
+                                                        <span className="h-6 w-6 rounded-full bg-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                                                            {i + 1}
+                                                        </span>
+                                                        <span className="text-slate-700">{step}</span>
+                                                    </div>
+                                                ))}
+                                                {instr.link && (
+                                                    <a
+                                                        href={instr.link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1.5 mt-2 px-4 py-2 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                                                    >
+                                                        <ExternalLink className="h-3.5 w-3.5" />
+                                                        Open CoinDCX
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
 
                             {/* Status */}
-                            {getStepStatus(WIZARD_STEPS[currentStep].id) === 'done' && (
+                            {getStepStatus(activeStep.id) === 'done' && (
                                 <Alert className="bg-emerald-50 border-emerald-200">
                                     <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                                     <AlertDescription className="text-emerald-700 text-sm">
-                                        ✅ This data source has been uploaded successfully. You can re-upload to replace.
+                                        ✅ Uploaded successfully — {stepTxs.length} transactions parsed. You can re-upload to replace.
                                     </AlertDescription>
                                 </Alert>
                             )}
 
-                            {!WIZARD_STEPS[currentStep].isRequired && getStepStatus(WIZARD_STEPS[currentStep].id) === 'pending' && (
+                            {!activeStep.isRequired && getStepStatus(activeStep.id) === 'pending' && (
                                 <Alert className="bg-slate-50 border-slate-200">
                                     <Info className="h-4 w-4 text-slate-500" />
                                     <AlertDescription className="text-slate-600 text-sm">
-                                        This step is <strong>optional</strong>. Skip it if you don't have this data or it's not applicable.
+                                        This step is <strong>optional</strong>. Skip if not applicable.
                                     </AlertDescription>
                                 </Alert>
+                            )}
+
+                            {/* Show parsed transactions immediately */}
+                            {stepTxs.length > 0 && (
+                                <div className="mt-2">
+                                    <p className="text-sm font-semibold text-slate-700 mb-2">
+                                        ✅ {stepTxs.length} transactions from {activeStep.label}
+                                    </p>
+                                    {renderMiniTable(stepTxs.slice(0, 10), formatCurrency, getSourceBadge, getTypeBadge)}
+                                    {stepTxs.length > 10 && (
+                                        <p className="text-xs text-slate-400 mt-1 text-center">
+                                            + {stepTxs.length - 10} more (visible in Review step)
+                                        </p>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}
 
-                    {/* Step 6: Review & Compare */}
+                    {/* ===== STEP 6: REVIEW & EXPORT ===== */}
                     {currentStep === 5 && (
                         <div className="space-y-5">
                             {/* Source Breakdown */}
@@ -616,15 +748,11 @@ export function GuidedImportWizard({
                                 ))}
                             </div>
 
-                            {/* Download Combined CSV */}
-                            <div className="flex items-center justify-between p-4 bg-indigo-50 rounded-xl border border-indigo-200">
-                                <div>
-                                    <p className="text-sm font-semibold text-indigo-900">Download Combined Transaction File</p>
-                                    <p className="text-xs text-indigo-600">Export all {parsedTransactions.length} transactions as CSV for comparison with KoinX</p>
-                                </div>
-                                <Button onClick={downloadCombinedCSV} size="sm" className="bg-indigo-600 hover:bg-indigo-700 shrink-0">
+                            {/* Export Buttons */}
+                            <div className="flex flex-wrap gap-3">
+                                <Button onClick={downloadCombinedCSV} size="sm" className="bg-indigo-600 hover:bg-indigo-700" disabled={parsedTransactions.length === 0}>
                                     <Download className="h-4 w-4 mr-2" />
-                                    Download CSV
+                                    Download Combined CSV
                                 </Button>
                             </div>
 
@@ -664,7 +792,7 @@ export function GuidedImportWizard({
                                 </Badge>
                             </div>
 
-                            {/* Combined Transaction Table */}
+                            {/* Full Transaction Table */}
                             {filteredTransactions.length > 0 ? (
                                 <div className="overflow-x-auto rounded-lg border border-slate-200">
                                     <Table>
@@ -720,14 +848,15 @@ export function GuidedImportWizard({
                                     </Table>
                                     {filteredTransactions.length > 200 && (
                                         <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 border-t">
-                                            Showing 200 of {filteredTransactions.length} transactions. Download CSV for full list.
+                                            Showing 200 of {filteredTransactions.length}. Download CSV for full data.
                                         </div>
                                     )}
                                 </div>
                             ) : (
                                 <div className="text-center py-12 text-slate-500">
-                                    <Search className="h-10 w-10 mx-auto mb-3 text-slate-300" />
-                                    <p>No transactions imported yet. Complete steps 1-5 first.</p>
+                                    <Upload className="h-10 w-10 mx-auto mb-3 text-slate-300" />
+                                    <p className="font-medium">No transactions imported yet</p>
+                                    <p className="text-sm mt-1">Complete steps 1–5 to see your transactions here</p>
                                 </div>
                             )}
                         </div>
@@ -735,7 +864,7 @@ export function GuidedImportWizard({
                 </CardContent>
             </Card>
 
-            {/* Navigation */}
+            {/* ========== NAVIGATION ========== */}
             <div className="flex items-center justify-between">
                 <Button
                     variant="outline"
@@ -755,7 +884,7 @@ export function GuidedImportWizard({
                         onClick={() => setCurrentStep(currentStep + 1)}
                         className="bg-indigo-600 hover:bg-indigo-700"
                     >
-                        {!WIZARD_STEPS[currentStep].isRequired && getStepStatus(WIZARD_STEPS[currentStep].id) === 'pending'
+                        {!activeStep.isRequired && getStepStatus(activeStep.id) === 'pending'
                             ? 'Skip & '
                             : ''
                         }
@@ -769,10 +898,56 @@ export function GuidedImportWizard({
                         disabled={parsedTransactions.length === 0}
                     >
                         <Download className="h-4 w-4 mr-2" />
-                        Export for KoinX Compare
+                        Export All Transactions
                     </Button>
                 )}
             </div>
+        </div>
+    );
+}
+
+// ============= MINI TRANSACTION TABLE (shown after each upload) =============
+
+function renderMiniTable(
+    txs: NormalizedTransaction[],
+    formatCurrency: (v: number | string | undefined | null) => string,
+    getSourceBadge: (tx: NormalizedTransaction) => { label: string; color: string },
+    getTypeBadge: (type: string) => string
+) {
+    return (
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <Table>
+                <TableHeader>
+                    <TableRow className="bg-slate-50">
+                        <TableHead className="text-[10px] py-1.5">Date</TableHead>
+                        <TableHead className="text-[10px] py-1.5">Type</TableHead>
+                        <TableHead className="text-[10px] py-1.5">Asset</TableHead>
+                        <TableHead className="text-[10px] py-1.5 text-right">Qty</TableHead>
+                        <TableHead className="text-[10px] py-1.5 text-right">Value (₹)</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {txs.map((tx, i) => (
+                        <TableRow key={tx.externalId || i} className="text-xs">
+                            <TableCell className="text-slate-600 py-1.5 whitespace-nowrap">
+                                {new Date(tx.tradeTimestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${getTypeBadge(tx.transactionType)}`}>
+                                    {tx.transactionType.toUpperCase()}
+                                </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium text-slate-900 py-1.5">{tx.assetSymbol}</TableCell>
+                            <TableCell className="text-right text-slate-600 font-mono py-1.5">
+                                {tx.quantity < 0.01 ? tx.quantity.toFixed(6) : tx.quantity.toFixed(4)}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-slate-900 py-1.5">
+                                {formatCurrency(tx.grossAmountInr)}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
         </div>
     );
 }

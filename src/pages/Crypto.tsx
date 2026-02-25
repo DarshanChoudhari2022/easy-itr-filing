@@ -1858,6 +1858,21 @@ export default function CryptoTaxPage() {
                   setApiSyncResult(null);
                   toast.success('CoinDCX disconnected');
                 }}
+                onReset={() => {
+                  setParsedTransactions([]);
+                  setParsedTDSRecords([]);
+                  setTrades([]);
+                  setTaxComputation(null);
+                  clearCredentials();
+                  setApiConnected(false);
+                  setApiKey('');
+                  setApiSecret('');
+                  setApiSyncResult(null);
+                  setFyChecklist(null);
+                  localStorage.removeItem('taxmitra_transactions');
+                  localStorage.removeItem('taxmitra_tds_records');
+                  localStorage.removeItem('taxmitra_crypto_tax_summary');
+                }}
                 formatCurrency={formatCurrency}
               />
             )}
