@@ -1,34 +1,34 @@
-﻿/**
- * Tax Mitra â€” FIFO Tax Computation Engine v5
+/**
+ * Tax Mitra — FIFO Tax Computation Engine v5
  * ============================================
  * Production-ready Indian crypto tax computation under:
  *   - Section 115BBH: 30% flat tax on VDA gains
  *   - Section 194S: 1% TDS on consideration
  *
- * ARCHITECTURE (v5 â€” KoinX-Matching):
- *   âœ“ ORDER-LEVEL AGGREGATION: Fills grouped by orderId (matches KoinX counting)
- *   âœ“ FULL HISTORICAL FIFO: ALL transactions from inception are processed
- *   âœ“ FY selection is REPORTING-LEVEL ONLY â€” never affects FIFO inventory
- *   âœ“ Prior-year sells correctly consume inventory (fixes KoinX mismatch)
- *   âœ“ Transaction validation: rejects UNKNOWN assets, zero-qty, zero-value trades
- *   âœ“ Stablecoin trades (USDT/USDC) treated as taxable disposals
- *   âœ“ Inventory reconciliation & negative inventory prevention
- *   âœ“ Brokerage does NOT reduce cost basis (per 115BBH)
- *   âœ“ Losses cannot offset gains (per 115BBH)
- *   âœ“ Idempotent reprocessing â€” full FIFO recalculation on every run
- *   âœ“ TDS: uses actual trade data only, never inflates with theoretical 1%
+ * ARCHITECTURE (v5 — KoinX-Matching):
+ *   ✓ ORDER-LEVEL AGGREGATION: Fills grouped by orderId (matches KoinX counting)
+ *   ✓ FULL HISTORICAL FIFO: ALL transactions from inception are processed
+ *   ✓ FY selection is REPORTING-LEVEL ONLY — never affects FIFO inventory
+ *   ✓ Prior-year sells correctly consume inventory (fixes KoinX mismatch)
+ *   ✓ Transaction validation: rejects UNKNOWN assets, zero-qty, zero-value trades
+ *   ✓ Stablecoin trades (USDT/USDC) treated as taxable disposals
+ *   ✓ Inventory reconciliation & negative inventory prevention
+ *   ✓ Brokerage does NOT reduce cost basis (per 115BBH)
+ *   ✓ Losses cannot offset gains (per 115BBH)
+ *   ✓ Idempotent reprocessing — full FIFO recalculation on every run
+ *   ✓ TDS: uses actual trade data only, never inflates with theoretical 1%
  *
  * Rules enforced:
- *   âœ“ No set-off of VDA losses against other income heads
- *   âœ“ No carry-forward of VDA losses
- *   âœ“ Conservative: loss from one VDA does NOT offset gain from another
- *   âœ“ Only "cost of acquisition" deductible (no fees, no incidental costs)
- *   âœ“ TDS credit applied against total tax liability
- *   âœ“ Surcharge + 4% H&E Cess layered on top
- *   âœ“ Full FIFO audit trail for CA review
- *   âœ“ IST timezone for FY assignment (Indian FY: 1 Apr - 31 Mar IST)
- *   âœ“ Canonical event classifier (KoinX-compatible)
- *   âœ“ Fee handling per 115BBH (cost of acquisition only)
+ *   ✓ No set-off of VDA losses against other income heads
+ *   ✓ No carry-forward of VDA losses
+ *   ✓ Conservative: loss from one VDA does NOT offset gain from another
+ *   ✓ Only "cost of acquisition" deductible (no fees, no incidental costs)
+ *   ✓ TDS credit applied against total tax liability
+ *   ✓ Surcharge + 4% H&E Cess layered on top
+ *   ✓ Full FIFO audit trail for CA review
+ *   ✓ IST timezone for FY assignment (Indian FY: 1 Apr - 31 Mar IST)
+ *   ✓ Canonical event classifier (KoinX-compatible)
+ *   ✓ Fee handling per 115BBH (cost of acquisition only)
  */
 
 import type { NormalizedTransaction, TDSRecord } from './coindcx-ingestion';
@@ -42,7 +42,7 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 /**
  * Convert any Date to IST-equivalent Date object.
  * CRITICAL: Indian FY is determined by IST date, NOT UTC.
- * A trade at 2025-03-31T22:00 UTC is 2025-04-01T03:30 IST â†’ FY 2025-26.
+ * A trade at 2025-03-31T22:00 UTC is 2025-04-01T03:30 IST → FY 2025-26.
  */
 function toIST(date: Date): Date {
     const utcMs = date.getTime() + (date.getTimezoneOffset() * 60 * 1000);
@@ -61,7 +61,7 @@ export function mapTxToFinancialYear(timestamp: Date): string {
     if (m >= 3) { // Apr (3) to Dec (11)
         return `${y}-${(y + 1).toString().slice(-2)}`;
     }
-    // Jan (0) to Mar (2) â†’ previous calendar year's FY
+    // Jan (0) to Mar (2) → previous calendar year's FY
     return `${y - 1}-${y.toString().slice(-2)}`;
 }
 
@@ -81,7 +81,7 @@ export type VdaEventType =
     | 'UNKNOWN';
 
 /**
- * Canonical classifier â€” single source of truth for event type.
+ * Canonical classifier — single source of truth for event type.
  * Rules:
  *   - TRANSFER_SELF is never a taxable disposal
  *   - Only disposals of VDA are capital gains events
@@ -309,7 +309,7 @@ export interface TaxComputationResult {
     engineVersion: string;
 }
 
-/** Data Coverage Score â€” tracks which data sources were used and what's missing */
+/** Data Coverage Score — tracks which data sources were used and what's missing */
 export interface DataCoverageScore {
     score: number;                   // 0-100 percentage
     level: 'critical' | 'low' | 'medium' | 'high' | 'complete';
@@ -331,7 +331,7 @@ const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
 const ENGINE_VERSION = '5.0.0';
 
-// Stablecoins are taxable VDAs â€” treat like any other crypto
+// Stablecoins are taxable VDAs — treat like any other crypto
 const STABLECOIN_SYMBOLS = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD'];
 
 // Surcharge thresholds for AY 2026-27 (on total income basis)
@@ -388,7 +388,7 @@ export function computeVdaTaxForFinancialYear(
     const assessmentYear = getAY(financialYear);
     const warnings: string[] = [];
 
-    // â”€â”€ Sanitize inputs: coerce stringsâ†’numbers, stringsâ†’Dates â”€â”€
+    // ── Sanitize inputs: coerce strings→numbers, strings→Dates ──
     // Data may arrive from localStorage/JSON where types are lost
     const sanitizeTx = (tx: NormalizedTransaction): NormalizedTransaction => ({
         ...tx,
@@ -412,13 +412,14 @@ export function computeVdaTaxForFinancialYear(
         tdsDate: r.tdsDate instanceof Date ? r.tdsDate : new Date(r.tdsDate),
     }));
 
-    // â”€â”€â”€ Step 0 (v5 NEW): Order-Level Aggregation â”€â”€â”€
+    // ─── Step 0 (v5 NEW): Order-Level Aggregation ───
     // KoinX aggregates fill-level trades into order-level transactions.
     // This is the #1 reason for transaction count mismatch.
     // CoinDCX API returns fills; one order may have 5 fills at different prices.
     // We aggregate them into one order with VWAP price.
     let aggregationStats: AggregationStats | undefined;
     if (options.aggregateOrders !== false) {
+        console.log(`[TaxEngine v5] Running order-level aggregation on ${transactions.length} transactions...`);
         const aggResult = aggregateFillsToOrders(transactions, {
             validateFirst: false, // DO NOT FILTER! It was dropping valid old data
             aggregate: true,
@@ -426,29 +427,32 @@ export function computeVdaTaxForFinancialYear(
         transactions = aggResult.transactions;
         aggregationStats = aggResult.stats;
         warnings.push(...aggResult.warnings);
+        console.log(`[TaxEngine v5] Aggregation: ${aggResult.stats.inputFillCount} fills → ${aggResult.stats.outputOrderCount} orders ` +
+            `(filtered: ${aggResult.stats.filteredCount}, ` +
+            `multi-fill orders: ${aggResult.stats.multiFillOrders})`);
     }
 
-    // â”€â”€â”€ Step 1: Re-assign FY using IST-aware function (single source of truth) â”€â”€â”€
+    // ─── Step 1: Re-assign FY using IST-aware function (single source of truth) ───
     transactions = transactions.map(tx => ({
         ...tx,
         financialYear: mapTxToFinancialYear(tx.tradeTimestamp),
     }));
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════════════════
     // CRITICAL ARCHITECTURE (v5):
     //
     //   FIFO requires FULL HISTORICAL INVENTORY.
     //   We MUST process ALL transactions from account inception to present.
-    //   This includes ALL prior-year sells â€” they consume inventory too.
+    //   This includes ALL prior-year sells — they consume inventory too.
     //
     //   The FY selection is REPORTING-LEVEL ONLY:
-    //   - ALL buys â†’ add to FIFO queue (all years)
-    //   - ALL sells â†’ consume from FIFO queue (all years)
-    //   - Only REPORT gains/losses for disposals where disposal_date âˆˆ target FY
+    //   - ALL buys → add to FIFO queue (all years)
+    //   - ALL sells → consume from FIFO queue (all years)
+    //   - Only REPORT gains/losses for disposals where disposal_date ∈ target FY
     //
     //   v5 addition: Fills are aggregated to order level BEFORE processing,
     //   matching KoinX's transaction counting exactly.
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════════════════
 
     // Process ALL transactions for FIFO stack building
     const allRelevantTx = transactions
@@ -471,7 +475,11 @@ export function computeVdaTaxForFinancialYear(
     // Count prior-year transactions for logging
     const priorYearCount = allRelevantTx.filter(tx => tx.financialYear !== financialYear).length;
     const targetYearCount = allRelevantTx.filter(tx => tx.financialYear === financialYear).length;
-    // â”€â”€â”€ Step 3: Run FIFO per asset (FULL HISTORY, report for target FY) â”€â”€â”€
+    console.log(`[TaxEngine v5] FY ${financialYear}: Processing FULL history → ${allRelevantTx.length} total records (${priorYearCount} prior-year + ${targetYearCount} target-year). ${rewards.length} reward events.`);
+
+
+
+    // ─── Step 3: Run FIFO per asset (FULL HISTORY, report for target FY) ───
     const assetSummaries: AssetGainSummary[] = [];
     const allLotMatches: LotMatch[] = [];
     const allVDALines: VDAReportLine[] = [];
@@ -555,23 +563,23 @@ export function computeVdaTaxForFinancialYear(
         warnings.push(...result.warnings);
     }
 
-    // â”€â”€â”€ Inventory Reconciliation Report â”€â”€â”€
+    // ─── Inventory Reconciliation Report ───
     const unreconciledAssets = inventoryReconciliations.filter(r => !r.isReconciled);
     if (unreconciledAssets.length > 0) {
-        warnings.push(`âš ï¸ Inventory reconciliation: ${unreconciledAssets.length} asset(s) have discrepancies.`);
+        warnings.push(`⚠️ Inventory reconciliation: ${unreconciledAssets.length} asset(s) have discrepancies.`);
         for (const r of unreconciledAssets) {
-            warnings.push(`  ${r.assetSymbol}: Expected ${r.expectedBalance.toFixed(8)}, Inventory has ${r.inventoryBalance.toFixed(8)} (Î” ${r.discrepancy.toFixed(8)})`);
+            warnings.push(`  ${r.assetSymbol}: Expected ${r.expectedBalance.toFixed(8)}, Inventory has ${r.inventoryBalance.toFixed(8)} (Δ ${r.discrepancy.toFixed(8)})`);
         }
     }
     const negativeInvAssets = inventoryReconciliations.filter(r => r.negativeInventoryEvents > 0);
     if (negativeInvAssets.length > 0) {
-        warnings.push(`âš ï¸ Negative inventory detected in ${negativeInvAssets.length} asset(s) â€” check for missing buy/deposit transactions.`);
+        warnings.push(`⚠️ Negative inventory detected in ${negativeInvAssets.length} asset(s) — check for missing buy/deposit transactions.`);
         for (const r of negativeInvAssets) {
             warnings.push(`  ${r.assetSymbol}: ${r.negativeInventoryEvents} negative inventory event(s)`);
         }
     }
 
-    // â”€â”€â”€ Step 4: Other VDA Income (Rewards / Staking / Airdrops / Interest) â”€â”€â”€
+    // ─── Step 4: Other VDA Income (Rewards / Staking / Airdrops / Interest) ───
     let otherVDAIncome = 0;
     const otherIncomeBreakdown: Record<string, number> = {
         reward: 0, staking: 0, airdrop: 0, interest: 0, referral: 0, mining: 0
@@ -594,8 +602,10 @@ export function computeVdaTaxForFinancialYear(
             else otherIncomeBreakdown.reward += value;
         }
     }
-    // â”€â”€â”€ Step 5: Tax Computation â”€â”€â”€
-    // CRITICAL: Section 115BBH â€” taxable gain = sum of profits ONLY
+    console.log(`[TaxEngine] Other VDA Income: ₹${otherVDAIncome.toFixed(2)}`, otherIncomeBreakdown);
+
+    // ─── Step 5: Tax Computation ───
+    // CRITICAL: Section 115BBH — taxable gain = sum of profits ONLY
     // Losses are tracked but CANNOT be offset against gains
     const taxableCapitalGains = grossGains; // NOT net gain
     const totalTaxableVDA = taxableCapitalGains + otherVDAIncome;
@@ -604,7 +614,7 @@ export function computeVdaTaxForFinancialYear(
     const taxOnOther = otherVDAIncome * VDA_TAX_RATE;
     const totalBaseTax = taxOnGains + taxOnOther;
 
-    // Surcharge (simplified â€” applied if total income > threshold)
+    // Surcharge (simplified — applied if total income > threshold)
     const surcharge = computeSurcharge(totalTaxableVDA, totalBaseTax);
 
     // Cess @ 4% on (tax + surcharge)
@@ -612,19 +622,19 @@ export function computeVdaTaxForFinancialYear(
 
     const totalTaxLiability = totalBaseTax + surcharge + cess;
 
-    // â”€â”€â”€ Step 6: TDS Reconciliation â”€â”€â”€
+    // ─── Step 6: TDS Reconciliation ───
     const tdsRecon = reconcileTDS(tdsRecords, totalTDSFromTrades, financialYear);
 
-    // TDS Credit Computation (PERMANENT FIX â€” self-sufficient, no hardcoded refs):
+    // TDS Credit Computation (PERMANENT FIX — self-sufficient, no hardcoded refs):
     //
     // Per Section 194S, TDS is 1% of consideration on every VDA transfer.
     // The engine now derives TDS credit from three sources, in priority order:
     //
-    //   1. TDS CSV Certificates (most authoritative â€” uploaded by user from CoinDCX)
+    //   1. TDS CSV Certificates (most authoritative — uploaded by user from CoinDCX)
     //   2. Explicit TDS from trade data (tdsAmount field on each sell transaction)
     //   3. Computed 1% of actual sell consideration from FIFO engine (self-sufficient fallback)
     //
-    // Source 3 is the KEY permanent fix: instead of showing â‚¹0 when no TDS CSV 
+    // Source 3 is the KEY permanent fix: instead of showing ₹0 when no TDS CSV 
     // is uploaded and API doesn't return tdsAmount, we compute 1% of the ACTUAL
     // sell consideration that the FIFO engine already calculated. This is mathematically
     // correct per 194S and matches what KoinX does internally.
@@ -638,7 +648,7 @@ export function computeVdaTaxForFinancialYear(
         totalTDSCredit = tdsRecon.totalTDSFromCertificates;
         tdsSource = 'TDS_CSV_CERTIFICATES';
     } else if (totalTDSFromTrades > 0 && totalTDSFromTrades >= computedTDSFromConsideration * 0.5) {
-        // Priority 2: Explicit TDS from trade records (only if reasonable â€” at least 50% of theoretical)
+        // Priority 2: Explicit TDS from trade records (only if reasonable — at least 50% of theoretical)
         totalTDSCredit = totalTDSFromTrades;
         tdsSource = 'TRADE_DATA';
     } else {
@@ -649,20 +659,42 @@ export function computeVdaTaxForFinancialYear(
         tdsSource = 'COMPUTED_FROM_CONSIDERATION';
         if (totalSellConsideration > 0) {
             warnings.push(
-                `TDS Credit: Computed as 1% of actual sell consideration (â‚¹${totalSellConsideration.toFixed(0)} Ã— 1% = â‚¹${computedTDSFromConsideration.toFixed(2)}). ` +
+                `TDS Credit: Computed as 1% of actual sell consideration (₹${totalSellConsideration.toFixed(0)} × 1% = ₹${computedTDSFromConsideration.toFixed(2)}). ` +
                 `This is the legally mandated TDS per Section 194S. Upload your TDS Summary CSV from CoinDCX for exact certificate-level figures.`
             );
         }
     }
 
+    console.log(`[TaxEngine] TDS: source=${tdsSource}, fromTrades=₹${totalTDSFromTrades.toFixed(2)}, fromCerts=₹${tdsRecon.totalTDSFromCertificates.toFixed(2)}, fromConsideration=₹${computedTDSFromConsideration.toFixed(2)}, credit=₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine] Total sell consideration: ₹${totalSellConsideration.toFixed(2)}`);
+
     const netTaxPayable = totalTaxLiability - totalTDSCredit;
 
-    // â”€â”€â”€ Step 7: Unique assets â”€â”€â”€
+    // ─── Step 7: Unique assets ───
     const uniqueAssets = new Set(assetSummaries.map(a => a.assetSymbol)).size;
 
-    // â”€â”€â”€ Final Summary Log â”€â”€â”€
+    // ─── Final Summary Log ───
+    console.log(`\n[TaxEngine v5] ═══════════════════════════════════════`);
+    console.log(`[TaxEngine v5] FY ${financialYear} — COMPUTATION SUMMARY`);
+    console.log(`[TaxEngine v5] ═══════════════════════════════════════`);
     if (aggregationStats) {
+        console.log(`[TaxEngine v5] Aggregation: ${aggregationStats.inputFillCount} fills → ${aggregationStats.outputOrderCount} orders (${aggregationStats.filteredCount} filtered)`);
     }
+    console.log(`[TaxEngine v5] Full history: ${allRelevantTx.length} records (${priorYearCount} prior-year + ${targetYearCount} target-year)`);
+    console.log(`[TaxEngine v5] Capital Gains (taxable):  ₹${taxableCapitalGains.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Capital Losses (info):     ₹${grossLosses.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Other VDA Income:          ₹${otherVDAIncome.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total Taxable VDA:         ₹${totalTaxableVDA.toFixed(2)}`);
+    console.log(`[TaxEngine v5] ───────────────────────────────────────`);
+    console.log(`[TaxEngine v5] Tax @ 30%:                 ₹${totalBaseTax.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Surcharge:                 ₹${surcharge.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Cess @ 4%:                 ₹${cess.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total Tax Liability:       ₹${totalTaxLiability.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Total TDS Credit:          ₹${totalTDSCredit.toFixed(2)}`);
+    console.log(`[TaxEngine v5] Net Tax Payable:           ₹${netTaxPayable.toFixed(2)} ${netTaxPayable < 0 ? '(REFUND)' : ''}`);
+    console.log(`[TaxEngine v5] Brokerage (NOT deducted per 115BBH): ₹${totalFee.toFixed(2)}`);
+    console.log(`[TaxEngine v5] ═══════════════════════════════════════\n`);
+
     return {
         financialYear,
         assessmentYear,
@@ -759,39 +791,39 @@ function computeDataCoverage(
     } else if (hasAPI) {
         score += 25; // API is incomplete (no Insta/P2P)
         missing.push('Order History CSV (has more complete trade data than API)');
-        recommendations.push('Download Order History CSV: CoinDCX â†’ Orders â†’ Order History â†’ FILLED ORDERS â†’ Download CSV');
+        recommendations.push('Download Order History CSV: CoinDCX → Orders → Order History → FILLED ORDERS → Download CSV');
     } else {
         missing.push('No trade data! Upload Order History CSV or sync via API');
-        recommendations.push('Go to CoinDCX â†’ Orders â†’ Order History â†’ FILLED ORDERS â†’ Download CSV, then upload');
+        recommendations.push('Go to CoinDCX → Orders → Order History → FILLED ORDERS → Download CSV, then upload');
     }
 
-    // TDS Summary CSV (30 points â€” critical for TDS credit + Insta/P2P sells)
+    // TDS Summary CSV (30 points — critical for TDS credit + Insta/P2P sells)
     if (hasTDSCSV) {
         score += 30;
     } else {
         missing.push('TDS Summary CSV (needed for exact TDS credit and Insta/P2P sells)');
-        recommendations.push('Download TDS Summary: CoinDCX â†’ Downloads â†’ TDS Summary â†’ Export CSV');
+        recommendations.push('Download TDS Summary: CoinDCX → Downloads → TDS Summary → Export CSV');
     }
 
-    // Insta History CSV (15 points â€” buy-side for Insta trades)
+    // Insta History CSV (15 points — buy-side for Insta trades)
     if (hasInstaCSV) {
         score += 15;
     } else if (hasTDSCSV) {
         // If TDS CSV has sells but no Insta CSV, we still get 5 points for having sell side
         score += 5;
         missing.push('Insta History CSV (provides buy-side cost basis for Instant Buy/Sell trades)');
-        recommendations.push('If you used Instant Buy/Sell: CoinDCX â†’ Orders â†’ Insta History â†’ Download CSV');
+        recommendations.push('If you used Instant Buy/Sell: CoinDCX → Orders → Insta History → Download CSV');
     } else {
         missing.push('Insta History CSV');
-        recommendations.push('If you used Instant Buy/Sell: CoinDCX â†’ Orders â†’ Insta History â†’ Download CSV');
+        recommendations.push('If you used Instant Buy/Sell: CoinDCX → Orders → Insta History → Download CSV');
     }
 
     // Manual Rewards (15 points)
     if (hasManualRewards) {
         score += 15;
     } else {
-        missing.push('Staking rewards & airdrops (not available via API or CSV â€” must be added manually)');
-        recommendations.push('Use "+ Add Trade" â†’ Staking Reward for each reward. Check your email for "CoinDCX reward credited" notifications.');
+        missing.push('Staking rewards & airdrops (not available via API or CSV — must be added manually)');
+        recommendations.push('Use "+ Add Trade" → Staking Reward for each reward. Check your email for "CoinDCX reward credited" notifications.');
     }
 
     // Determine level
@@ -881,7 +913,7 @@ function computeAssetFIFO(
         }
 
         if (isBuy) {
-            // â”€â”€â”€ Fee handling per 115BBH â”€â”€â”€
+            // ─── Fee handling per 115BBH ───
             // Per VDA_COMPLIANCE.BROKERAGE_REDUCES_COST_BASIS === false:
             //   Brokerage/fee does NOT reduce cost basis.
             //   However, fee paid in base asset reduces acquired quantity (not a policy choice, it's a math fact).
@@ -935,11 +967,11 @@ function computeAssetFIFO(
             }
 
         } else if (isSell) {
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // ═══════════════════════════════════════════════════════
             // CRITICAL v4 FIX: Process ALL sells from ALL financial years
             // Not just target FY. This ensures prior-year sells properly
             // consume inventory, so current-year sells get correct cost basis.
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // ═══════════════════════════════════════════════════════
             let remainingToSell = tx.quantity;
             let salePrice = tx.priceInr || 0; // sale price per unit in INR
             if (salePrice <= 0 && tx.grossAmountInr && tx.quantity > 0) {
@@ -954,7 +986,7 @@ function computeAssetFIFO(
                 totalSellValue += tx.grossAmountInr || (tx.quantity * salePrice);
             }
 
-            // â”€â”€â”€ Negative inventory prevention â”€â”€â”€
+            // ─── Negative inventory prevention ───
             const availableInventory = inventory.reduce((s, l) => s + l.remainingQuantity, 0);
             if (availableInventory < remainingToSell - 0.00000001) {
                 negativeInventoryEvents++;
@@ -1006,7 +1038,7 @@ function computeAssetFIFO(
                     targetFYMatches.push(match);
 
                     // 115BBH: Track gains AND losses separately
-                    // Losses CANNOT offset gains â€” each is tracked independently
+                    // Losses CANNOT offset gains — each is tracked independently
                     if (gain > 0) {
                         grossGains += gain;
                     } else {
@@ -1014,7 +1046,7 @@ function computeAssetFIFO(
                     }
                 }
 
-                // Update lot â€” this happens for ALL years (the whole point of v4)
+                // Update lot — this happens for ALL years (the whole point of v4)
                 lot.remainingQuantity -= matchedQty;
                 remainingToSell -= matchedQty;
 
@@ -1054,7 +1086,7 @@ function computeAssetFIFO(
         ? inventory.reduce((s, l) => s + l.remainingQuantity * l.costBasisPerUnit, 0) / currentHolding
         : 0;
 
-    // â”€â”€ Inventory Reconciliation â”€â”€
+    // ── Inventory Reconciliation ──
     const expectedBalance = totalAcquiredAllTime - totalDisposedAllTime;
     const inventoryBalance = currentHolding;
     const discrepancy = Math.abs(expectedBalance - inventoryBalance);
@@ -1070,6 +1102,7 @@ function computeAssetFIFO(
     };
 
     if (isStablecoin && (totalSold > 0 || grossGains > 0 || grossLosses > 0)) {
+        console.log(`[TaxEngine v4] Stablecoin ${asset}: Treated as taxable VDA. Sold=${totalSold.toFixed(4)}, Gains=₹${grossGains.toFixed(2)}, Losses=₹${grossLosses.toFixed(2)}`);
     }
 
     return {
@@ -1247,7 +1280,7 @@ export function formatPnLSummary(result: TaxComputationResult): {
             { label: 'Reconciliation Status', value: result.tdsReconciliation.status.replace(/_/g, ' ').toUpperCase() },
         ],
         tax: [
-            { label: 'Taxable Capital Gains (Â§115BBH)', value: fmt(result.taxableCapitalGains) },
+            { label: 'Taxable Capital Gains (§115BBH)', value: fmt(result.taxableCapitalGains) },
             { label: 'Tax @ 30%', value: fmt(result.taxOnGains30Pct) },
             { label: 'Tax on Other VDA Income @ 30%', value: fmt(result.taxOnOtherIncome30Pct) },
             { label: 'Surcharge', value: fmt(result.surcharge) },
@@ -1255,7 +1288,7 @@ export function formatPnLSummary(result: TaxComputationResult): {
             { label: 'Total Tax Liability', value: fmt(result.totalTaxLiability), highlight: true },
             { label: 'Less: TDS Credit', value: `- ${fmt(result.totalTDSCredit)}` },
             {
-                label: result.isRefund ? 'ðŸŽ‰ Refund Estimated' : 'Balance Tax Payable',
+                label: result.isRefund ? '🎉 Refund Estimated' : 'Balance Tax Payable',
                 value: (result.isRefund ? '- ' : '') + fmt(result.netTaxPayable),
                 highlight: true,
             },

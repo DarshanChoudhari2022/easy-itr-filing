@@ -1,7 +1,7 @@
-﻿/**
- * TaxMitra â€” CSV Upload Service (Client-Side)
+/**
+ * TaxMitra — CSV Upload Service (Client-Side)
  * =============================================
- * Handles file â†’ parse â†’ deduplicate â†’ insert into Supabase.
+ * Handles file → parse → deduplicate → insert into Supabase.
  *
  * Usage:
  *   import { uploadOrderHistoryCSV, uploadTDSSummaryCSV }
@@ -10,7 +10,7 @@
  *   const tdsResult = await uploadTDSSummaryCSV(file, 'FY2024-25');
  *
  * This runs entirely in the browser using the Supabase JS client.
- * No custom API endpoint needed â€” leverages RLS (Row Level Security)
+ * No custom API endpoint needed — leverages RLS (Row Level Security)
  * so the user can only insert rows for themselves.
  */
 
@@ -35,7 +35,7 @@ import {
 } from './insta-csv-parser';
 
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ───────────────────────────────────────────────────────────
 
 export interface UploadResult {
     success: boolean;
@@ -46,7 +46,7 @@ export interface UploadResult {
     preview: ParsedOrderRow[];
 }
 
-// â”€â”€â”€ Main Upload Function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main Upload Function ────────────────────────────────────────────
 
 /**
  * Parse and upload a CoinDCX Order History CSV file.
@@ -59,14 +59,14 @@ export async function uploadOrderHistoryCSV(
     file: File,
     financialYear: string,
 ): Promise<UploadResult> {
-    // â”€â”€ 1. Auth check â”€â”€
+    // ── 1. Auth check ──
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    // â”€â”€ 2. Read file â”€â”€
+    // ── 2. Read file ──
     const csvText = await file.text();
 
-    // â”€â”€ 3. Parse â”€â”€
+    // ── 3. Parse ──
     const parseResult = parseOrderHistoryCSV(csvText);
 
     if (parseResult.rows.length === 0) {
@@ -82,7 +82,7 @@ export async function uploadOrderHistoryCSV(
         };
     }
 
-    // â”€â”€ 4. Optionally filter to requested FY â”€â”€
+    // ── 4. Optionally filter to requested FY ──
     // If user specified a FY, only import rows from that FY.
     // But we still keep rows from other FYs in the preview and let them know.
     let rowsToInsert = parseResult.rows;
@@ -115,7 +115,7 @@ export async function uploadOrderHistoryCSV(
         };
     }
 
-    // â”€â”€ 5. Batch insert with ON CONFLICT DO NOTHING â”€â”€
+    // ── 5. Batch insert with ON CONFLICT DO NOTHING ──
     const dbRows = rowsToInsert.map(row => ({
         user_id: user.id,
         source: row.source,
@@ -134,7 +134,7 @@ export async function uploadOrderHistoryCSV(
         raw_data: row.raw_data,
     }));
 
-    // Supabase upsert with ignoreDuplicates = true â†’ ON CONFLICT DO NOTHING
+    // Supabase upsert with ignoreDuplicates = true → ON CONFLICT DO NOTHING
     // Insert in batches of 500 to avoid payload limits
     let imported = 0;
     let skipped = 0;
@@ -164,10 +164,10 @@ export async function uploadOrderHistoryCSV(
         }
     }
 
-    // â”€â”€ 6. Update crypto_data_coverage â”€â”€
+    // ── 6. Update crypto_data_coverage ──
     await updateDataCoverage(user.id, financialYear, 'order', imported);
 
-    // â”€â”€ 7. Build response â”€â”€
+    // ── 7. Build response ──
     return {
         success: imported > 0 || skipped > 0,
         imported,
@@ -179,9 +179,9 @@ export async function uploadOrderHistoryCSV(
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 // TDS SUMMARY CSV UPLOAD
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 
 export interface TDSUploadResult {
     success: boolean;
@@ -207,11 +207,11 @@ export async function uploadTDSSummaryCSV(
     file: File,
     financialYear: string,
 ): Promise<TDSUploadResult> {
-    // â”€â”€ 1. Auth â”€â”€
+    // ── 1. Auth ──
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    // â”€â”€ 2. Read + Parse â”€â”€
+    // ── 2. Read + Parse ──
     const csvText = await file.text();
     const parseResult = parseTDSSummaryCSV(csvText);
 
@@ -229,7 +229,7 @@ export async function uploadTDSSummaryCSV(
         };
     }
 
-    // â”€â”€ 3. Filter to requested FY â”€â”€
+    // ── 3. Filter to requested FY ──
     let rowsToProcess = parseResult.rows;
     if (financialYear) {
         const fyRows = parseResult.rows.filter(r => r.financial_year === financialYear);
@@ -258,7 +258,7 @@ export async function uploadTDSSummaryCSV(
         };
     }
 
-    // â”€â”€ 4. Process: match to orders + insert standalone TDS records â”€â”€
+    // ── 4. Process: match to orders + insert standalone TDS records ──
     let matchedToOrders = 0;
     let imported = 0;
     let skipped = 0;
@@ -283,7 +283,7 @@ export async function uploadTDSSummaryCSV(
                 matchedToOrders++;
                 totalTdsInr += row.tds_inr;
             } else {
-                // No match found â€” insert as standalone TDS record
+                // No match found — insert as standalone TDS record
                 rowsWithoutOrderId.push(row);
             }
         } catch {
@@ -339,7 +339,7 @@ export async function uploadTDSSummaryCSV(
         }
     }
 
-    // â”€â”€ 5. Update coverage â”€â”€
+    // ── 5. Update coverage ──
     await updateDataCoverage(user.id, financialYear, 'tds', imported + matchedToOrders);
 
     return {
@@ -354,9 +354,9 @@ export async function uploadTDSSummaryCSV(
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 // DATA COVERAGE UPDATER
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 
 /**
  * Update crypto_data_coverage for a user + FY + CSV type.
@@ -385,14 +385,16 @@ async function updateDataCoverage(
             .from('crypto_data_coverage' as any)
             .upsert(upsertData, { onConflict: 'user_id,financial_year' }) as any);
 
+        console.log(`[CSV Upload] ✅ Updated data coverage: ${financialYear}, ${rowsField}=${rowCount}`);
     } catch (err) {
+        console.warn('[CSV Upload] Failed to update data coverage:', err);
     }
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 // INSTA HISTORY CSV UPLOAD
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 
 export interface InstaUploadResult {
     success: boolean;
@@ -406,7 +408,7 @@ export interface InstaUploadResult {
 /**
  * Parse and upload a CoinDCX Insta History CSV file.
  * Insta = instant buy/sell (OTC-style trades).
- * This is OPTIONAL â€” user may skip it.
+ * This is OPTIONAL — user may skip it.
  */
 export async function uploadInstaHistoryCSV(
     file: File,
@@ -513,9 +515,9 @@ export async function uploadInstaHistoryCSV(
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 // PREVIEW (DRY-RUN) FUNCTIONS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════
 
 /**
  * Parse an Order History CSV without inserting into the database.

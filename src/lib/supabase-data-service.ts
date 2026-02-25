@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Supabase Data Service
  * Handles all CRUD operations for tax filing data
  * Provides persistence layer for income, deductions, filings, crypto, and bank details
@@ -647,7 +647,7 @@ export async function getFileUrl(filePath: string) {
  * - privacySettings: privacy preferences
  */
 
-// We use a separate table approach with the 'ais_data' pattern â€” 
+// We use a separate table approach with the 'ais_data' pattern — 
 // upsert keyed on (user_id, data_key).
 // Since we might not have a custom table, we'll use a generic approach
 // with the existing tables.
@@ -657,7 +657,7 @@ export async function saveUserData(dataKey: string, value: any): Promise<void> {
     if (!user) throw new Error('Not authenticated');
 
     // Use ais_data table with assessment_year = data_key as a generic store
-    // This is a workaround â€” ideally we'd have a dedicated user_data table
+    // This is a workaround — ideally we'd have a dedicated user_data table
     const { error } = await supabase
         .from('ais_data' as any)
         .upsert({
@@ -672,8 +672,10 @@ export async function saveUserData(dataKey: string, value: any): Promise<void> {
         });
 
     if (error) {
+        console.warn(`[UserDataStore] Failed to save '${dataKey}':`, error.message);
         throw error;
     }
+    console.log(`[UserDataStore] ✅ Saved '${dataKey}' to database`);
 }
 
 export async function loadUserData<T = any>(dataKey: string): Promise<T | null> {
@@ -688,6 +690,7 @@ export async function loadUserData<T = any>(dataKey: string): Promise<T | null> 
         .maybeSingle();
 
     if (error) {
+        console.warn(`[UserDataStore] Failed to load '${dataKey}':`, error.message);
         return null;
     }
 
@@ -706,6 +709,7 @@ export async function deleteUserData(dataKey: string): Promise<void> {
         .eq('assessment_year', `__userdata__${dataKey}`);
 
     if (error) {
+        console.warn(`[UserDataStore] Failed to delete '${dataKey}':`, error.message);
     }
 }
 
@@ -733,6 +737,8 @@ export async function saveUserDataBatch(entries: Record<string, any>): Promise<v
         });
 
     if (error) {
+        console.warn(`[UserDataStore] Batch save failed:`, error.message);
         throw error;
     }
+    console.log(`[UserDataStore] ✅ Batch saved ${rows.length} keys`);
 }

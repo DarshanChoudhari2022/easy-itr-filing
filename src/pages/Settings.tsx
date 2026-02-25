@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Settings Page - Account & Privacy Settings
  */
 
@@ -104,6 +104,7 @@ export default function SettingsPage() {
                 if (dbNotif) setNotifications(dbNotif);
                 if (dbPriv) setPrivacy(dbPriv);
             } catch (e) {
+                console.warn('[Settings] Failed to load settings from DB:', e);
             }
         };
         loadSettings();
@@ -184,7 +185,8 @@ export default function SettingsPage() {
                     mobile: profile.phone.replace(/\D/g, '').slice(-10),
                 });
             } catch (e) {
-                // Non-critical â€” profiles table may not exist yet
+                // Non-critical — profiles table may not exist yet
+                console.warn('Could not update profiles table:', e);
             }
 
             toast.success('Profile updated successfully');
@@ -487,7 +489,7 @@ export default function SettingsPage() {
                                     <CardHeader>
                                         <CardTitle>Free</CardTitle>
                                         <CardDescription>Essential filing for salary income</CardDescription>
-                                        <div className="mt-4 text-3xl font-bold">â‚¹0<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                        <div className="mt-4 text-3xl font-bold">₹0<span className="text-sm font-normal text-slate-500">/year</span></div>
                                     </CardHeader>
                                     <CardContent>
                                         <ul className="space-y-3 text-sm">
@@ -506,7 +508,7 @@ export default function SettingsPage() {
                                     <CardHeader>
                                         <CardTitle className="text-indigo-700">Pro</CardTitle>
                                         <CardDescription>For investors & traders</CardDescription>
-                                        <div className="mt-4 text-3xl font-bold">â‚¹1,499<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                        <div className="mt-4 text-3xl font-bold">₹1,499<span className="text-sm font-normal text-slate-500">/year</span></div>
                                     </CardHeader>
                                     <CardContent>
                                         <ul className="space-y-3 text-sm">
@@ -524,7 +526,7 @@ export default function SettingsPage() {
                                     <CardHeader>
                                         <CardTitle>Expert Assisted</CardTitle>
                                         <CardDescription>CA-guided filing & planning</CardDescription>
-                                        <div className="mt-4 text-3xl font-bold">â‚¹3,999<span className="text-sm font-normal text-slate-500">/year</span></div>
+                                        <div className="mt-4 text-3xl font-bold">₹3,999<span className="text-sm font-normal text-slate-500">/year</span></div>
                                     </CardHeader>
                                     <CardContent>
                                         <ul className="space-y-3 text-sm">

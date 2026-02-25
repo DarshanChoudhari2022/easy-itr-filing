@@ -1,9 +1,9 @@
-﻿import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-// Production URL for email redirects â€” never use localhost
+// Production URL for email redirects — never use localhost
 const SITE_URL = import.meta.env.VITE_APP_URL || 'https://easy-itr-filing.vercel.app';
 
 interface AuthContextType {
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const confirmedAt = new Date(session.user.email_confirmed_at).getTime();
           const now = Date.now();
           if (now - confirmedAt < 60000) {
-            toast.success('ðŸŽ‰ Email verified successfully! Welcome to TaxMitra.', {
+            toast.success('🎉 Email verified successfully! Welcome to TaxMitra.', {
               duration: 5000,
               description: 'Your account is ready. Start filing your taxes!',
             });
@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'crypto_sync_state',             // Sync state
           ];
           userDataKeys.forEach(key => localStorage.removeItem(key));
+          console.log('[Auth] Cleared all user-specific localStorage data on sign out');
         }
       }
     );
