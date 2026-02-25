@@ -265,79 +265,42 @@ export default function CryptoTaxPage() {
           loadUserData<TaxSettings>('taxSettings'),
         ]);
 
-        let hasDBData = false;
-
         if (dbTransactions && Array.isArray(dbTransactions) && dbTransactions.length > 0) {
           const revived = reviveTransactions(dbTransactions);
           setParsedTransactions(revived);
           localStorage.setItem('taxmitra_transactions', JSON.stringify(dbTransactions));
-          hasDBData = true;
           console.log(`[CryptoTax] ✅ Loaded ${revived.length} transactions from database`);
+        } else {
+          // No DB data for this user — start fresh (do NOT load from localStorage)
+          setParsedTransactions([]);
+          localStorage.removeItem('taxmitra_transactions');
+          console.log('[CryptoTax] No transaction data in DB for this user — starting fresh');
         }
 
         if (dbTDS && Array.isArray(dbTDS) && dbTDS.length > 0) {
           const revived = reviveTDSRecords(dbTDS);
           setParsedTDSRecords(revived);
           localStorage.setItem('taxmitra_tds', JSON.stringify(dbTDS));
-          hasDBData = true;
           console.log(`[CryptoTax] ✅ Loaded ${revived.length} TDS records from database`);
+        } else {
+          setParsedTDSRecords([]);
+          localStorage.removeItem('taxmitra_tds');
         }
 
         if (dbSettings) {
           setSettings(dbSettings);
           localStorage.setItem('taxSettings', JSON.stringify(dbSettings));
           console.log('[CryptoTax] ✅ Loaded settings from database');
-        }
-
-        // If no DB data, try localStorage as migration source
-        if (!hasDBData) {
-          console.log('[CryptoTax] No DB data found, checking localStorage for migration...');
-          try {
-            const localTx = localStorage.getItem('taxmitra_transactions');
-            if (localTx) {
-              const parsed = JSON.parse(localTx);
-              const revived = reviveTransactions(parsed);
-              setParsedTransactions(revived);
-              // Migrate to DB immediately
-              await saveUserData('taxmitra_transactions', parsed);
-              console.log(`[CryptoTax] ✅ Migrated ${revived.length} transactions from localStorage → DB`);
-            }
-          } catch (e) { console.warn('[CryptoTax] localStorage migration for transactions failed:', e); }
-          try {
-            const localTDS = localStorage.getItem('taxmitra_tds');
-            if (localTDS) {
-              const parsed = JSON.parse(localTDS);
-              const revived = reviveTDSRecords(parsed);
-              setParsedTDSRecords(revived);
-              await saveUserData('taxmitra_tds', parsed);
-              console.log(`[CryptoTax] ✅ Migrated ${revived.length} TDS records from localStorage → DB`);
-            }
-          } catch (e) { console.warn('[CryptoTax] localStorage migration for TDS failed:', e); }
-        }
-
-        if (!dbSettings) {
-          try {
-            const localSettings = localStorage.getItem('taxSettings');
-            if (localSettings) {
-              const parsed = JSON.parse(localSettings);
-              setSettings(parsed);
-              await saveUserData('taxSettings', parsed);
-            }
-          } catch (e) { /* ignore */ }
+        } else {
+          setSettings(DEFAULT_TAX_SETTINGS);
+          localStorage.removeItem('taxSettings');
         }
 
         setDataLoadedFromDB(true);
       } catch (err) {
         console.error('[CryptoTax] Error loading from DB:', err);
-        // Final fallback to localStorage (offline mode)
-        try {
-          const localTx = localStorage.getItem('taxmitra_transactions');
-          if (localTx) setParsedTransactions(reviveTransactions(JSON.parse(localTx)));
-          const localTDS = localStorage.getItem('taxmitra_tds');
-          if (localTDS) setParsedTDSRecords(reviveTDSRecords(JSON.parse(localTDS)));
-          const localSettings = localStorage.getItem('taxSettings');
-          if (localSettings) setSettings(JSON.parse(localSettings));
-        } catch (e) { /* ignore */ }
+        // On DB error, show empty state (do NOT fall back to localStorage
+        // which may contain another user's data)
         setDataLoadedFromDB(true);
       }
     };

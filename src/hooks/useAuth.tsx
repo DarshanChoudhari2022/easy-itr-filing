@@ -1,6 +1,10 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+// Production URL for email redirects — never use localhost
+const SITE_URL = import.meta.env.VITE_APP_URL || 'https://easy-itr-filing.vercel.app';
 
 interface AuthContextType {
   user: User | null;
@@ -25,6 +29,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // Detect email confirmation (user clicked confirm link in email)
+        if (event === 'SIGNED_IN' && session?.user?.email_confirmed_at) {
+          // Check if this is a fresh confirmation (within last 60 seconds)
+          const confirmedAt = new Date(session.user.email_confirmed_at).getTime();
+          const now = Date.now();
+          if (now - confirmedAt < 60000) {
+            toast.success('🎉 Email verified successfully! Welcome to TaxMitra.', {
+              duration: 5000,
+              description: 'Your account is ready. Start filing your taxes!',
+            });
+          }
+        }
+
+        // Clear localStorage when user signs out to prevent data leaking
+        if (event === 'SIGNED_OUT') {
+          const cryptoKeys = [
+            'taxmitra_transactions', 'taxmitra_tds', 'taxSettings',
+            'coinDCXCredentials', 'crypto_sync_state',
+          ];
+          cryptoKeys.forEach(key => localStorage.removeItem(key));
+          console.log('[Auth] Cleared localStorage crypto data on sign out');
+        }
       }
     );
 
@@ -44,13 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
         options: {
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${SITE_URL}/auth`,
           data: {
             full_name: fullName,
           },
         },
       });
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
@@ -64,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
       });
-      
+
       if (error) throw error;
       return { error: null };
     } catch (error) {
