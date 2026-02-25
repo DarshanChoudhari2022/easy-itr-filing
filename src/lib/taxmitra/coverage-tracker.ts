@@ -398,6 +398,7 @@ export function computeCoverageScore(checklist: FYChecklist): CoverageResult {
 export function mapFileTypeToSource(fileType: CoinDCXFileType): DataSourceType | null {
     switch (fileType) {
         case 'trades': return 'order_history_csv';
+        case 'insta': return 'order_history_csv'; // Insta trades are OTC trades, mapped to order history
         case 'tds': return 'tds_summary_csv';
         case 'rewards': return 'rewards_csv';
         case 'deposits': return null; // Deposits are supplementary, no checklist item

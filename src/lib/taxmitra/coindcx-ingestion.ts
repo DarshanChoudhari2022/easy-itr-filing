@@ -16,11 +16,13 @@
  */
 
 import CryptoJS from 'crypto-js';
+import { parseInstaHistoryCSV } from './insta-csv-parser';
 
 // ============= TYPES =============
 
 export type CoinDCXFileType =
     | 'trades'
+    | 'insta'
     | 'deposits'
     | 'withdrawals'
     | 'tds'
@@ -1251,7 +1253,17 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
         return 'tds';
     }
 
-    // Check for TRADE indicators — only if not already identified as TDS
+    // Check for INSTA CSV indicators — CoinDCX Insta (OTC) history has
+    // 'coin' + 'inr_amount'/'inr amount' columns that distinguish it from regular trades
+    const hasInstaIndicators = (firstLine.includes('coin') || firstLine.includes('crypto')) &&
+        (firstLine.includes('inr_amount') || firstLine.includes('inr amount') || firstLine.includes('inr_value') ||
+            firstLine.includes('fiat_amount') || firstLine.includes('crypto_amount'));
+
+    if (hasInstaIndicators) {
+        return 'insta';
+    }
+
+    // Check for TRADE indicators — only if not already identified as TDS or Insta
     const hasTradeIndicators = firstLine.includes('side') || firstLine.includes('pair') ||
         firstLine.includes('market') || firstLine.includes('action') ||
         firstLine.includes('avg price') || firstLine.includes('average_price') ||
@@ -1295,6 +1307,8 @@ export function parseCoinDCXFile(
     switch (fileType) {
         case 'trades':
             return parseCoinDCXTradesCSV(csvContent, fileName, fxRateLookup);
+        case 'insta':
+            return parseInstaCSVToFileResult(csvContent, fileName);
         case 'deposits':
             return parseCoinDCXDepositsCSV(csvContent, fileName);
         case 'withdrawals':
@@ -1307,6 +1321,73 @@ export function parseCoinDCXFile(
             // Fallback: try as trades
             return parseCoinDCXTradesCSV(csvContent, fileName, fxRateLookup);
     }
+}
+
+/**
+ * Bridge: Convert Insta CSV parser output (ParsedInstaRow[]) to FileParseResult (NormalizedTransaction[])
+ */
+function parseInstaCSVToFileResult(csvContent: string, fileName: string): FileParseResult {
+    const instaResult = parseInstaHistoryCSV(csvContent);
+
+    const result: FileParseResult = {
+        fileType: 'insta',
+        fileName,
+        contentHash: '',
+        totalRows: instaResult.rows.length + instaResult.errors.length,
+        successCount: instaResult.rows.length,
+        errorCount: instaResult.errors.length,
+        duplicateCount: 0,
+        transactions: [],
+        tdsRecords: [],
+        errors: instaResult.errors.map(e => ({ line: e.row, message: e.reason })),
+        warnings: []
+    };
+
+    // Convert ParsedInstaRow[] → NormalizedTransaction[]
+    for (const row of instaResult.rows) {
+        const tradeDate = new Date(row.timestamp);
+        const fy = getFinancialYear(tradeDate);
+        const ay = getAssessmentYear(fy);
+        const qty = Number(row.quantity) || 0;
+        const priceInr = Number(row.price_inr) || 0;
+        const totalInr = Number(row.total_inr) || 0;
+        const feeInr = Number(row.fee_inr) || 0;
+        const tdsInr = Number(row.tds_inr) || 0;
+
+        const tx: NormalizedTransaction = {
+            externalId: row.source_id,
+            exchange: 'CoinDCX',
+            transactionType: row.txn_type.toLowerCase() as 'buy' | 'sell',
+            isTaxableEvent: row.txn_type === 'SELL',
+            assetSymbol: row.asset,
+            quoteAsset: 'INR',
+            pair: `${row.asset}/INR`,
+            quantity: qty,
+            pricePerUnit: priceInr,
+            priceInr: priceInr,
+            grossAmountQuote: totalInr,
+            grossAmountInr: totalInr,
+            feeAmount: feeInr,
+            feeAsset: 'INR',
+            feeInr: feeInr,
+            tdsAmount: tdsInr,
+            tdsRate: 0,
+            tradeTimestamp: tradeDate,
+            financialYear: fy,
+            assessmentYear: ay,
+            description: `INSTA ${row.txn_type} ${qty} ${row.asset} @ ₹${priceInr.toFixed(2)}`,
+            orderId: row.source_id,
+            rawData: { ...row.raw_data, source: 'INSTA_CSV', fileType: 'insta' },
+            contentHash: computeRowHash(row.raw_data),
+        };
+        result.transactions.push(tx);
+    }
+
+    if (instaResult.rows.length > 0) {
+        result.warnings.push(`Parsed ${instaResult.rows.length} Insta trades (${instaResult.summary.total_buys} buys, ${instaResult.summary.total_sells} sells)`);
+    }
+
+    return result;
 }
 
 // ============= MULTI-FILE IMPORT SESSION =============
