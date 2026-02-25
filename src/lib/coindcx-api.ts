@@ -207,7 +207,36 @@ async function makeAuthenticatedRequest<T>(
             };
         }
 
-        const data = await response.json();
+        const rawData = await response.json();
+
+        // CoinDCX API may return data in different formats:
+        // 1. Direct array: [{...}, {...}]
+        // 2. Nested: { orders: [...] } or { data: [...] } or { trades: [...] }
+        // 3. Error object: { error: "..." } or { message: "..." }
+        let data = rawData;
+
+        if (rawData && typeof rawData === 'object' && !Array.isArray(rawData)) {
+            // Check for CoinDCX error response
+            if (rawData.error || rawData.message) {
+                console.warn(`[CoinDCX API] ${endpoint} returned error object:`, rawData);
+                return {
+                    success: false,
+                    error: rawData.error || rawData.message
+                };
+            }
+            // Try to extract nested array data
+            if (Array.isArray(rawData.orders)) data = rawData.orders;
+            else if (Array.isArray(rawData.data)) data = rawData.data;
+            else if (Array.isArray(rawData.trades)) data = rawData.trades;
+            else if (Array.isArray(rawData.result)) data = rawData.result;
+            else {
+                // Log for debugging — might be a format we haven't seen
+                console.log(`[CoinDCX API] ${endpoint} response is object (not array):`,
+                    JSON.stringify(rawData).substring(0, 500));
+            }
+        }
+
+        console.log(`[CoinDCX API] ${endpoint} → ${Array.isArray(data) ? data.length + ' items' : typeof data}`);
         return { success: true, data };
     } catch (error) {
         console.error(`[CoinDCX API] ${endpoint} network error:`, error);
@@ -1787,6 +1816,9 @@ export async function fullCoinDCXSync(
         if (quarantinedTransactions.length > 0) {
             warnings.push(`🛡️ Filtered ${quarantinedTransactions.length} invalid/noise transactions (e.g., missing tokens).`);
         }
+
+        // Diagnostic: pipeline summary
+        warnings.push(`📊 Pipeline: ${allTransactions.length} raw → ${validTransactions.length} valid (${quarantinedTransactions.length} quarantined)`);
 
         // Try DB merge (best-effort — DB tables may not exist yet)
         let finalTxs = validTransactions;

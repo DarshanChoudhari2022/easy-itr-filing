@@ -68,8 +68,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             responseData = responseText;
         }
 
+        // Detailed diagnostic logging
+        const isArray = Array.isArray(responseData);
+        const summary = isArray
+            ? `array[${responseData.length}]`
+            : typeof responseData === 'object'
+                ? `object{${Object.keys(responseData).join(',')}}`
+                : typeof responseData;
+        console.log(`[CoinDCX Proxy] ${endpoint} → ${response.status} → ${summary}`);
+
         if (!response.ok) {
-            console.error(`[CoinDCX Proxy] Error ${response.status}:`, responseText.substring(0, 200));
+            console.error(`[CoinDCX Proxy] Error ${response.status}:`, responseText.substring(0, 500));
             return res.status(response.status).json({
                 error: `CoinDCX API Error (${response.status})`,
                 details: responseData,

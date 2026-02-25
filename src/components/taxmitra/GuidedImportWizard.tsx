@@ -579,6 +579,21 @@ export function GuidedImportWizard({
                                             Disconnect
                                         </Button>
                                     </div>
+                                    {/* Show sync diagnostic details */}
+                                    {apiSyncResult && apiSyncResult.warnings && apiSyncResult.warnings.length > 0 && (
+                                        <details className="mt-3">
+                                            <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                                                Show sync details ({apiSyncResult.warnings.length} messages)
+                                            </summary>
+                                            <div className="mt-2 max-h-48 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-3 text-xs font-mono space-y-1">
+                                                {apiSyncResult.warnings.map((w: string, i: number) => (
+                                                    <div key={i} className={`${w.includes('❌') || w.includes('Fatal') ? 'text-red-600' : w.includes('⚠️') ? 'text-amber-600' : 'text-slate-600'}`}>
+                                                        {w}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </details>
+                                    )}
                                 </div>
                             )}
 
