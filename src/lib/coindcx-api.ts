@@ -1853,7 +1853,11 @@ export async function fullCoinDCXSync(
         }
 
         // ── Sort by timestamp ──
-        finalTxs.sort((a, b) => a.tradeTimestamp.getTime() - b.tradeTimestamp.getTime());
+        finalTxs.sort((a, b) => {
+            const ta = a.tradeTimestamp instanceof Date ? a.tradeTimestamp.getTime() : new Date(a.tradeTimestamp).getTime();
+            const tb = b.tradeTimestamp instanceof Date ? b.tradeTimestamp.getTime() : new Date(b.tradeTimestamp).getTime();
+            return (ta || 0) - (tb || 0);
+        });
 
         // ── Missing data checklist ──
         const missingDataChecklist = buildMissingDataChecklist(
@@ -1913,21 +1917,29 @@ export async function fullCoinDCXSync(
 
         // Update sync log to FAILED
         if (syncSessionId) {
-            await supabase
-                .from('sync_logs')
-                .update({
-                    status: 'failed',
-                    error_message: (error as Error).message,
-                    completed_at: new Date().toISOString()
-                })
-                .eq('id', syncSessionId);
+            try {
+                await supabase
+                    .from('sync_logs')
+                    .update({
+                        status: 'failed',
+                        error_message: (error as Error).message,
+                        completed_at: new Date().toISOString()
+                    })
+                    .eq('id', syncSessionId);
+            } catch (_) { /* sync_logs may not exist */ }
         }
 
+        // CRITICAL: Even if processing crashed, we may have fetched transactions.
+        // Return whatever we have — don't throw away 239 fetched trades due to a
+        // downstream toFixed() or DB merge error.
+        const hasData = allTransactions.length > 0;
         return {
-            success: false,
-            error: `Sync failed: ${(error as Error).message}`,
+            success: hasData,
+            error: hasData
+                ? `Partial sync (${allTransactions.length} txns): ${(error as Error).message}`
+                : `Sync failed: ${(error as Error).message}`,
             transactions: allTransactions,
-            tdsRecords: [],
+            tdsRecords: allTDSRecords || [],
             balances,
             warnings,
             missingDataChecklist: [],

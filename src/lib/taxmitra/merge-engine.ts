@@ -31,9 +31,9 @@ export function computeTxFingerprint(tx: Partial<NormalizedTransaction>): string
     const parts = [
         date,
         (tx.assetSymbol || '').toUpperCase(),
-        (tx.quantity || 0).toFixed(10),
+        Number(tx.quantity || 0).toFixed(10),
         (tx.transactionType || '').toLowerCase(),
-        (tx.priceInr || 0).toFixed(6),
+        Number(tx.priceInr || 0).toFixed(6),
         (tx.exchange || 'CoinDCX').toLowerCase()
     ];
 
