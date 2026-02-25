@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Crypto Tax Platform - Fully Functional Implementation
  * Complete CSV import, trade management, and tax calculation
  */
@@ -44,7 +44,6 @@ import { toast } from "sonner";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { generateCompleteTaxReport, generateScheduleVDAPDF, TaxReportData } from "@/lib/pdf-report-generator";
 import { generateComprehensiveReport, buildComprehensiveReportData } from "@/lib/comprehensive-report-generator";
-
 import { PlanGate } from "@/hooks/usePlanGuard";
 import {
   fullCoinDCXSync,
@@ -136,15 +135,14 @@ export default function CryptoTaxPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
-
   const [importSessions, setImportSessions] = useState<any[]>([]);
-  // Client-side parsed data â€” loaded from DB (primary) and localStorage (cache)
+  // Client-side parsed data — loaded from DB (primary) and localStorage (cache)
   const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
   const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
   const [settings, setSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
   const [dataLoadedFromDB, setDataLoadedFromDB] = useState(false);
 
-  // â•â•â• FAIL-SAFE SYSTEM STATE â•â•â•
+  // ═══ FAIL-SAFE SYSTEM STATE ═══
   const [fyChecklist, setFyChecklist] = useState<FYChecklist | null>(null);
   const [reconResult, setReconResult] = useState<FullReconciliationResult | null>(null);
   const [reviewItems, setReviewItems] = useState<NeedsReviewItem[]>([]);
@@ -173,17 +171,17 @@ export default function CryptoTaxPage() {
     return parsed.map((r: any) => ({ ...r, tdsDate: new Date(r.tdsDate) }));
   };
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // DB-FIRST PERSISTENCE (Professional SaaS â€” data consistent across all devices)
+  // ═══════════════════════════════════════════════════════════════════
+  // DB-FIRST PERSISTENCE (Professional SaaS — data consistent across all devices)
   //
   // ARCHITECTURE:
   //   1. All writes go to Supabase FIRST (awaited, with retry)
   //   2. localStorage is updated as a read-through cache ONLY
-  //   3. On page load: DB â†’ state â†’ localStorage cache
+  //   3. On page load: DB → state → localStorage cache
   //   4. Debounced useEffects are BACKUP ONLY, not primary save path
   //
   // This guarantees the same data on every browser/device for the same user.
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ═══════════════════════════════════════════════════════════════════
 
   /**
    * Persist crypto data to Supabase (primary) + localStorage (cache).
@@ -211,9 +209,9 @@ export default function CryptoTaxPage() {
       localStorage.setItem('taxSettings', JSON.stringify(currentSettings));
     }
 
-    // Save to Supabase (primary â€” this is what makes data available on all devices)
+    // Save to Supabase (primary — this is what makes data available on all devices)
     if (!user) {
-      console.warn('[CryptoTax] No user â€” data saved to localStorage only');
+      console.warn('[CryptoTax] No user — data saved to localStorage only');
       return false;
     }
 
@@ -231,10 +229,10 @@ export default function CryptoTaxPage() {
       }
 
       await Promise.all(savePromises);
-      console.log(`[CryptoTax] âœ… DB SAVE COMPLETE: ${transactions.length} txns, ${tdsRecords.length} TDS records`);
+      console.log(`[CryptoTax] ✅ DB SAVE COMPLETE: ${transactions.length} txns, ${tdsRecords.length} TDS records`);
       return true;
     } catch (err) {
-      console.error('[CryptoTax] âŒ DB save failed, retrying once...', err);
+      console.error('[CryptoTax] ❌ DB save failed, retrying once...', err);
       // Retry once after 1 second
       try {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -243,7 +241,7 @@ export default function CryptoTaxPage() {
         if (tdsRecords.length > 0) retryPromises.push(saveUserData('taxmitra_tds', tdsRecords));
         if (currentSettings) retryPromises.push(saveUserData('taxSettings', currentSettings));
         await Promise.all(retryPromises);
-        console.log('[CryptoTax] âœ… DB SAVE SUCCEEDED on retry');
+        console.log('[CryptoTax] ✅ DB SAVE SUCCEEDED on retry');
         return true;
       } catch (retryErr) {
         console.error('[CryptoTax] DB save failed after retry. Data is in localStorage only.', retryErr);
@@ -252,7 +250,7 @@ export default function CryptoTaxPage() {
     }
   }, [user]);
 
-  // â”€â”€ LOAD DATA FROM SUPABASE (primary) â†’ localStorage (fallback cache) â”€â”€
+  // ── LOAD DATA FROM SUPABASE (primary) → localStorage (fallback cache) ──
   useEffect(() => {
     const loadDataFromDB = async () => {
       if (!user) return;
@@ -268,19 +266,19 @@ export default function CryptoTaxPage() {
           const revived = reviveTransactions(dbTransactions);
           setParsedTransactions(revived);
           localStorage.setItem('taxmitra_transactions', JSON.stringify(dbTransactions));
-          console.log(`[CryptoTax] âœ… Loaded ${revived.length} transactions from database`);
+          console.log(`[CryptoTax] ✅ Loaded ${revived.length} transactions from database`);
         } else {
-          // No DB data for this user â€” start fresh (do NOT load from localStorage)
+          // No DB data for this user — start fresh (do NOT load from localStorage)
           setParsedTransactions([]);
           localStorage.removeItem('taxmitra_transactions');
-          console.log('[CryptoTax] No transaction data in DB for this user â€” starting fresh');
+          console.log('[CryptoTax] No transaction data in DB for this user — starting fresh');
         }
 
         if (dbTDS && Array.isArray(dbTDS) && dbTDS.length > 0) {
           const revived = reviveTDSRecords(dbTDS);
           setParsedTDSRecords(revived);
           localStorage.setItem('taxmitra_tds', JSON.stringify(dbTDS));
-          console.log(`[CryptoTax] âœ… Loaded ${revived.length} TDS records from database`);
+          console.log(`[CryptoTax] ✅ Loaded ${revived.length} TDS records from database`);
         } else {
           setParsedTDSRecords([]);
           localStorage.removeItem('taxmitra_tds');
@@ -289,7 +287,7 @@ export default function CryptoTaxPage() {
         if (dbSettings) {
           setSettings(dbSettings);
           localStorage.setItem('taxSettings', JSON.stringify(dbSettings));
-          console.log('[CryptoTax] âœ… Loaded settings from database');
+          console.log('[CryptoTax] ✅ Loaded settings from database');
         } else {
           setSettings(DEFAULT_TAX_SETTINGS);
           localStorage.removeItem('taxSettings');
@@ -307,7 +305,7 @@ export default function CryptoTaxPage() {
     loadDataFromDB();
   }, [user]);
 
-  // â”€â”€ BACKUP: Debounced persist as safety net (NOT the primary save path) â”€â”€
+  // ── BACKUP: Debounced persist as safety net (NOT the primary save path) ──
   // These only trigger if data was changed via state updates without calling persistCryptoDataToDB
   useEffect(() => {
     if (!dataLoadedFromDB || !user) return;
@@ -321,7 +319,7 @@ export default function CryptoTaxPage() {
 
   useEffect(() => {
     if (!dataLoadedFromDB || !user || parsedTransactions.length === 0) return;
-    // Only do backup save â€” primary save happens in persistCryptoDataToDB
+    // Only do backup save — primary save happens in persistCryptoDataToDB
     localStorage.setItem('taxmitra_transactions', JSON.stringify(parsedTransactions));
   }, [parsedTransactions, dataLoadedFromDB, user]);
 
@@ -347,7 +345,7 @@ export default function CryptoTaxPage() {
   // File input ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // CoinDCX API Connect state â€” start empty, load from user-specific DB
+  // CoinDCX API Connect state — start empty, load from user-specific DB
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [apiConnected, setApiConnected] = useState(false);
@@ -448,8 +446,7 @@ export default function CryptoTaxPage() {
       setTaxComputation(result);
 
 
-
-      // â”€â”€ Persist to Supabase + localStorage so the Filing Wizard can auto-read â”€â”€
+      // ── Persist to Supabase + localStorage so the Filing Wizard can auto-read ──
       const cryptoTaxSummary = {
         taxableCapitalGains: result.taxableCapitalGains,
         totalTaxLiability: result.totalTaxLiability,
@@ -471,7 +468,7 @@ export default function CryptoTaxPage() {
       );
       console.log('[CryptoTax] Saved tax summary to DB + localStorage:', cryptoTaxSummary);
 
-      // â”€â”€ Persist to Supabase income_sources so it appears in Filing Wizard â”€â”€
+      // ── Persist to Supabase income_sources so it appears in Filing Wizard ──
       if (user) {
         const ay = result.assessmentYear || '2026-27';
         saveIncomeSources({
@@ -480,7 +477,7 @@ export default function CryptoTaxPage() {
           crypto_gains: Math.round(result.taxableCapitalGains),
           crypto_tds: Math.round(result.totalTDSCredit),
         }).then(() => {
-          console.log('[CryptoTax] âœ… Saved crypto data to income_sources for filing wizard');
+          console.log('[CryptoTax] ✅ Saved crypto data to income_sources for filing wizard');
         }).catch(err => {
           console.warn('[CryptoTax] Could not save to income_sources:', err.message);
         });
@@ -490,7 +487,7 @@ export default function CryptoTaxPage() {
     }
   }, [settings.accountingMethod, user]);
 
-  // FETCH TRADES from DB (graceful â€” won't fail if tables don't exist)
+  // FETCH TRADES from DB (graceful — won't fail if tables don't exist)
   const fetchTrades = useCallback(async () => {
     if (!user) return;
     try {
@@ -524,7 +521,7 @@ export default function CryptoTaxPage() {
     }
   }, [user]);
 
-  // FETCH TAX COMPUTATION â€” recompute from client-side parsed data
+  // FETCH TAX COMPUTATION — recompute from client-side parsed data
   const fetchTaxComputation = useCallback(async () => {
     if (parsedTransactions.length > 0) {
       recomputeTax(parsedTransactions, parsedTDSRecords, selectedFY);
@@ -540,7 +537,7 @@ export default function CryptoTaxPage() {
         .order('created_at', { ascending: false });
       if (!error && data) setImportSessions(data);
     } catch (err) {
-      // Silently ignore â€” table may not exist
+      // Silently ignore — table may not exist
     }
   }, []);
 
@@ -548,7 +545,7 @@ export default function CryptoTaxPage() {
   // Also auto-detect the best FY from the data (once)
   useEffect(() => {
     if (parsedTransactions.length > 0) {
-      // â”€â”€ Auto-detect FY from data (run once after first load) â”€â”€
+      // ── Auto-detect FY from data (run once after first load) ──
       if (!fyAutoDetected) {
         const fyCounts: Record<string, number> = {};
         for (const tx of parsedTransactions) {
@@ -574,7 +571,7 @@ export default function CryptoTaxPage() {
     }
   }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades, fyAutoDetected]);
 
-  // â•â•â• FAIL-SAFE: Initialize checklist whenever FY changes â•â•â•
+  // ═══ FAIL-SAFE: Initialize checklist whenever FY changes ═══
   useEffect(() => {
     const checklist = getOrCreateChecklist(selectedFY);
     setFyChecklist(checklist);
@@ -583,7 +580,7 @@ export default function CryptoTaxPage() {
     setReviewItems(savedReviews);
   }, [selectedFY]);
 
-  // â•â•â• FAIL-SAFE: Run reconciliation + filing gate after data changes â•â•â•
+  // ═══ FAIL-SAFE: Run reconciliation + filing gate after data changes ═══
   useEffect(() => {
     if (!fyChecklist || parsedTransactions.length === 0) return;
 
@@ -704,13 +701,13 @@ export default function CryptoTaxPage() {
         allTransactions.push(...fileResult.transactions);
         allTDSRecords.push(...fileResult.tdsRecords);
         if (fileResult.successCount > 0) {
-          messages.push(`âœ… ${fileResult.fileName}: ${fileResult.successCount} transactions parsed`);
+          messages.push(`✅ ${fileResult.fileName}: ${fileResult.successCount} transactions parsed`);
         }
         if (fileResult.errorCount > 0) {
-          messages.push(`âš ï¸ ${fileResult.fileName}: ${fileResult.errorCount} rows had errors`);
+          messages.push(`⚠️ ${fileResult.fileName}: ${fileResult.errorCount} rows had errors`);
         }
         if (fileResult.duplicateCount > 0) {
-          messages.push(`â„¹ï¸ ${fileResult.fileName}: ${fileResult.duplicateCount} duplicates skipped`);
+          messages.push(`ℹ️ ${fileResult.fileName}: ${fileResult.duplicateCount} duplicates skipped`);
         }
       }
 
@@ -750,7 +747,7 @@ export default function CryptoTaxPage() {
         return;
       }
 
-      // 3.5. CSV Date Range Validation â€” Check if data falls within selected FY
+      // 3.5. CSV Date Range Validation — Check if data falls within selected FY
       {
         const fy = FINANCIAL_YEARS.find(f => f.value === selectedFY);
         if (fy) {
@@ -779,27 +776,27 @@ export default function CryptoTaxPage() {
               ? `${minDate.toLocaleDateString('en-IN')} to ${maxDate.toLocaleDateString('en-IN')}`
               : 'unknown range';
             toast.warning(
-              `âš ï¸ None of the ${allTransactions.length} transactions fall within FY ${selectedFY}. ` +
+              `⚠️ None of the ${allTransactions.length} transactions fall within FY ${selectedFY}. ` +
               `Data range: ${dateRange}. The FY will auto-adjust.`,
               { duration: 8000 }
             );
-            messages.push(`âš ï¸ CSV date range (${dateRange}) is outside selected FY ${selectedFY} â€” auto-adjusting FY`);
+            messages.push(`⚠️ CSV date range (${dateRange}) is outside selected FY ${selectedFY} — auto-adjusting FY`);
           } else if (outsideCount > 0) {
             // Some transactions are outside
             const pct = Math.round((outsideCount / allTransactions.length) * 100);
-            messages.push(`â„¹ï¸ ${outsideCount} of ${allTransactions.length} transactions (${pct}%) are outside FY ${selectedFY} â€” they'll be used for FIFO cost basis from prior years`);
+            messages.push(`ℹ️ ${outsideCount} of ${allTransactions.length} transactions (${pct}%) are outside FY ${selectedFY} — they'll be used for FIFO cost basis from prior years`);
           }
         }
       }
-      // 4. Store parsed data in state â€” REPLACE all old data (not append)
+      // 4. Store parsed data in state — REPLACE all old data (not append)
       // This prevents stale data accumulation from old API syncs/imports
       // that had fabricated TDS or other bad values
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
 
       // REPLACE mode: clear old data and use only the new import
-      // This is intentional â€” re-uploading CSV should give you a fresh, correct state
+      // This is intentional — re-uploading CSV should give you a fresh, correct state
       console.log(`[CryptoImport] REPLACE mode: clearing ${parsedTransactions.length} old transactions, replacing with ${allTransactions.length} new ones`);
-      messages.push(`ðŸ”„ Replaced ${parsedTransactions.length} old transactions with ${allTransactions.length} fresh ones from CSV`);
+      messages.push(`🔄 Replaced ${parsedTransactions.length} old transactions with ${allTransactions.length} fresh ones from CSV`);
 
       setParsedTransactions(allTransactions);
       setParsedTDSRecords(allTDSRecords);
@@ -807,7 +804,7 @@ export default function CryptoTaxPage() {
       // DB-FIRST SAVE: Persist to Supabase immediately
       await persistCryptoDataToDB(allTransactions, allTDSRecords, settings);
 
-      // â”€â”€ FAIL-SAFE: Update checklist based on uploaded file types â”€â”€
+      // ── FAIL-SAFE: Update checklist based on uploaded file types ──
       if (fyChecklist) {
         let updatedChecklist = { ...fyChecklist };
         for (const fileResult of importResult.files) {
@@ -822,7 +819,7 @@ export default function CryptoTaxPage() {
         }
         setFyChecklist(updatedChecklist);
         saveChecklist(updatedChecklist);
-        messages.push(`ðŸ›¡ï¸ Data Coverage updated â€” ${importResult.files.length} source(s) marked as uploaded`);
+        messages.push(`🛡️ Data Coverage updated — ${importResult.files.length} source(s) marked as uploaded`);
       }
 
       // 5. Map to Trade[] for UI display
@@ -844,11 +841,11 @@ export default function CryptoTaxPage() {
       setTaxComputation(taxResult);
 
       // 7. Show success
-      toast.success(`Imported ${allTransactions.length} transactions â€” tax computed`);
-      messages.push(`ðŸ“Š Capital Gains: â‚¹${taxResult.grossCapitalGains.toLocaleString('en-IN')}`);
-      messages.push(`ðŸ’° Tax Liability: â‚¹${taxResult.totalTaxLiability.toLocaleString('en-IN')}`);
+      toast.success(`Imported ${allTransactions.length} transactions — tax computed`);
+      messages.push(`📊 Capital Gains: ₹${taxResult.grossCapitalGains.toLocaleString('en-IN')}`);
+      messages.push(`💰 Tax Liability: ₹${taxResult.totalTaxLiability.toLocaleString('en-IN')}`);
       if (taxResult.totalTDSCredit > 0) {
-        messages.push(`ðŸ”– TDS Credit: â‚¹${taxResult.totalTDSCredit.toLocaleString('en-IN')}`);
+        messages.push(`🔖 TDS Credit: ₹${taxResult.totalTDSCredit.toLocaleString('en-IN')}`);
       }
       if (taxResult.warnings.length > 0) {
         messages.push(...taxResult.warnings.slice(0, 5)); // Show first 5 engine warnings
@@ -1009,7 +1006,7 @@ export default function CryptoTaxPage() {
     setImportSessions([]);
     setImportResult(null);
 
-    // â”€â”€ FAIL-SAFE: Reset checklist + review items â”€â”€
+    // ── FAIL-SAFE: Reset checklist + review items ──
     const freshChecklist = getOrCreateChecklist(selectedFY);
     // Force a clean checklist by creating a brand new one
     const { createFYChecklist } = await import('@/lib/taxmitra/coverage-tracker');
@@ -1026,14 +1023,14 @@ export default function CryptoTaxPage() {
     localStorage.removeItem('taxmitra_tds');
     localStorage.removeItem('taxmitra_crypto_tax_summary');
 
-    // Clear from Supabase (awaited â€” ensures all devices see the deletion)
+    // Clear from Supabase (awaited — ensures all devices see the deletion)
     try {
       await Promise.all([
         deleteUserData('taxmitra_transactions'),
         deleteUserData('taxmitra_tds'),
         deleteUserData('taxmitra_crypto_tax_summary'),
       ]);
-      console.log('[CryptoTax] âœ… All data cleared from Supabase');
+      console.log('[CryptoTax] ✅ All data cleared from Supabase');
     } catch (e) {
       console.warn('[CryptoTax] Partial DB cleanup failure:', e);
     }
@@ -1063,7 +1060,7 @@ export default function CryptoTaxPage() {
 
     // Use engine computation if available
     if (taxComputation) {
-      // â”€â”€ Use engine's sell count (VDA report lines = unique sell events, matches KoinX) â”€â”€
+      // ── Use engine's sell count (VDA report lines = unique sell events, matches KoinX) ──
       // totalVDAEntries = number of sell events processed by FIFO engine
       // This is more accurate than raw fySells.length which counts raw CSV rows
       const engineSellCount = taxComputation.totalVDAEntries || fySells.length;
@@ -1072,8 +1069,8 @@ export default function CryptoTaxPage() {
         buyTrades: fyBuys.length,
         sellTrades: engineSellCount,
         rewardTrades: fyRewards.length,
-        // BUG FIX: totalBuyValueInr = cost of ALL buys (including unsold inventory) â€” WRONG
-        // totalCostOfAcquisitionInr = FIFO-matched cost for SOLD assets only â€” CORRECT
+        // BUG FIX: totalBuyValueInr = cost of ALL buys (including unsold inventory) — WRONG
+        // totalCostOfAcquisitionInr = FIFO-matched cost for SOLD assets only — CORRECT
         buyVolume: taxComputation.totalCostOfAcquisitionInr,
         sellVolume: taxComputation.totalConsiderationInr,
         netGain: taxComputation.netGainLossInfo,
@@ -1136,10 +1133,10 @@ export default function CryptoTaxPage() {
   // ============= HELPERS =============
   const formatCurrency = (value: number | string | undefined | null): string => {
     const v = Number(value) || 0;
-    if (Math.abs(v) >= 10000000) return `â‚¹${(v / 10000000).toFixed(2)} Cr`;
-    if (Math.abs(v) >= 100000) return `â‚¹${(v / 100000).toFixed(2)} L`;
-    if (Math.abs(v) >= 1000) return `â‚¹${(v / 1000).toFixed(1)} K`;
-    return `â‚¹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    if (Math.abs(v) >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
+    if (Math.abs(v) >= 100000) return `₹${(v / 100000).toFixed(2)} L`;
+    if (Math.abs(v) >= 1000) return `₹${(v / 1000).toFixed(1)} K`;
+    return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
   // ============= SAMPLE CSV GENERATOR =============
@@ -1199,7 +1196,7 @@ export default function CryptoTaxPage() {
                       <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">
                         Crypto Tax Calculator
                       </h1>
-                      <p className="text-sm text-slate-500">Section 115BBH â€¢ 30% Tax Rate</p>
+                      <p className="text-sm text-slate-500">Section 115BBH • 30% Tax Rate</p>
                     </div>
                   </div>
                 </div>
@@ -1263,10 +1260,10 @@ export default function CryptoTaxPage() {
                               <SelectContent>
                                 <SelectItem value="buy">Buy</SelectItem>
                                 <SelectItem value="sell">Sell</SelectItem>
-                                <SelectItem value="reward_staking">ðŸ¥© Staking Reward</SelectItem>
-                                <SelectItem value="reward_airdrop">ðŸŽ Airdrop / Promotion</SelectItem>
-                                <SelectItem value="reward_interest">ðŸ’° Interest / Lending</SelectItem>
-                                <SelectItem value="reward_mining">â›ï¸ Mining</SelectItem>
+                                <SelectItem value="reward_staking">🥩 Staking Reward</SelectItem>
+                                <SelectItem value="reward_airdrop">🎁 Airdrop / Promotion</SelectItem>
+                                <SelectItem value="reward_interest">💰 Interest / Lending</SelectItem>
+                                <SelectItem value="reward_mining">⛏️ Mining</SelectItem>
                                 <SelectItem value="deposit">Deposit</SelectItem>
                                 <SelectItem value="withdrawal">Withdrawal</SelectItem>
                               </SelectContent>
@@ -1283,7 +1280,7 @@ export default function CryptoTaxPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Price per Unit (â‚¹)</Label>
+                            <Label>Price per Unit (₹)</Label>
                             <Input
                               type="number"
                               step="any"
@@ -1293,7 +1290,7 @@ export default function CryptoTaxPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Total Value (â‚¹)</Label>
+                            <Label>Total Value (₹)</Label>
                             <Input
                               type="number"
                               step="any"
@@ -1303,7 +1300,7 @@ export default function CryptoTaxPage() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>TDS Deducted (â‚¹)</Label>
+                            <Label>TDS Deducted (₹)</Label>
                             <Input
                               type="number"
                               step="any"
@@ -1338,7 +1335,7 @@ export default function CryptoTaxPage() {
                           <Alert className="border-amber-200 bg-amber-50">
                             <Info className="h-4 w-4 text-amber-600" />
                             <AlertDescription className="text-amber-700 text-xs">
-                              ðŸ’¡ <strong>Where to find this data:</strong> Check your email for "CoinDCX reward credited" messages. Each email has the asset, amount, and date.
+                              💡 <strong>Where to find this data:</strong> Check your email for "CoinDCX reward credited" messages. Each email has the asset, amount, and date.
                             </AlertDescription>
                           </Alert>
                         ) : null}
@@ -1361,7 +1358,6 @@ export default function CryptoTaxPage() {
                   { id: 'drilldown', label: 'Tax Drill-Down', icon: Target },
                   { id: 'import', label: 'Import Data', icon: Upload },
                   { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
-
                   { id: 'settings', label: 'Settings', icon: Settings }
                 ].map(tab => (
                   <button
@@ -1403,7 +1399,7 @@ export default function CryptoTaxPage() {
                   <StatCard
                     label="Capital Gain Trades"
                     value={stats.totalTrades.toString()}
-                    subtext={`${stats.buyTrades} buys Â· ${stats.sellTrades} sells`}
+                    subtext={`${stats.buyTrades} buys · ${stats.sellTrades} sells`}
                     icon={<Activity className="h-5 w-5 text-indigo-600" />}
                   />
                   <StatCard
@@ -1421,14 +1417,14 @@ export default function CryptoTaxPage() {
                   <StatCard
                     label="Capital Gains"
                     value={formatCurrency(stats.taxableGain)}
-                    subtext={stats.taxableGain >= 0 ? 'Taxable gains (Â§115BBH)' : 'Net loss (info only)'}
+                    subtext={stats.taxableGain >= 0 ? 'Taxable gains (§115BBH)' : 'Net loss (info only)'}
                     icon={<Target className="h-5 w-5 text-purple-600" />}
                     highlight={stats.taxableGain >= 0 ? 'positive' : 'negative'}
                   />
                   <StatCard
                     label="Other Income"
                     value={formatCurrency(stats.otherIncome)}
-                    subtext={`Rewards/Staking${(stats as any).rewardTrades > 0 ? ` Â· ${(stats as any).rewardTrades} txns` : ' Â· Add manually â†—'}`}
+                    subtext={`Rewards/Staking${(stats as any).rewardTrades > 0 ? ` · ${(stats as any).rewardTrades} txns` : ' · Add manually ↗'}`}
                     icon={<Gift className="h-5 w-5 text-pink-600" />}
                     highlight="positive"
                   />
@@ -1450,7 +1446,7 @@ export default function CryptoTaxPage() {
                         <p className="text-indigo-200 text-sm mt-1">
                           Capital Gains: {formatCurrency(stats.taxableGain)} + Other Income: {formatCurrency(stats.otherIncome)}
                         </p>
-                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess (Â§115BBH)</p>
+                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess (§115BBH)</p>
                       </div>
                       <div className="flex flex-col sm:items-end gap-2">
                         <div className="flex items-center gap-2">
@@ -1469,7 +1465,7 @@ export default function CryptoTaxPage() {
                   </CardContent>
                 </Card>
 
-                {/* â”€â”€ Data Coverage Score â”€â”€ */}
+                {/* ── Data Coverage Score ── */}
                 {taxComputation?.dataCoverage && (
                   <Card className={`border-2 shadow-sm ${taxComputation.dataCoverage.level === 'complete' ? 'border-emerald-300 bg-emerald-50' :
                     taxComputation.dataCoverage.level === 'high' ? 'border-emerald-200 bg-emerald-50/50' :
@@ -1520,7 +1516,7 @@ export default function CryptoTaxPage() {
                             : 'bg-slate-50 border-slate-200 opacity-60'
                             }`}>
                             <span className="block text-lg">
-                              {(taxComputation.dataCoverage.sources as any)[s.key] ? 'âœ…' : 'â¬œ'}
+                              {(taxComputation.dataCoverage.sources as any)[s.key] ? '✅' : '⬜'}
                             </span>
                             <span className="font-medium">{s.label}</span>
                           </div>
@@ -1530,10 +1526,10 @@ export default function CryptoTaxPage() {
                       {/* Missing Items */}
                       {taxComputation.dataCoverage.recommendations.length > 0 && (
                         <div className="space-y-2 pt-2">
-                          <p className="text-xs font-semibold text-slate-600">ðŸ“‹ To improve accuracy:</p>
+                          <p className="text-xs font-semibold text-slate-600">📋 To improve accuracy:</p>
                           {taxComputation.dataCoverage.recommendations.map((rec, i) => (
                             <div key={i} className="flex gap-2 text-xs text-slate-700 bg-white p-2 rounded border border-slate-100">
-                              <span className="text-amber-500 shrink-0">â†’</span>
+                              <span className="text-amber-500 shrink-0">→</span>
                               <span>{rec}</span>
                             </div>
                           ))}
@@ -1543,7 +1539,7 @@ export default function CryptoTaxPage() {
                   </Card>
                 )}
 
-                {/* â”€â”€ Fail-Safe Filing Readiness Banner â”€â”€ */}
+                {/* ── Fail-Safe Filing Readiness Banner ── */}
                 {fyChecklist && filingGate && (
                   <div className={`flex items-center gap-3 p-4 rounded-xl border-2 shadow-sm ${filingGate.canFile
                     ? 'border-emerald-300 bg-emerald-50'
@@ -1560,14 +1556,14 @@ export default function CryptoTaxPage() {
                       <p className={`text-sm font-semibold ${filingGate.canFile ? 'text-emerald-800' : 'text-red-800'
                         }`}>
                         {filingGate.canFile
-                          ? 'âœ… Filing Ready â€” All data validated'
+                          ? '✅ Filing Ready — All data validated'
                           : filingGate.overrideAvailable
-                            ? `âš ï¸ ${filingGate.blockers.length} issue(s) detected â€” override available`
-                            : `ðŸ”´ Filing Blocked â€” ${filingGate.blockers.length} issue(s) must be resolved`}
+                            ? `⚠️ ${filingGate.blockers.length} issue(s) detected — override available`
+                            : `🔴 Filing Blocked — ${filingGate.blockers.length} issue(s) must be resolved`}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Coverage: {fyChecklist.coverageScore}% Â· {reconResult?.passCount || 0} checks passed
-                        Â· {reconResult?.warningCount || 0} warnings Â· {reconResult?.failCount || 0} failures
+                        Coverage: {fyChecklist.coverageScore}% · {reconResult?.passCount || 0} checks passed
+                        · {reconResult?.warningCount || 0} warnings · {reconResult?.failCount || 0} failures
                       </p>
                     </div>
                     <button
@@ -1583,10 +1579,10 @@ export default function CryptoTaxPage() {
                 {parsedTDSRecords.length === 0 && stats.tdsCredit > 0 && (
                   <Alert className="border-blue-200 bg-blue-50">
                     <Info className="h-4 w-4 text-blue-600" />
-                    <AlertTitle className="text-blue-800 font-semibold">â„¹ï¸ TDS is Computed from Sell Consideration (1%)</AlertTitle>
+                    <AlertTitle className="text-blue-800 font-semibold">ℹ️ TDS is Computed from Sell Consideration (1%)</AlertTitle>
                     <AlertDescription className="text-blue-700 text-sm">
                       No TDS certificate CSV uploaded. TDS credit is auto-computed as 1% of your total sell consideration per Section 194S.
-                      For certificate-level accuracy, download your <strong>TDS Summary CSV</strong> from CoinDCX â†’ Downloads â†’ TDS Summary â†’ Export CSV.
+                      For certificate-level accuracy, download your <strong>TDS Summary CSV</strong> from CoinDCX → Downloads → TDS Summary → Export CSV.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -1605,7 +1601,7 @@ export default function CryptoTaxPage() {
                             <BarChart data={monthlyVolume}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                               <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
-                              <YAxis stroke="#64748b" fontSize={12} tickFormatter={v => `â‚¹${(v / 1000).toFixed(0)}K`} />
+                              <YAxis stroke="#64748b" fontSize={12} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
                               <RechartsTooltip
                                 contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}
                                 formatter={(value: number) => formatCurrency(value)}
@@ -1735,10 +1731,10 @@ export default function CryptoTaxPage() {
                                         trade.trade_type === 'deposit' ? 'border-blue-200 text-blue-700 bg-blue-50' :
                                           'border-slate-200 text-slate-700 bg-slate-50'
                                 }>
-                                  {trade.trade_type === 'reward_staking' ? 'ðŸ¥© STAKING' :
-                                    trade.trade_type === 'reward_airdrop' ? 'ðŸŽ AIRDROP' :
-                                      trade.trade_type === 'reward_interest' ? 'ðŸ’° INTEREST' :
-                                        trade.trade_type === 'reward_mining' ? 'â›ï¸ MINING' :
+                                  {trade.trade_type === 'reward_staking' ? '🥩 STAKING' :
+                                    trade.trade_type === 'reward_airdrop' ? '🎁 AIRDROP' :
+                                      trade.trade_type === 'reward_interest' ? '💰 INTEREST' :
+                                        trade.trade_type === 'reward_mining' ? '⛏️ MINING' :
                                           trade.trade_type.toUpperCase()}
                                 </Badge>
                               </TableCell>
@@ -1766,7 +1762,7 @@ export default function CryptoTaxPage() {
               </Card>
             )}
 
-            {/* ============= IMPORT TAB â€” GUIDED WIZARD ============= */}
+            {/* ============= IMPORT TAB — GUIDED WIZARD ============= */}
             {activeTab === 'import' && (
               <GuidedImportWizard
                 parsedTransactions={parsedTransactions}
@@ -1866,6 +1862,7 @@ export default function CryptoTaxPage() {
               />
             )}
 
+
             {/* ============= REPORTS TAB ============= */}
             {activeTab === 'reports' && (
               <ReportsSection
@@ -1880,247 +1877,244 @@ export default function CryptoTaxPage() {
               />
             )}
 
-
-        {/* ============= DATA COVERAGE TAB ============= */}
-        {activeTab === 'coverage' as any && (
-          <div className="space-y-6">
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3">
-                  <ShieldCheck className="h-6 w-6 text-indigo-400" />
-                  <div>
-                    <h3 className="text-lg font-semibold">Data Coverage & Filing Readiness</h3>
-                    <p className="text-indigo-200 text-sm">Upload all required files to unlock accurate tax computation. Filing is blocked until all data gaps are resolved.</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {fyChecklist && (
-              <CoverageDashboard
-                checklist={fyChecklist}
-                reconciliation={reconResult}
-                onUploadFile={(source) => {
-                  toast.info(`To upload ${source}, switch to the "Import Data" tab and upload the CSV.`);
-                  setActiveTab('import');
-                }}
-                onMarkNotApplicable={(source) => {
-                  if (!fyChecklist) return;
-                  const updated = updateChecklistItem(fyChecklist, source as any, {
-                    status: 'not_applicable',
-                  });
-                  setFyChecklist(updated);
-                  saveChecklist(updated);
-                  toast.success(`Marked "${source}" as Not Applicable`);
-                }}
-                onShowInstructions={(source) => {
-                  const item = fyChecklist?.items.find(i => i.source === source);
-                  if (item) {
-                    toast.info(item.howToGetInstructions, { duration: 10000 });
-                  }
-                }}
-              />
-            )}
-
-            {/* Needs Review Panel */}
-            {reviewItems.length > 0 && (
-              <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    Needs Review
-                  </CardTitle>
-                  <CardDescription>Transactions that require your manual classification before filing</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <NeedsReviewPanel
-                    items={reviewItems}
-                    onResolve={(updatedItems) => {
-                      setReviewItems(updatedItems);
-                      saveReviewItems(selectedFY, updatedItems);
-                      // Re-evaluate filing gate
-                      if (fyChecklist) {
-                        const gate = evaluateFilingGate(fyChecklist, {
-                          needsReviewItems: updatedItems,
-                          gaps: reconResult?.gapResult?.gaps || [],
-                          unresolvedDuplicates: reconResult?.duplicateResult?.candidates.filter(c => !c.autoResolved) || [],
-                          negativeInventoryAssets: reconResult?.negativeInventoryAssets || [],
-                          tdsDiscrepancyPct: reconResult?.tdsDiscrepancyPct || 0,
-                          transactionCount: parsedTransactions.length,
-                        });
-                        setFilingGate(gate);
-                      }
-                      toast.success('Review item resolved');
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Filing Gate Status */}
-            {filingGate && (
-              <Card className={`border-2 shadow-sm ${filingGate.canFile ? 'border-emerald-300 bg-emerald-50' :
-                filingGate.overrideAvailable ? 'border-amber-300 bg-amber-50' :
-                  'border-red-300 bg-red-50'
-                }`}>
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between">
+            {/* ============= DATA COVERAGE TAB ============= */}
+            {activeTab === 'coverage' as any && (
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+                  <CardContent className="p-6">
                     <div className="flex items-center gap-3">
-                      {filingGate.canFile ? (
-                        <CheckCircle className="h-6 w-6 text-emerald-600" />
-                      ) : (
-                        <XCircle className="h-6 w-6 text-red-600" />
-                      )}
+                      <ShieldCheck className="h-6 w-6 text-indigo-400" />
                       <div>
-                        <p className={`text-sm font-semibold ${filingGate.canFile ? 'text-emerald-800' : 'text-red-800'
-                          }`}>
-                          {filingGate.canFile ? 'âœ… Ready to File' :
-                            filingGate.overrideAvailable ? 'âš ï¸ Filing Possible with Override' :
-                              'ðŸ”´ Filing Blocked'}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {filingGate.blockers.length} blocker(s) Â· {filingGate.warnings.length} warning(s) Â· Coverage: {filingGate.coverageScore}%
-                        </p>
+                        <h3 className="text-lg font-semibold">Data Coverage & Filing Readiness</h3>
+                        <p className="text-indigo-200 text-sm">Upload all required files to unlock accurate tax computation. Filing is blocked until all data gaps are resolved.</p>
                       </div>
                     </div>
-                    {filingGate.overrideAvailable && !filingGate.canFile && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-amber-400 text-amber-700 hover:bg-amber-100"
-                        onClick={() => setShowFilingGateModal(true)}
-                      >
-                        Override & Proceed
-                      </Button>
-                    )}
+                  </CardContent>
+                </Card>
+
+                {fyChecklist && (
+                  <CoverageDashboard
+                    checklist={fyChecklist}
+                    reconciliation={reconResult}
+                    onUploadFile={(source) => {
+                      toast.info(`To upload ${source}, switch to the "Import Data" tab and upload the CSV.`);
+                      setActiveTab('import');
+                    }}
+                    onMarkNotApplicable={(source) => {
+                      if (!fyChecklist) return;
+                      const updated = updateChecklistItem(fyChecklist, source as any, {
+                        status: 'not_applicable',
+                      });
+                      setFyChecklist(updated);
+                      saveChecklist(updated);
+                      toast.success(`Marked "${source}" as Not Applicable`);
+                    }}
+                    onShowInstructions={(source) => {
+                      const item = fyChecklist?.items.find(i => i.source === source);
+                      if (item) {
+                        toast.info(item.howToGetInstructions, { duration: 10000 });
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Needs Review Panel */}
+                {reviewItems.length > 0 && (
+                  <Card className="border-0 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        Needs Review
+                      </CardTitle>
+                      <CardDescription>Transactions that require your manual classification before filing</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <NeedsReviewPanel
+                        items={reviewItems}
+                        onResolve={(updatedItems) => {
+                          setReviewItems(updatedItems);
+                          saveReviewItems(selectedFY, updatedItems);
+                          // Re-evaluate filing gate
+                          if (fyChecklist) {
+                            const gate = evaluateFilingGate(fyChecklist, {
+                              needsReviewItems: updatedItems,
+                              gaps: reconResult?.gapResult?.gaps || [],
+                              unresolvedDuplicates: reconResult?.duplicateResult?.candidates.filter(c => !c.autoResolved) || [],
+                              negativeInventoryAssets: reconResult?.negativeInventoryAssets || [],
+                              tdsDiscrepancyPct: reconResult?.tdsDiscrepancyPct || 0,
+                              transactionCount: parsedTransactions.length,
+                            });
+                            setFilingGate(gate);
+                          }
+                          toast.success('Review item resolved');
+                        }}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Filing Gate Status */}
+                {filingGate && (
+                  <Card className={`border-2 shadow-sm ${filingGate.canFile ? 'border-emerald-300 bg-emerald-50' :
+                    filingGate.overrideAvailable ? 'border-amber-300 bg-amber-50' :
+                      'border-red-300 bg-red-50'
+                    }`}>
+                    <CardContent className="p-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {filingGate.canFile ? (
+                            <CheckCircle className="h-6 w-6 text-emerald-600" />
+                          ) : (
+                            <XCircle className="h-6 w-6 text-red-600" />
+                          )}
+                          <div>
+                            <p className={`text-sm font-semibold ${filingGate.canFile ? 'text-emerald-800' : 'text-red-800'
+                              }`}>
+                              {filingGate.canFile ? '✅ Ready to File' :
+                                filingGate.overrideAvailable ? '⚠️ Filing Possible with Override' :
+                                  '🔴 Filing Blocked'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {filingGate.blockers.length} blocker(s) · {filingGate.warnings.length} warning(s) · Coverage: {filingGate.coverageScore}%
+                            </p>
+                          </div>
+                        </div>
+                        {filingGate.overrideAvailable && !filingGate.canFile && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                            onClick={() => setShowFilingGateModal(true)}
+                          >
+                            Override & Proceed
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ============= TAX DRILL-DOWN TAB ============= */}
+            {activeTab === 'drilldown' as any && (
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-purple-950 text-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3">
+                      <Target className="h-6 w-6 text-purple-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold">Tax Drill-Down — Per-Asset Breakdown</h3>
+                        <p className="text-purple-200 text-sm">FIFO lot matching details for each asset and trade in FY {selectedFY}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {taxComputation ? (
+                  <Card className="border-0 shadow-sm">
+                    <CardContent className="p-5">
+                      <TaxDrillDown taxResult={taxComputation} />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
+                    <AlertDescription className="text-amber-700">
+                      Import your crypto trades first to see the per-asset tax breakdown.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+
+            {/* ============= SETTINGS TAB ============= */}
+            {activeTab === 'settings' && (
+              <Card className="border-0 shadow-sm max-w-2xl">
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold text-slate-900">Tax Calculation Settings</CardTitle>
+                  <CardDescription>Configure how your crypto taxes are calculated</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Accounting Method</p>
+                      <p className="text-sm text-slate-500">Method used to calculate cost basis</p>
+                    </div>
+                    <Select value={settings.accountingMethod} onValueChange={(v: 'FIFO' | 'LIFO' | 'HIFO') => setSettings({ ...settings, accountingMethod: v })}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FIFO">FIFO</SelectItem>
+                        <SelectItem value="LIFO">LIFO</SelectItem>
+                        <SelectItem value="HIFO">HIFO</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Staking Rewards as Income</p>
+                      <p className="text-sm text-slate-500">Tax staking rewards at receipt as other income</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatStakingAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatStakingAsIncome: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Airdrops as Income</p>
+                      <p className="text-sm text-slate-500">Tax airdrops at fair market value when received</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatAirdropsAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatAirdropsAsIncome: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Treat Interest as Income</p>
+                      <p className="text-sm text-slate-500">Tax crypto interest/lending rewards as other income</p>
+                    </div>
+                    <Switch
+                      checked={settings.treatInterestAsIncome}
+                      onCheckedChange={v => setSettings({ ...settings, treatInterestAsIncome: v })}
+                    />
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">Assessment Year</p>
+                      <p className="text-sm text-slate-500">Current assessment year for tax calculation</p>
+                    </div>
+                    <Badge className="bg-indigo-100 text-indigo-700 border-0">{settings.assessmentYear}</Badge>
                   </div>
                 </CardContent>
               </Card>
             )}
           </div>
+        </div>
+
+        {/* Filing Gate Modal */}
+        {filingGate && (
+          <FilingGateModal
+            isOpen={showFilingGateModal}
+            onClose={() => setShowFilingGateModal(false)}
+            onOverrideSuccess={() => {
+              setShowFilingGateModal(false);
+              toast.success('Filing override accepted. You may now proceed with filing.');
+              // Update gate to allow filing
+              setFilingGate(prev => prev ? { ...prev, canFile: true } : prev);
+            }}
+            gateResult={filingGate}
+            financialYear={selectedFY}
+          />
         )}
-
-        {/* ============= TAX DRILL-DOWN TAB ============= */}
-        {activeTab === 'drilldown' as any && (
-          <div className="space-y-6">
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-900 to-purple-950 text-white">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3">
-                  <Target className="h-6 w-6 text-purple-400" />
-                  <div>
-                    <h3 className="text-lg font-semibold">Tax Drill-Down â€” Per-Asset Breakdown</h3>
-                    <p className="text-purple-200 text-sm">FIFO lot matching details for each asset and trade in FY {selectedFY}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {taxComputation ? (
-              <Card className="border-0 shadow-sm">
-                <CardContent className="p-5">
-                  <TaxDrillDown taxResult={taxComputation} />
-                </CardContent>
-              </Card>
-            ) : (
-              <Alert className="border-amber-200 bg-amber-50">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                <AlertTitle className="text-amber-800">No Tax Data Available</AlertTitle>
-                <AlertDescription className="text-amber-700">
-                  Import your crypto trades first to see the per-asset tax breakdown.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-        )}
-
-        {/* ============= SETTINGS TAB ============= */}
-        {activeTab === 'settings' && (
-          <Card className="border-0 shadow-sm max-w-2xl">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold text-slate-900">Tax Calculation Settings</CardTitle>
-              <CardDescription>Configure how your crypto taxes are calculated</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Accounting Method</p>
-                  <p className="text-sm text-slate-500">Method used to calculate cost basis</p>
-                </div>
-                <Select value={settings.accountingMethod} onValueChange={(v: 'FIFO' | 'LIFO' | 'HIFO') => setSettings({ ...settings, accountingMethod: v })}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FIFO">FIFO</SelectItem>
-                    <SelectItem value="LIFO">LIFO</SelectItem>
-                    <SelectItem value="HIFO">HIFO</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Treat Staking Rewards as Income</p>
-                  <p className="text-sm text-slate-500">Tax staking rewards at receipt as other income</p>
-                </div>
-                <Switch
-                  checked={settings.treatStakingAsIncome}
-                  onCheckedChange={v => setSettings({ ...settings, treatStakingAsIncome: v })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Treat Airdrops as Income</p>
-                  <p className="text-sm text-slate-500">Tax airdrops at fair market value when received</p>
-                </div>
-                <Switch
-                  checked={settings.treatAirdropsAsIncome}
-                  onCheckedChange={v => setSettings({ ...settings, treatAirdropsAsIncome: v })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Treat Interest as Income</p>
-                  <p className="text-sm text-slate-500">Tax crypto interest/lending rewards as other income</p>
-                </div>
-                <Switch
-                  checked={settings.treatInterestAsIncome}
-                  onCheckedChange={v => setSettings({ ...settings, treatInterestAsIncome: v })}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Assessment Year</p>
-                  <p className="text-sm text-slate-500">Current assessment year for tax calculation</p>
-                </div>
-                <Badge className="bg-indigo-100 text-indigo-700 border-0">{settings.assessmentYear}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </div>
-
-        {/* Filing Gate Modal */ }
-  {
-    filingGate && (
-      <FilingGateModal
-        isOpen={showFilingGateModal}
-        onClose={() => setShowFilingGateModal(false)}
-        onOverrideSuccess={() => {
-          setShowFilingGateModal(false);
-          toast.success('Filing override accepted. You may now proceed with filing.');
-          // Update gate to allow filing
-          setFilingGate(prev => prev ? { ...prev, canFile: true } : prev);
-        }}
-        gateResult={filingGate}
-        financialYear={selectedFY}
-      />
-    )
-  }
-      </PlanGate >
-    </AppLayout >
+      </PlanGate>
+    </AppLayout>
   );
 }
 
@@ -2168,12 +2162,12 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
 
   const handleDownloadScheduleVDA = async () => {
     if (!taxComputation) { toast.error('No tax computation available. Import your CSV first.'); return; }
-    // Filing gate check â€” warn (but don't block) if data incomplete
+    // Filing gate check — warn (but don't block) if data incomplete
     if (filingGate && !filingGate.canFile) {
       const proceed = confirm(
-        `âš ï¸ Data Coverage Warning\n\n` +
+        `⚠️ Data Coverage Warning\n\n` +
         `Your data has ${filingGate.blockers.length} issue(s) that may affect accuracy:\n` +
-        filingGate.blockers.slice(0, 3).map(b => `â€¢ ${b.message}`).join('\n') +
+        filingGate.blockers.slice(0, 3).map(b => `• ${b.message}`).join('\n') +
         `\n\nDownload anyway? (You can resolve issues in the "Data Coverage" tab)`
       );
       if (!proceed) return;
@@ -2204,7 +2198,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
     // Filing gate check
     if (filingGate && !filingGate.canFile) {
       const proceed = confirm(
-        `âš ï¸ Data Coverage Warning\n\n` +
+        `⚠️ Data Coverage Warning\n\n` +
         `Your data has ${filingGate.blockers.length} issue(s) that may affect TDS accuracy.\n\n` +
         `Download anyway?`
       );
@@ -2239,12 +2233,12 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
   const netTax = taxComputation?.netTaxPayable ?? Math.max(0, totalTax - tdsPaid);
 
   // BUG FIX: sellCount must be number of SELL TRANSACTIONS (VDA report lines), NOT total token quantity sold.
-  // totalSold is the sum of token quantities (e.g. 91,828 ADA tokens) â€” completely wrong for "Number of Transfers".
+  // totalSold is the sum of token quantities (e.g. 91,828 ADA tokens) — completely wrong for "Number of Transfers".
   // totalVDAEntries = number of Schedule VDA rows = number of sell events = matches KoinX's "73 transfers".
   const sellCount = taxComputation?.totalVDAEntries ?? trades.filter(t => t.trade_type === 'sell').length;
 
   // BUG FIX: buyVolume must be cost of acquisition for SOLD assets only (from FIFO lot matches).
-  // totalBuyValueInr includes ALL buys (even unsold inventory) â€” massively overstated.
+  // totalBuyValueInr includes ALL buys (even unsold inventory) — massively overstated.
   // totalCostOfAcquisitionInr is the correct FIFO-matched cost for sold assets only.
   const buyVolume = taxComputation?.totalCostOfAcquisitionInr ?? trades.filter(t => t.trade_type === 'buy').reduce((s, t) => s + t.quantity * t.buy_price, 0);
 
@@ -2263,7 +2257,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="h-6 w-6" />
               <div>
-                <h3 className="text-lg font-semibold">Crypto Tax Reports â€” AY 2026-27</h3>
+                <h3 className="text-lg font-semibold">Crypto Tax Reports — AY 2026-27</h3>
                 <p className="text-indigo-200 text-sm">Comprehensive report with Schedule VDA, Asset P&L</p>
               </div>
             </div>
@@ -2280,9 +2274,9 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
             {filingGate.overrideAvailable ? 'Data Gaps Detected' : 'Filing Blocked'}
           </AlertTitle>
           <AlertDescription className="text-slate-600">
-            {filingGate.blockers.slice(0, 2).map(b => b.message).join(' Â· ')}
+            {filingGate.blockers.slice(0, 2).map(b => b.message).join(' · ')}
             {filingGate.blockers.length > 2 && ` ...and ${filingGate.blockers.length - 2} more`}
-            {' â€” '}
+            {' — '}
             <span className="text-xs">Reports downloaded now may be inaccurate. Resolve issues in the <strong>Data Coverage</strong> tab first.</span>
           </AlertDescription>
         </Alert>
@@ -2294,7 +2288,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Target className="h-5 w-5 text-indigo-600" />
-                Capital Gains Summary â€” {selectedFY}
+                Capital Gains Summary — {selectedFY}
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
                 <EyeOff className="h-4 w-4" />
@@ -2373,7 +2367,7 @@ function ReportsSection({ trades, portfolio, user, formatCurrency, taxComputatio
                         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                           <td className="p-2 font-medium border">{t.assetSymbol ?? t.asset}</td>
                           <td className="p-2 text-right text-emerald-600 border">{formatCurrency(t.grossGains ?? t.gains ?? 0)}</td>
-                          <td className="p-2 text-right text-red-600 border">{(t.grossLosses ?? t.losses ?? 0) > 0 ? formatCurrency(t.grossLosses ?? t.losses) : 'â‚¹0'}</td>
+                          <td className="p-2 text-right text-red-600 border">{(t.grossLosses ?? t.losses ?? 0) > 0 ? formatCurrency(t.grossLosses ?? t.losses) : '₹0'}</td>
                           <td className={`p-2 text-right font-bold border ${((t.grossGains ?? t.gains ?? 0) - (t.grossLosses ?? t.losses ?? 0)) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                             {formatCurrency((t.grossGains ?? t.gains ?? 0) - (t.grossLosses ?? t.losses ?? 0))}
                           </td>
