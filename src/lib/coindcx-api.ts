@@ -794,11 +794,11 @@ function aggregateTradesByOrder(trades: CoinDCXTrade[]): CoinDCXTrade[] {
         let totalFee = 0;
 
         for (const fill of fills) {
-            const qty = fill.quantity || 0;
-            const price = fill.price || 0;
+            const qty = Number(fill.quantity) || 0;
+            const price = Number(fill.price) || 0;
             totalQty += qty;
             totalGrossQuote += qty * price;
-            totalFee += parseFloat(fill.fee_amount) || 0;
+            totalFee += Number(fill.fee_amount) || 0;
         }
 
         // Weighted-average price across all fills
@@ -836,10 +836,11 @@ function convertTradesToNormalized(
         const { base, quote } = parseAssetFromSymbol(trade.symbol, marketMap);
         const tradeDate = new Date(trade.timestamp);
         const fy = getFY(tradeDate);
-        const fee = parseFloat(trade.fee_amount) || 0;
-        const qty = trade.quantity || 0;
-        const price = trade.price || 0;        // weighted-avg price in quote currency
-        const grossAmountQuote = qty * price;   // total in quote currency
+        // CRITICAL: CoinDCX API returns these as strings — must cast to Number
+        const fee = Number(trade.fee_amount) || 0;
+        const qty = Number(trade.quantity) || 0;
+        const price = Number(trade.price) || 0;  // weighted-avg price in quote currency
+        const grossAmountQuote = qty * price;     // total in quote currency
 
         // ── INR Conversion using HISTORICAL rates ──
         // CRITICAL: Use the rate that was in effect at the time of each trade.
