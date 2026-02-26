@@ -1297,17 +1297,23 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
     }
 
     // BUG 5 FIX: Check for INSTA CSV indicators — broadened detection
-    // CoinDCX Insta (OTC) history has 'coin' + amount/value columns,
+    // CoinDCX Insta (OTC) history has 'coin'/'currency' + amount/value columns,
     // and does NOT have 'market'/'pair'/'filled_quantity' columns typical of regular trades.
-    const hasCoinColumn = firstLine.includes('coin') || firstLine.includes('crypto');
+    //
+    // Insta CSV headers: Timestamp | Type | Currency | Amount | INR_Value | Remarks
+    // Regular trade CSV: Date | Market | Type | Price | Amount | Total | Fee
+    const hasCoinColumn = firstLine.includes('coin') || firstLine.includes('crypto') || firstLine.includes('currency');
     const hasInstaAmountColumn = firstLine.includes('inr_amount') || firstLine.includes('inr amount') ||
         firstLine.includes('inr_value') || firstLine.includes('fiat_amount') ||
         firstLine.includes('crypto_amount');
-    // Also detect when 'coin' + 'amount'/'total' are present but 'market'/'pair' are NOT
+    // Also detect when 'coin'/'currency' + 'amount'/'total' are present but 'market'/'pair' are NOT
     const hasMarketColumn = firstLine.includes('market') || firstLine.includes('pair');
     const hasBareAmountColumn = firstLine.includes('amount') || firstLine.includes('total') || firstLine.includes('value');
 
-    const hasInstaIndicators = hasCoinColumn && (hasInstaAmountColumn || (!hasMarketColumn && hasBareAmountColumn));
+    // Direct Insta detection: 'inr_value' column is unique to Insta CSV
+    const hasDirectInstaIndicator = firstLine.includes('inr_value') || firstLine.includes('inr_amount');
+
+    const hasInstaIndicators = hasDirectInstaIndicator || (hasCoinColumn && (hasInstaAmountColumn || (!hasMarketColumn && hasBareAmountColumn)));
 
     if (hasInstaIndicators) {
         return 'insta';
