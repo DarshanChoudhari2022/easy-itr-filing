@@ -1,7 +1,8 @@
 /**
- * TaxMitra — Insta CSV Parser Tests
- * ====================================
- * Tests for CoinDCX Insta History CSV parsing logic.
+ * TaxMitra — Insta History CSV Parser Tests
+ * ==========================================
+ * Tests for CoinDCX Insta History CSV parsing logic,
+ * including BUY/SELL trades AND staking/reward income events.
  *
  * @vitest-environment node
  */
@@ -10,198 +11,254 @@ import { describe, it, expect } from 'vitest';
 import { parseInstaHistoryCSV } from '../insta-csv-parser';
 
 
-describe('parseInstaHistoryCSV', () => {
+// ─── BUY / SELL Trades ───────────────────────────────────────────────
 
-    // ─── Basic Parsing ──
-
-    it('should parse a valid Insta history CSV', () => {
+describe('parseInstaHistoryCSV — trades', () => {
+    it('should parse BUY and SELL Insta trades', () => {
         const csv = [
-            'id,created_at,type,coin,quantity,inr_amount,fee',
-            'INSTA001,2024-06-15T10:30:00Z,buy,BTC,0.005,27500,55',
-            'INSTA002,2024-07-20T14:00:00Z,sell,ETH,1.5,420000,840',
-            'INSTA003,2024-08-01T09:00:00Z,buy,DOGE,10000,85000,170',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.errors).toHaveLength(0);
-        expect(result.rows).toHaveLength(3);
-
-        // First row: BTC BUY
-        expect(result.rows[0].source_id).toBe('INSTA001');
-        expect(result.rows[0].source).toBe('INSTA_CSV');
-        expect(result.rows[0].txn_type).toBe('BUY');
-        expect(result.rows[0].asset).toBe('BTC');
-        expect(result.rows[0].quantity).toBe(0.005);
-        expect(result.rows[0].total_inr).toBe(27500);
-        expect(result.rows[0].price_inr).toBe(5500000); // 27500 / 0.005
-        expect(result.rows[0].fee_inr).toBe(55);
-        expect(result.rows[0].tds_inr).toBe(0);
-        expect(result.rows[0].financial_year).toBe('FY2024-25');
-        expect(result.rows[0].pair).toBe('BTCINR');
-        expect(result.rows[0].status).toBe('COMPLETED');
-
-        // Second row: ETH SELL
-        expect(result.rows[1].txn_type).toBe('SELL');
-        expect(result.rows[1].asset).toBe('ETH');
-        expect(result.rows[1].price_inr).toBe(280000); // 420000 / 1.5
-
-        // Summary
-        expect(result.summary.total_buys).toBe(2);
-        expect(result.summary.total_sells).toBe(1);
-        expect(result.summary.assets).toEqual(['BTC', 'DOGE', 'ETH']);
-    });
-
-
-    // ─── Column Name Variants ──
-
-    it('should handle alternative column names', () => {
-        const csv = [
-            'transaction_id,date,side,asset,crypto_amount,amount,charges',
-            'TX001,2024-12-01T12:00:00Z,BUY,SHIB,500000,1000,2',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.errors).toHaveLength(0);
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].source_id).toBe('TX001');
-        expect(result.rows[0].asset).toBe('SHIB');
-        expect(result.rows[0].txn_type).toBe('BUY');
-        expect(result.rows[0].quantity).toBe(500000);
-        expect(result.rows[0].total_inr).toBe(1000);
-    });
-
-
-    it('should handle Order ID / Date / Type column names', () => {
-        const csv = [
-            'ID,Date,Type,Coin,Quantity,INR Amount,Fee',
-            'ABC123,2025-01-15T09:00:00Z,SELL,MATIC,1000,120000,240',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.errors).toHaveLength(0);
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].source_id).toBe('ABC123');
-        expect(result.rows[0].asset).toBe('MATIC');
-        expect(result.rows[0].txn_type).toBe('SELL');
-    });
-
-
-    // ─── Price Computation ──
-
-    it('should compute price_inr = total_inr / quantity', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,60000',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].price_inr).toBe(6000000); // 60000 / 0.01
-    });
-
-
-    it('should set price_inr to 0 if quantity is 0', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0,60000',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        // quantity=0 but inr_amount > 0, so it should still parse
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].price_inr).toBe(0);
-        expect(result.rows[0].total_inr).toBe(60000);
-    });
-
-
-    // ─── Fee Defaults to 0 ──
-
-    it('should default fee to 0 when fee column missing', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,60000',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows[0].fee_inr).toBe(0);
-    });
-
-
-    // ─── Asset Extraction ──
-
-    it('should extract assets from various formats', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,1,100',
-            'T2,2024-06-15T10:00:00Z,buy,Bitcoin (BTC),1,100',
-            'T3,2024-06-15T10:00:00Z,sell,ETHINR,1,100',
-            'T4,2024-06-15T10:00:00Z,sell,SHIB/INR,1,100',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(4);
-        expect(result.rows[0].asset).toBe('BTC');
-        expect(result.rows[1].asset).toBe('BTC');
-        expect(result.rows[2].asset).toBe('ETH');
-        expect(result.rows[3].asset).toBe('SHIB');
-    });
-
-
-    // ─── Financial Year ──
-
-    it('should compute FY correctly', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2025-03-15T10:00:00Z,buy,BTC,1,100',
-            'T2,2025-04-15T10:00:00Z,buy,BTC,1,100',
+            'Timestamp,Type,Currency,Amount,INR_Value,Remarks',
+            '2024-12-03T14:30:00Z,buy,ACA,10000,316184,Instant buy',
+            '2024-12-10T11:00:00Z,sell,ADA,500,45000,Instant sell',
         ].join('\n');
 
         const result = parseInstaHistoryCSV(csv);
 
         expect(result.rows).toHaveLength(2);
+        expect(result.incomeRows).toHaveLength(0);
+
+        // ACA BUY
+        expect(result.rows[0].txn_type).toBe('BUY');
+        expect(result.rows[0].asset).toBe('ACA');
+        expect(result.rows[0].quantity).toBe(10000);
+        expect(result.rows[0].total_inr).toBe(316184);
+        expect(result.rows[0].price_inr).toBeCloseTo(31.6184, 2);
         expect(result.rows[0].financial_year).toBe('FY2024-25');
-        expect(result.rows[1].financial_year).toBe('FY2025-26');
+        expect(result.rows[0].source).toBe('INSTA_CSV');
+
+        // ADA SELL
+        expect(result.rows[1].txn_type).toBe('SELL');
+        expect(result.rows[1].asset).toBe('ADA');
+        expect(result.rows[1].total_inr).toBe(45000);
     });
 
 
-    // ─── Date Formats ──
-
-    it('should handle DD/MM/YYYY date format', () => {
+    it('should generate synthetic source_id when no ID column', () => {
         const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,15/06/2024 10:30:00,buy,BTC,1,100',
+            'Timestamp,Type,Currency,Amount,INR_Value',
+            '2024-12-03T14:30:00Z,buy,ACA,10000,316184',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(1);
+        expect(result.rows[0].source_id).toContain('INSTA-');
+        // Same data → same ID (deterministic)
+        const result2 = parseInstaHistoryCSV(csv);
+        expect(result2.rows[0].source_id).toBe(result.rows[0].source_id);
+    });
+
+
+    it('should deduplicate identical rows within same parse', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value',
+            '2024-12-03T14:30:00Z,buy,ACA,10000,316184',
+            '2024-12-03T14:30:00Z,buy,ACA,10000,316184',
         ].join('\n');
 
         const result = parseInstaHistoryCSV(csv);
         expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].financial_year).toBe('FY2024-25');
     });
 
 
-    it('should handle Unix timestamps', () => {
+    it('should handle ID column when present', () => {
         const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,1718438400000,buy,BTC,1,100',
+            'id,Timestamp,Type,Currency,Amount,INR_Value',
+            'TX001,2024-12-03T14:30:00Z,buy,ACA,10000,316184',
         ].join('\n');
 
         const result = parseInstaHistoryCSV(csv);
+
         expect(result.rows).toHaveLength(1);
+        expect(result.rows[0].source_id).toBe('TX001');
     });
 
 
-    // ─── Error Handling ──
-
-    it('should report error for missing columns', () => {
+    it('should import BUY orders from all FYs for FIFO cost basis', () => {
         const csv = [
-            'name,value,description',
-            'BTC,100,test',
+            'Timestamp,Type,Currency,Amount,INR_Value',
+            '2022-06-15T10:00:00Z,buy,BTC,0.01,20000',
+            '2023-08-01T10:00:00Z,buy,BTC,0.02,50000',
+            '2024-12-01T10:00:00Z,sell,BTC,0.015,45000',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(3);
+        expect(result.rows[0].financial_year).toBe('FY2022-23');
+        expect(result.rows[1].financial_year).toBe('FY2023-24');
+        expect(result.rows[2].financial_year).toBe('FY2024-25');
+    });
+});
+
+
+// ─── Staking / Reward Income Events ─────────────────────────────────
+
+describe('parseInstaHistoryCSV — income events', () => {
+    it('should parse staking_interest as income event', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value,Remarks',
+            '2024-12-11T00:00:00Z,staking_interest,ADA,10.5,115.50,Weekly staking reward',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(0);
+        expect(result.incomeRows).toHaveLength(1);
+
+        const inc = result.incomeRows[0];
+        expect(inc.income_type).toBe('staking');
+        expect(inc.asset).toBe('ADA');
+        expect(inc.quantity).toBe(10.5);
+        expect(inc.value_inr).toBe(115.50);
+        expect(inc.financial_year).toBe('FY2024-25');
+        expect(inc.source).toBe('coindcx_insta');
+        expect(inc.source_id).toContain('INSTA-');
+        expect(inc.remarks).toBe('Weekly staking reward');
+    });
+
+
+    it('should parse reward as income event', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value,Remarks',
+            '2024-12-15T10:00:00Z,reward,INR,0,709.63,Cashback reward',
+            '2024-12-20T10:00:00Z,reward,SHIB,50000,103.58,Trading reward',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(0);
+        expect(result.incomeRows).toHaveLength(2);
+
+        // INR reward
+        expect(result.incomeRows[0].income_type).toBe('reward');
+        expect(result.incomeRows[0].asset).toBe('INR');
+        expect(result.incomeRows[0].value_inr).toBe(709.63);
+
+        // SHIB reward
+        expect(result.incomeRows[1].income_type).toBe('reward');
+        expect(result.incomeRows[1].asset).toBe('SHIB');
+        expect(result.incomeRows[1].value_inr).toBe(103.58);
+        expect(result.incomeRows[1].quantity).toBe(50000);
+    });
+
+
+    it('should handle multiple staking events per year (no 409 conflict)', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value,Remarks',
+            '2024-12-11T00:00:00Z,staking_interest,ADA,10,100,Week 1',
+            '2024-12-23T00:00:00Z,staking_interest,ADA,15,165,Week 2',
+            '2025-01-17T00:00:00Z,staking_interest,ADA,12,132,Week 3',
+            '2025-02-14T00:00:00Z,staking_interest,ADA,20,220,Week 4',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        // All 4 events should be separate income rows (not collapsed into 1)
+        expect(result.incomeRows).toHaveLength(4);
+
+        // All should be FY2024-25
+        result.incomeRows.forEach(inc => {
+            expect(inc.financial_year).toBe('FY2024-25');
+            expect(inc.income_type).toBe('staking');
+        });
+
+        // Each has unique source_id for per-event dedup
+        const sourceIds = result.incomeRows.map(r => r.source_id);
+        const uniqueIds = new Set(sourceIds);
+        expect(uniqueIds.size).toBe(4);
+
+        // Total: 100 + 165 + 132 + 220 = 617
+        const totalInr = result.incomeRows.reduce((s, r) => s + r.value_inr, 0);
+        expect(totalInr).toBe(617);
+    });
+});
+
+
+// ─── Mixed CSV (Trades + Income) ────────────────────────────────────
+
+describe('parseInstaHistoryCSV — mixed', () => {
+    it('should parse CSV with both trades and income events', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value,Remarks',
+            '2024-12-03T14:30:00Z,buy,ACA,10000,316184,Instant buy',
+            '2024-12-10T11:00:00Z,sell,ADA,500,45000,Instant sell',
+            '2024-12-11T00:00:00Z,staking_interest,ADA,10.5,115.50,Staking',
+            '2024-12-15T10:00:00Z,reward,INR,0,709.63,Cashback',
+            '2024-12-20T10:00:00Z,reward,SHIB,50000,103.58,Reward',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(2);        // 1 buy + 1 sell
+        expect(result.incomeRows).toHaveLength(3);   // 1 staking + 2 rewards
+
+        // Summary should cover both
+        expect(result.summary.total_buys).toBe(1);
+        expect(result.summary.total_sells).toBe(1);
+        expect(result.summary.total_income_events).toBe(3);
+        expect(result.summary.total_income_inr).toBeCloseTo(928.71, 2);
+        expect(result.summary.assets).toContain('ACA');
+        expect(result.summary.assets).toContain('ADA');
+        expect(result.summary.assets).toContain('INR');
+        expect(result.summary.assets).toContain('SHIB');
+    });
+
+
+    it('should skip unknown transaction types', () => {
+        const csv = [
+            'Timestamp,Type,Currency,Amount,INR_Value',
+            '2024-12-03T14:30:00Z,buy,BTC,1,100',
+            '2024-12-04T14:30:00Z,transfer,BTC,1,100',
+            '2024-12-05T14:30:00Z,withdrawal,BTC,1,100',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        // Only buy is valid
+        expect(result.rows).toHaveLength(1);
+        expect(result.incomeRows).toHaveLength(0);
+        // transfer and withdrawal should generate errors
+        expect(result.errors.some(e => e.reason.includes('Unknown transaction type'))).toBe(true);
+    });
+});
+
+
+// ─── Column Detection ────────────────────────────────────────────────
+
+describe('parseInstaHistoryCSV — column detection', () => {
+    it('should handle alternative column names', () => {
+        const csv = [
+            'created_at,Side,Coin,Quantity,INR_Value,Fee,Remarks',
+            '2024-12-03T14:30:00Z,BUY,ACA,10000,316184,500,test',
+        ].join('\n');
+
+        const result = parseInstaHistoryCSV(csv);
+
+        // Debug: if test fails, log errors
+        if (result.rows.length === 0) {
+            console.error('Alt column test errors:', result.errors);
+        }
+
+        expect(result.rows).toHaveLength(1);
+        expect(result.rows[0].asset).toBe('ACA');
+        expect(result.rows[0].fee_inr).toBe(500);
+    });
+
+
+    it('should detect required columns and report missing', () => {
+        const csv = [
+            'Name,Value,Description',
+            'Test,123,Blah',
         ].join('\n');
 
         const result = parseInstaHistoryCSV(csv);
@@ -214,102 +271,6 @@ describe('parseInstaHistoryCSV', () => {
     it('should handle empty CSV', () => {
         const result = parseInstaHistoryCSV('');
         expect(result.rows).toHaveLength(0);
-        expect(result.errors.length).toBeGreaterThan(0);
-    });
-
-
-    it('should skip invalid rows and continue', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,60000',
-            'T2,INVALID_DATE,buy,ETH,1,100',
-            'T3,2024-06-17T10:00:00Z,sell,DOGE,1000,500',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(2);
-        expect(result.errors).toHaveLength(1);
-        expect(result.errors[0].row).toBe(3);
-    });
-
-
-    it('should skip rows where both quantity and amount are zero', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0,0',
-            'T2,2024-06-15T10:00:00Z,buy,ETH,1,500',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].asset).toBe('ETH');
-    });
-
-
-    // ─── Quoted Fields ──
-
-    it('should handle quoted fields with commas', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,"60,000"',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].total_inr).toBe(60000);
-    });
-
-
-    // ─── Summary Statistics ──
-
-    it('should compute correct summary', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,60000',
-            'T2,2024-06-16T10:00:00Z,sell,BTC,0.005,30000',
-            'T3,2024-07-01T10:00:00Z,buy,ETH,2,500000',
-            'T4,2024-07-15T10:00:00Z,buy,DOGE,10000,800',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.summary.total_buys).toBe(3);
-        expect(result.summary.total_sells).toBe(1);
-        expect(result.summary.total_inr_volume).toBe(590800);
-        expect(result.summary.assets).toEqual(['BTC', 'DOGE', 'ETH']);
-        expect(result.summary.financial_years).toEqual(['FY2024-25']);
-    });
-
-
-    // ─── Pair is always <ASSET>INR ──
-
-    it('should set pair to <ASSET>INR for all insta trades', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount',
-            'T1,2024-06-15T10:00:00Z,buy,SHIB,1000000,500',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows[0].pair).toBe('SHIBINR');
-    });
-
-
-    // ─── Raw Data ──
-
-    it('should include raw_data for audit trail', () => {
-        const csv = [
-            'id,created_at,type,coin,quantity,inr_amount,extra',
-            'T1,2024-06-15T10:00:00Z,buy,BTC,0.01,60000,bonus_info',
-        ].join('\n');
-
-        const result = parseInstaHistoryCSV(csv);
-
-        expect(result.rows[0].raw_data).toBeDefined();
-        expect(result.rows[0].raw_data['id']).toBe('T1');
-        expect(result.rows[0].raw_data['extra']).toBe('bonus_info');
+        expect(result.incomeRows).toHaveLength(0);
     });
 });

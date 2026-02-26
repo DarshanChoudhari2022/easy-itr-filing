@@ -371,17 +371,19 @@ export function parseCoinDCXTradesCSV(
     // Map columns — supports both CoinDCX "Trade History" AND "Order History" formats
     const col = {
         date: findColumn(headers, 'time', 'date', 'created_at', 'trade_time', 'timestamp', 'order_time', 'order_date'),
-        pair: findColumn(headers, 'market', 'pair', 'symbol', 'coin_pair', 'instrument', 'trading_pair'),
+        pair: findColumn(headers, 'market', 'pair', 'symbol', 'coin_pair', 'crypto pair', 'crypto_pair', 'instrument', 'trading_pair'),
         side: findColumn(headers, 'side', 'action', 'type', 'order_type', 'buy_sell', 'direction', 'trade_type'),
-        qty: findColumn(headers, 'filled_quantity', 'filled_qty', 'quantity', 'qty', 'amount', 'volume', 'executed_qty', 'traded_quantity'),
-        price: findColumn(headers, 'average_price', 'avg_price', 'price', 'rate', 'execution_price', 'price_per_unit'),
+        qty: findColumn(headers, 'filled_quantity', 'filled_qty', 'quantity', 'qty', 'amount', 'volume', 'executed_qty', 'traded_quantity', 'crypto_amount'),
+        price: findColumn(headers, 'average_price', 'avg_price', 'price', 'rate', 'execution_price', 'price_per_unit', 'avg price'),
         fee: findColumn(headers, 'fee', 'commission', 'fee_amount', 'charges', 'trading_fee'),
         feeCurrency: findColumn(headers, 'fee_currency', 'fee_asset', 'fee_coin'),
-        total: findColumn(headers, 'total', 'value', 'net_amount', 'gross_amount', 'total_amount'),
+        total: findColumn(headers, 'total', 'value', 'net_amount', 'gross_amount', 'total_amount', 'inr_amount', 'inr amount', 'inr_value'),
         orderId: findColumn(headers, 'order_id', 'id', 'trade_id', 'txn_id'),
         tds: findColumn(headers, 'tds', 'tds_amount', 'tds_deducted', 'tds_charged'),
         status: findColumn(headers, 'status', 'order_status', 'state'),
         remainingQty: findColumn(headers, 'remaining_quantity', 'remaining_qty', 'unfilled_qty'),
+        // BUG 1 FIX: Additional column to try for asset extraction when 'pair' column is missing
+        coin: findColumn(headers, 'coin', 'asset', 'currency', 'crypto', 'coin_name', 'token'),
     };
 
     // Fallback to positional if no headers matched
@@ -466,8 +468,36 @@ export function parseCoinDCXTradesCSV(
                 continue;
             }
 
-            const baseAsset = extractBaseAsset(pairStr);
-            const quoteAsset = extractQuoteAsset(pairStr);
+            // BUG 1 FIX: When pair column is missing, try the 'coin' column for asset extraction
+            let baseAsset: string;
+            let quoteAsset: string;
+
+            if (pairStr) {
+                // Standard path: extract from pair/market column (e.g., "BTCINR", "ETH/USDT")
+                baseAsset = extractBaseAsset(pairStr);
+                quoteAsset = extractQuoteAsset(pairStr);
+            } else if ((col as any).coin >= 0) {
+                // Fallback: use the 'coin' / 'asset' / 'currency' column directly
+                const coinStr = values[(col as any).coin]?.trim().toUpperCase() || '';
+                baseAsset = coinStr.replace(/^I-/, '') || 'UNKNOWN';
+                // Strip parenthetical names like "Bitcoin (BTC)" → BTC
+                const parenMatch = baseAsset.match(/\(([A-Z0-9]+)\)/);
+                if (parenMatch) baseAsset = parenMatch[1];
+                quoteAsset = 'INR'; // Insta/OTC trades are always against INR
+            } else {
+                // Last resort: try to extract from filename
+                const fnMatch = fileName.toUpperCase().match(/([A-Z]{2,10})(?:INR|USDT)?/i);
+                baseAsset = fnMatch ? fnMatch[1] : 'UNKNOWN';
+                quoteAsset = 'INR';
+            }
+
+            // Ensure we don't have an UNKNOWN asset — skip row with warning
+            if (baseAsset === 'UNKNOWN' || baseAsset === '' || baseAsset.length < 2) {
+                result.warnings.push(`Row ${i + 1}: Could not determine asset from pair="${pairStr}". Skipping.`);
+                result.errorCount++;
+                continue;
+            }
+
             const sideNorm = sideStr.toLowerCase().trim();
             const pairNorm = pairStr.toLowerCase().trim();
 
@@ -487,7 +517,7 @@ export function parseCoinDCXTradesCSV(
             // Priority: use the CSV 'total' column as the authoritative INR amount when available.
             // CoinDCX exports include a 'total' column with the exact INR trade value.
             // Recomputing quantity × price can differ due to rounding or fee inclusion.
-            const totalFromCsv = totalStr ? Math.abs(parseFloat(totalStr) || 0) : 0;
+            const totalFromCsv = totalStr ? Math.abs(parseFloat(totalStr.replace(/[^0-9.-]/g, '')) || 0) : 0;
 
             let priceInr = pricePerUnit;
             let grossAmountInr: number;
@@ -495,8 +525,16 @@ export function parseCoinDCXTradesCSV(
             if (totalFromCsv > 0 && quoteAsset === 'INR') {
                 // Use the exact total from the CSV (most accurate)
                 grossAmountInr = totalFromCsv;
-                // Derive priceInr from total for consistency
-                priceInr = quantity > 0 ? totalFromCsv / quantity : pricePerUnit;
+                // BUG 2 FIX: Derive priceInr from total for consistency when price column is zero/missing
+                if (pricePerUnit <= 0 && quantity > 0) {
+                    priceInr = totalFromCsv / quantity;
+                } else {
+                    priceInr = quantity > 0 ? totalFromCsv / quantity : pricePerUnit;
+                }
+            } else if (pricePerUnit <= 0 && totalFromCsv > 0) {
+                // BUG 2 FIX: Price column missing but total is available (non-INR pair)
+                grossAmountInr = totalFromCsv;
+                priceInr = quantity > 0 ? totalFromCsv / quantity : 0;
             } else {
                 // Non-INR pair or no total column — compute from price
                 if (quoteAsset !== 'INR') {
@@ -513,6 +551,11 @@ export function parseCoinDCXTradesCSV(
                     }
                 }
                 grossAmountInr = quantity * priceInr;
+            }
+
+            // BUG 2 SAFETY NET: If price is still 0 or 1.00 but grossAmount is valid, fix it
+            if ((pricePerUnit <= 0 || pricePerUnit === 1) && grossAmountInr > 0 && quantity > 0) {
+                priceInr = grossAmountInr / quantity;
             }
 
             const feeInr = feeCurrStr.toUpperCase() === 'INR' ? feeAmount : feeAmount * priceInr;
@@ -1253,11 +1296,18 @@ export function detectCoinDCXFileType(csvContent: string): CoinDCXFileType {
         return 'tds';
     }
 
-    // Check for INSTA CSV indicators — CoinDCX Insta (OTC) history has
-    // 'coin' + 'inr_amount'/'inr amount' columns that distinguish it from regular trades
-    const hasInstaIndicators = (firstLine.includes('coin') || firstLine.includes('crypto')) &&
-        (firstLine.includes('inr_amount') || firstLine.includes('inr amount') || firstLine.includes('inr_value') ||
-            firstLine.includes('fiat_amount') || firstLine.includes('crypto_amount'));
+    // BUG 5 FIX: Check for INSTA CSV indicators — broadened detection
+    // CoinDCX Insta (OTC) history has 'coin' + amount/value columns,
+    // and does NOT have 'market'/'pair'/'filled_quantity' columns typical of regular trades.
+    const hasCoinColumn = firstLine.includes('coin') || firstLine.includes('crypto');
+    const hasInstaAmountColumn = firstLine.includes('inr_amount') || firstLine.includes('inr amount') ||
+        firstLine.includes('inr_value') || firstLine.includes('fiat_amount') ||
+        firstLine.includes('crypto_amount');
+    // Also detect when 'coin' + 'amount'/'total' are present but 'market'/'pair' are NOT
+    const hasMarketColumn = firstLine.includes('market') || firstLine.includes('pair');
+    const hasBareAmountColumn = firstLine.includes('amount') || firstLine.includes('total') || firstLine.includes('value');
+
+    const hasInstaIndicators = hasCoinColumn && (hasInstaAmountColumn || (!hasMarketColumn && hasBareAmountColumn));
 
     if (hasInstaIndicators) {
         return 'insta';
@@ -1324,17 +1374,23 @@ export function parseCoinDCXFile(
 }
 
 /**
- * Bridge: Convert Insta CSV parser output (ParsedInstaRow[]) to FileParseResult (NormalizedTransaction[])
+ * Bridge: Convert Insta CSV parser output (ParsedInstaRow[] + ParsedInstaIncomeRow[])
+ * to FileParseResult (NormalizedTransaction[]).
+ *
+ * Income events (staking, reward, airdrop) are converted to NormalizedTransaction
+ * with transactionType='reward' so the tax engine can see them as "Other Income".
  */
 function parseInstaCSVToFileResult(csvContent: string, fileName: string): FileParseResult {
     const instaResult = parseInstaHistoryCSV(csvContent);
+
+    const totalSuccessRows = instaResult.rows.length + instaResult.incomeRows.length;
 
     const result: FileParseResult = {
         fileType: 'insta',
         fileName,
         contentHash: '',
-        totalRows: instaResult.rows.length + instaResult.errors.length,
-        successCount: instaResult.rows.length,
+        totalRows: totalSuccessRows + instaResult.errors.length,
+        successCount: totalSuccessRows,
         errorCount: instaResult.errors.length,
         duplicateCount: 0,
         transactions: [],
@@ -1343,7 +1399,7 @@ function parseInstaCSVToFileResult(csvContent: string, fileName: string): FilePa
         warnings: []
     };
 
-    // Convert ParsedInstaRow[] → NormalizedTransaction[]
+    // Convert ParsedInstaRow[] → NormalizedTransaction[] (buy/sell trades)
     for (const row of instaResult.rows) {
         const tradeDate = new Date(row.timestamp);
         const fy = getFinancialYear(tradeDate);
@@ -1383,8 +1439,50 @@ function parseInstaCSVToFileResult(csvContent: string, fileName: string): FilePa
         result.transactions.push(tx);
     }
 
+    // Convert ParsedInstaIncomeRow[] → NormalizedTransaction[] (staking/reward income)
+    // These are treated as "reward" transactions for tax purposes (Other Income under s.56)
+    for (const incRow of instaResult.incomeRows) {
+        const incDate = new Date(incRow.transaction_date);
+        const fy = getFinancialYear(incDate);
+        const ay = getAssessmentYear(fy);
+        const qty = Number(incRow.quantity) || 0;
+        const valueInr = Number(incRow.value_inr) || 0;
+        const pricePerUnit = qty > 0 ? valueInr / qty : valueInr;
+
+        const tx: NormalizedTransaction = {
+            externalId: incRow.source_id,
+            exchange: 'CoinDCX',
+            transactionType: 'reward',
+            isTaxableEvent: true, // Staking/rewards are taxable as Other Income
+            assetSymbol: incRow.asset,
+            quoteAsset: 'INR',
+            pair: `${incRow.asset}/INR`,
+            quantity: qty,
+            pricePerUnit: pricePerUnit,
+            priceInr: pricePerUnit,
+            grossAmountQuote: valueInr,
+            grossAmountInr: valueInr,
+            feeAmount: 0,
+            feeAsset: 'INR',
+            feeInr: 0,
+            tdsAmount: 0,
+            tdsRate: 0,
+            tradeTimestamp: incDate,
+            financialYear: fy,
+            assessmentYear: ay,
+            description: `${incRow.income_type.toUpperCase()} ${qty} ${incRow.asset} (₹${valueInr.toFixed(2)})${incRow.remarks ? ' — ' + incRow.remarks : ''}`,
+            orderId: incRow.source_id,
+            rawData: { ...incRow.raw_data, source: 'INSTA_CSV', fileType: 'insta', income_type: incRow.income_type },
+            contentHash: computeRowHash(incRow.raw_data),
+        };
+        result.transactions.push(tx);
+    }
+
     if (instaResult.rows.length > 0) {
         result.warnings.push(`Parsed ${instaResult.rows.length} Insta trades (${instaResult.summary.total_buys} buys, ${instaResult.summary.total_sells} sells)`);
+    }
+    if (instaResult.incomeRows.length > 0) {
+        result.warnings.push(`Parsed ${instaResult.incomeRows.length} income events (staking/rewards/airdrops) worth ₹${instaResult.summary.total_income_inr.toFixed(2)}`);
     }
 
     return result;

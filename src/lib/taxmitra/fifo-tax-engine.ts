@@ -87,12 +87,17 @@ export interface TaxComputationResult {
     total_cost_of_acquisition: number;
     gross_capital_gain: number;
     taxable_gain: number;
+    gross_losses: number;           // For display only — NOT deducted
     gross_tax: number;
     cess: number;
     total_tax: number;
     total_tds_credit: number;
     net_payable: number;
     tds_refund_eligible: number;
+    // Other Income (staking, rewards, airdrops from crypto_income table)
+    other_income: number;
+    other_income_by_type: Record<string, number>;
+    // Data quality
     unknown_lots_count: number;
     has_data_gaps: boolean;
     // Detailed breakdown
@@ -188,19 +193,24 @@ export async function computeCryptoTax(
 
     // Create lots in batches
     let lotsCreated = 0;
-    const lotRecords = buys.map(buy => ({
-        user_id: userId,
-        txn_id: buy.id,
-        asset: buy.asset,
-        original_qty: buy.quantity,
-        remaining_qty: buy.quantity,
-        cost_per_unit: buy.quantity > 0
-            ? (buy.total_inr + buy.fee_inr) / buy.quantity    // Fee = part of cost of acquisition
-            : 0,
-        purchase_date: buy.timestamp,
-        financial_year: buy.financial_year,
-        is_exhausted: false,
-    }));
+    const lotRecords = buys.map(buy => {
+        // v6 FIX: Cost of Acquisition = total_inr + fee_inr
+        // Fee IS part of cost of acquisition (what you paid to acquire the asset)
+        const totalCost = buy.total_inr + buy.fee_inr;
+        return {
+            user_id: userId,
+            txn_id: buy.id,
+            asset: buy.asset,
+            original_qty: buy.quantity,
+            remaining_qty: buy.quantity,
+            cost_per_unit: buy.quantity > 0
+                ? totalCost / buy.quantity
+                : 0,
+            purchase_date: buy.timestamp,
+            financial_year: buy.financial_year,
+            is_exhausted: false,
+        };
+    });
 
     for (let i = 0; i < lotRecords.length; i += BATCH_SIZE) {
         const batch = lotRecords.slice(i, i + BATCH_SIZE);
@@ -249,11 +259,13 @@ export async function computeCryptoTax(
     for (const sell of sells) {
         let sellQtyRemaining = sell.quantity;
 
-        // Sale consideration per unit = (total_inr - fee_inr) / quantity
-        // Fee reduces sale consideration (not deductible separately for crypto)
+        // Sale consideration per unit = total_inr / quantity
+        // Fee reduces sale consideration (subtracted proportionally per lot)
+        const grossSaleInr = sell.total_inr;
         const sellPricePerUnit = sell.quantity > 0
-            ? (sell.total_inr - sell.fee_inr) / sell.quantity
+            ? grossSaleInr / sell.quantity
             : 0;
+        const sellFeeInr = sell.fee_inr;
 
         // TDS for this sell (from the sell record itself + any TDS_CSV matches)
         const tdsForSell = await getTDSForSell(supabase, userId, sell);
@@ -285,15 +297,27 @@ export async function computeCryptoTax(
             if (sellQtyRemaining <= 0) break;
 
             const matchQty = Math.min(lot.remaining_qty, sellQtyRemaining);
+
+            // Cost of acquisition = qty × lot.cost_per_unit (includes proportional buy fee)
             const costOfAcquisition = round4(matchQty * lot.cost_per_unit);
-            const saleConsideration = round4(matchQty * sellPricePerUnit);
+
+            // Sale proceeds = proportional gross - proportional sell fee
+            const proportionalGross = round4(matchQty * sellPricePerUnit);
+            const proportionalFee = sell.quantity > 0 ? round4(sellFeeInr * (matchQty / sell.quantity)) : 0;
+            const saleConsideration = round4(proportionalGross - proportionalFee);
+
+            // Gain per lot
             const capitalGain = round4(saleConsideration - costOfAcquisition);
+
+            // 115BBH: taxable gain per lot = MAX(gain, 0)
+            // Losses are tracked but NEVER subtracted from gains
+            const taxableGainPerLot = Math.max(capitalGain, 0);
 
             // TDS attribution: proportional share
             const tdsAttributed = round4(tdsForSell * (matchQty / sell.quantity));
 
-            // Per-match tax (for individual computation rows)
-            const matchGrossTax = capitalGain > 0 ? round4(capitalGain * TAX_RATE) : 0;
+            // Per-match tax (based on taxable gain, not raw gain)
+            const matchGrossTax = round4(taxableGainPerLot * TAX_RATE);
             const matchCess = round4(matchGrossTax * CESS_RATE);
             const matchTotalTax = round4(matchGrossTax + matchCess);
 
@@ -338,8 +362,7 @@ export async function computeCryptoTax(
                 errors.push(`Lot update error: ${lotUpdateErr.message}`);
             }
 
-            // Update in-memory lot too (in case same lot is reused for another sell
-            // within the same process — though we re-fetch per sell)
+            // Update in-memory lot too
             lot.remaining_qty = isExhausted ? 0 : newRemaining;
             lot.is_exhausted = isExhausted;
 
@@ -351,7 +374,9 @@ export async function computeCryptoTax(
             unknownLotsCount++;
 
             const saleConsideration = round4(sellQtyRemaining * sellPricePerUnit);
-            const capitalGain = saleConsideration; // cost = 0 (conservative)
+            const proportionalFee = sell.quantity > 0 ? round4(sellFeeInr * (sellQtyRemaining / sell.quantity)) : 0;
+            const netSaleConsideration = round4(saleConsideration - proportionalFee);
+            const capitalGain = netSaleConsideration; // cost = 0 (conservative)
             const tdsAttributed = round4(tdsForSell * (sellQtyRemaining / sell.quantity));
             const matchGrossTax = capitalGain > 0 ? round4(capitalGain * TAX_RATE) : 0;
             const matchCess = round4(matchGrossTax * CESS_RATE);
@@ -365,7 +390,7 @@ export async function computeCryptoTax(
                     lot_id: null,
                     qty_matched: sellQtyRemaining,
                     cost_of_acquisition: 0,
-                    sale_consideration: saleConsideration,
+                    sale_consideration: netSaleConsideration,
                     capital_gain: capitalGain,
                     tds_attributed: tdsAttributed,
                     financial_year: financialYear,
@@ -408,11 +433,51 @@ export async function computeCryptoTax(
     const totalCostOfAcquisition = round2(
         comps.reduce((s, c) => s + Number(c.cost_of_acquisition), 0)
     );
+
+    // 115BBH: taxable gain = SUM of per-lot gains where gain > 0
+    // Losses are NOT subtracted — shown separately for info only
+    let taxableGain = 0;
+    let grossLosses = 0;
+    for (const c of comps) {
+        const gain = Number(c.capital_gain);
+        if (gain > 0) {
+            taxableGain += gain;
+        } else {
+            grossLosses += Math.abs(gain);
+        }
+    }
+    taxableGain = round2(taxableGain);
+    grossLosses = round2(grossLosses);
+
     const grossCapitalGain = round2(totalSaleConsideration - totalCostOfAcquisition);
 
-    // Section 115BBH: Losses NOT deductible — taxable gain = max(gain, 0)
-    const taxableGain = Math.max(grossCapitalGain, 0);
-    const grossTax = round2(taxableGain * TAX_RATE);
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 4b: Fetch Other Income from crypto_income table
+    // ═══════════════════════════════════════════════════════════════════
+    let otherIncome = 0;
+    const otherIncomeByType: Record<string, number> = {};
+
+    const { data: incomeRows, error: incomeErr } = await supabase
+        .from('crypto_income')
+        .select('income_type, value_inr')
+        .eq('user_id', userId)
+        .eq('financial_year', financialYear);
+
+    if (!incomeErr && incomeRows) {
+        for (const row of incomeRows) {
+            const val = Number(row.value_inr) || 0;
+            otherIncome += val;
+            const type = row.income_type || 'other';
+            otherIncomeByType[type] = (otherIncomeByType[type] || 0) + val;
+        }
+        otherIncome = round2(otherIncome);
+    } else if (incomeErr) {
+        errors.push(`Failed to fetch crypto_income: ${incomeErr.message}`);
+    }
+
+    // Tax calculation: 30% flat rate + 4% cess
+    const totalTaxable = taxableGain + otherIncome;
+    const grossTax = round2(totalTaxable * TAX_RATE);
     const cess = round2(grossTax * CESS_RATE);
     const totalTax = round2(grossTax + cess);
 
@@ -441,12 +506,15 @@ export async function computeCryptoTax(
         total_cost_of_acquisition: totalCostOfAcquisition,
         gross_capital_gain: grossCapitalGain,
         taxable_gain: taxableGain,
+        gross_losses: grossLosses,
         gross_tax: grossTax,
         cess,
         total_tax: totalTax,
         total_tds_credit: totalTdsCredit,
         net_payable: netPayable,
         tds_refund_eligible: tdsRefundEligible,
+        other_income: otherIncome,
+        other_income_by_type: otherIncomeByType,
         unknown_lots_count: unknownLotsCount,
         has_data_gaps: unknownLotsCount > 0,
         lots_created: lotsCreated,
@@ -458,6 +526,8 @@ export async function computeCryptoTax(
     console.log(`[FIFO] ✅ Computation complete:`, {
         grossCapitalGain,
         taxableGain,
+        grossLosses,
+        otherIncome,
         totalTax,
         totalTdsCredit,
         netPayable,
@@ -553,12 +623,15 @@ function errorResult(fy: string, errors: string[]): TaxComputationResult {
         total_cost_of_acquisition: 0,
         gross_capital_gain: 0,
         taxable_gain: 0,
+        gross_losses: 0,
         gross_tax: 0,
         cess: 0,
         total_tax: 0,
         total_tds_credit: 0,
         net_payable: 0,
         tds_refund_eligible: 0,
+        other_income: 0,
+        other_income_by_type: {},
         unknown_lots_count: 0,
         has_data_gaps: false,
         lots_created: 0,

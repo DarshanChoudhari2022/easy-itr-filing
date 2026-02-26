@@ -269,6 +269,7 @@ export interface TaxComputationResult {
 
     // Other Income (rewards, staking, airdrops)
     otherVDAIncome: number;          // Rewards valued at market rate
+    otherIncomeBreakdown: Record<string, number>; // By type: staking, reward, airdrop, etc.
     totalTaxableVDA: number;         // taxableCapitalGains + otherVDAIncome
 
     // Tax Computation
@@ -329,7 +330,7 @@ export interface DataCoverageScore {
 const VDA_TAX_RATE = 0.30;
 const TDS_RATE_194S = 0.01;
 const CESS_RATE = 0.04;
-const ENGINE_VERSION = '5.0.0';
+const ENGINE_VERSION = '6.0.0';
 
 // Stablecoins are taxable VDAs — treat like any other crypto
 const STABLECOIN_SYMBOLS = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD'];
@@ -344,13 +345,20 @@ const SURCHARGE_SLABS = [
 
 // ============= COMPLIANCE FLAGS (Indian VDA Rules) =============
 
-/** Per Section 115BBH:
- *  - Brokerage/fee must NOT reduce cost basis (only 'cost of acquisition' is deductible)
+/** Per Section 115BBH (KoinX-compatible interpretation):
+ *  - 'Cost of acquisition' = total amount paid to acquire the VDA
+ *  - This INCLUDES purchase price + brokerage/trading fee (everything you paid)
+ *  - TDS is NOT part of cost — it's a tax credit
  *  - Losses from one VDA cannot offset gains from another
  *  - 30% flat tax + 4% cess (no slab benefit)
+ *
+ * v6 CHANGE: BROKERAGE_IN_COST_OF_ACQUISITION = true
+ * This matches KoinX and the literal interpretation of 'cost of acquisition' —
+ * it's the total cost you incurred to acquire the asset, including fees.
+ * Previously this was false, causing cost basis to be too low and gains too high.
  */
 const VDA_COMPLIANCE = {
-    BROKERAGE_REDUCES_COST_BASIS: false,  // Must be false per 115BBH
+    BROKERAGE_IN_COST_OF_ACQUISITION: true,  // Fee is part of cost of acquisition
     ALLOW_LOSS_OFFSET: false,             // Must be false per 115BBH
     TAX_RATE: 0.30,
     CESS_RATE: 0.04,
@@ -711,6 +719,7 @@ export function computeVdaTaxForFinancialYear(
         taxableCapitalGains: Math.round(taxableCapitalGains * 100) / 100,
 
         otherVDAIncome: Math.round(otherVDAIncome * 100) / 100,
+        otherIncomeBreakdown,
         totalTaxableVDA: Math.round(totalTaxableVDA * 100) / 100,
 
         taxOnGains30Pct: Math.round(taxOnGains * 100) / 100,
@@ -913,26 +922,41 @@ function computeAssetFIFO(
         }
 
         if (isBuy) {
-            // ─── Fee handling per 115BBH ───
-            // Per VDA_COMPLIANCE.BROKERAGE_REDUCES_COST_BASIS === false:
-            //   Brokerage/fee does NOT reduce cost basis.
-            //   However, fee paid in base asset reduces acquired quantity (not a policy choice, it's a math fact).
-            //   Fee paid in quote currency is NOT added to cost basis per strict 115BBH interpretation.
+            // ═══ v6 FIX: Cost of Acquisition = price paid + fee (KoinX-compatible) ═══
+            //
+            // Per Section 115BBH, 'cost of acquisition' = everything you paid.
+            // This INCLUDES the brokerage/trading fee.
+            //
+            // Fee paid in base asset: reduces acquired quantity (physical reduction)
+            // Fee paid in INR/quote currency: ADDED to cost basis (per-unit cost goes up)
+            //
+            // Example: Buy 100 ADA for ₹10,000 + ₹50 fee
+            //   costOfAcquisition = ₹10,050
+            //   costBasisPerUnit = ₹10,050 / 100 = ₹100.50
+            //
             const feeAsset = (tx.feeAsset || '').toUpperCase();
             const feeInBaseAsset = feeAsset === asset.toUpperCase();
-            const feeAmount = tx.feeAmount || 0;
+            const feeAmountCrypto = tx.feeAmount || 0;
+            const feeInr = tx.feeInr || 0;
 
             let netQty = tx.quantity;
-            let costBasis = tx.priceInr || 0; // cost per unit in INR
-            let totalLotCost = netQty * costBasis;
 
-            if (feeInBaseAsset && feeAmount > 0) {
+            // Total INR paid for acquisition (try grossAmountInr first, then qty * price)
+            let totalInrPaid = (tx.grossAmountInr && tx.grossAmountInr > 0)
+                ? tx.grossAmountInr
+                : tx.quantity * (tx.priceInr || tx.pricePerUnit || 0);
+
+            if (feeInBaseAsset && feeAmountCrypto > 0) {
                 // Fee in base asset: reduce acquired quantity (physical reduction)
-                netQty = Math.max(0, tx.quantity - feeAmount);
-                totalLotCost = netQty * costBasis; // Recalculate with reduced qty
+                netQty = Math.max(0, tx.quantity - feeAmountCrypto);
             }
-            // NOTE: Fee in quote currency is NOT added to cost basis per 115BBH
-            // (brokerage does not reduce cost basis)
+
+            // Add INR fee to cost of acquisition (brokerage = part of cost)
+            if (VDA_COMPLIANCE.BROKERAGE_IN_COST_OF_ACQUISITION && feeInr > 0 && !feeInBaseAsset) {
+                totalInrPaid += feeInr;
+            }
+
+            const costBasisPerUnit = netQty > 0 ? totalInrPaid / netQty : 0;
 
             if (netQty <= 0) continue; // Nothing acquired after fees
 
@@ -950,8 +974,8 @@ function computeAssetFIFO(
                 assetSymbol: asset,
                 originalQuantity: netQty,
                 remainingQuantity: netQty,
-                costBasisPerUnit: costBasis,
-                totalCostInr: totalLotCost,
+                costBasisPerUnit: costBasisPerUnit,
+                totalCostInr: totalInrPaid,
                 acquisitionDate: tx.tradeTimestamp,
                 acquisitionType,
                 exchange: tx.exchange,
@@ -963,27 +987,41 @@ function computeAssetFIFO(
             // Only count target FY stats for reporting
             if (isTargetFY) {
                 totalBought += netQty;
-                totalBuyValue += totalLotCost;
+                totalBuyValue += totalInrPaid;
             }
 
         } else if (isSell) {
             // ═══════════════════════════════════════════════════════
-            // CRITICAL v4 FIX: Process ALL sells from ALL financial years
-            // Not just target FY. This ensures prior-year sells properly
-            // consume inventory, so current-year sells get correct cost basis.
+            // v6 FIX: FIFO lot matching with correct proceeds calculation
+            //
+            // cost = qty_consumed × lot.costBasisPerUnit  (includes proportional buy fee)
+            // proceeds = qty_consumed / sell.quantity × sell.grossAmountInr
+            //          - proportional sell fee_inr
+            // gain_per_lot = proceeds - cost
+            // taxable_gain_per_lot = MAX(gain, 0)  ← 115BBH loss rule
+            //
+            // Process ALL sells from ALL FYs for correct FIFO inventory.
+            // Only REPORT gains/losses for target FY.
             // ═══════════════════════════════════════════════════════
             let remainingToSell = tx.quantity;
-            let salePrice = tx.priceInr || 0; // sale price per unit in INR
-            if (salePrice <= 0 && tx.grossAmountInr && tx.quantity > 0) {
-                salePrice = tx.grossAmountInr / tx.quantity; // Fallback if explicit price is missing
-            }
+
+            // Total gross sale proceeds in INR (before fees/TDS)
+            const grossSaleInr = (tx.grossAmountInr && tx.grossAmountInr > 0)
+                ? tx.grossAmountInr
+                : tx.quantity * (tx.priceInr || tx.pricePerUnit || 0);
+
+            // Sell fee and TDS reduce net proceeds
+            const sellFeeInr = tx.feeInr || 0;
+
+            // Sale price per unit = grossSaleInr / quantity (before fee deduction)
+            const salePricePerUnit = tx.quantity > 0 ? grossSaleInr / tx.quantity : 0;
 
             totalDisposedAllTime += tx.quantity;
 
             // Only track sell volume/value for target FY
             if (isTargetFY) {
                 totalSold += tx.quantity;
-                totalSellValue += tx.grossAmountInr || (tx.quantity * salePrice);
+                totalSellValue += grossSaleInr;
             }
 
             // ─── Negative inventory prevention ───
@@ -1007,10 +1045,18 @@ function computeAssetFIFO(
                 const lot = inventory[lotIdx];
                 const matchedQty = Math.min(lot.remainingQuantity, remainingToSell);
 
-                // Proceeds: proportional share of total sale value
-                const proceeds = matchedQty * salePrice;
-                // Cost: from the lot (per 115BBH, only cost of acquisition)
+                // ═══ Cost of acquisition (per lot) ═══
+                // cost = qty_consumed × lot.costBasisPerUnit
+                // (costBasisPerUnit already includes proportional buy fee from lot creation)
                 const cost = matchedQty * lot.costBasisPerUnit;
+
+                // ═══ Sale proceeds (per lot) ═══
+                // proceeds = proportional share of gross sale - proportional sell fee
+                const proportionalGross = matchedQty * salePricePerUnit;
+                const proportionalSellFee = tx.quantity > 0 ? sellFeeInr * (matchedQty / tx.quantity) : 0;
+                const proceeds = proportionalGross - proportionalSellFee;
+
+                // ═══ Gain/loss per lot ═══
                 const gain = proceeds - cost;
 
                 const holdingDays = Math.floor(
@@ -1025,7 +1071,7 @@ function computeAssetFIFO(
                         assetSymbol: asset,
                         matchedQuantity: matchedQty,
                         buyPricePerUnit: lot.costBasisPerUnit,
-                        sellPricePerUnit: salePrice,
+                        sellPricePerUnit: salePricePerUnit,
                         costOfAcquisition: Math.round(cost * 100) / 100,
                         saleConsideration: Math.round(proceeds * 100) / 100,
                         gainLoss: Math.round(gain * 100) / 100,
@@ -1037,8 +1083,10 @@ function computeAssetFIFO(
                     };
                     targetFYMatches.push(match);
 
-                    // 115BBH: Track gains AND losses separately
-                    // Losses CANNOT offset gains — each is tracked independently
+                    // ═══ 115BBH LOSS RULE ═══
+                    // gain_per_lot > 0: add to grossGains (taxed at 30%)
+                    // gain_per_lot < 0: add to grossLosses (shown but NEVER deducted)
+                    // taxableGain = SUM(gains only) — losses are NOT subtracted
                     if (gain > 0) {
                         grossGains += gain;
                     } else {
@@ -1056,26 +1104,33 @@ function computeAssetFIFO(
                 }
             }
 
+            // ═══ Unmatched quantity: no buy lot found ═══
+            // Section 115BBH: If cost basis is missing or zero, the entire proceeds are taxable
             if (remainingToSell > 0.00000001 && isTargetFY) {
                 warnings.push(`${asset}: ${remainingToSell.toFixed(8)} units could not be matched to any buy lot (missing cost basis)`);
-                // Section 115BBH: If cost basis is missing or zero, the entire proceeds are taxable
-                const unmatchedProceeds = remainingToSell * salePrice;
+                const unmatchedProceeds = remainingToSell * salePricePerUnit;
+                const proportionalSellFee = tx.quantity > 0 ? sellFeeInr * (remainingToSell / tx.quantity) : 0;
+                const netUnmatchedProceeds = unmatchedProceeds - proportionalSellFee;
+
                 const match: LotMatch = {
                     sellTransactionId: tx.externalId,
                     buyLotId: 'unmatched-0-cost',
                     assetSymbol: asset,
                     matchedQuantity: remainingToSell,
                     buyPricePerUnit: 0,
-                    sellPricePerUnit: salePrice,
+                    sellPricePerUnit: salePricePerUnit,
                     costOfAcquisition: 0,
-                    saleConsideration: Math.round(unmatchedProceeds * 100) / 100,
-                    gainLoss: Math.round(unmatchedProceeds * 100) / 100,
+                    saleConsideration: Math.round(netUnmatchedProceeds * 100) / 100,
+                    gainLoss: Math.round(netUnmatchedProceeds * 100) / 100,
                     buyDate: new Date(2000, 0, 1), // Dummy date for unknown acquisition
                     sellDate: tx.tradeTimestamp,
                     holdingDays: 0,
                     accountingMethod: method,
                     financialYear: targetFY,
                 };
+                // v6 FIX: Actually push the unmatched match and accumulate gains
+                targetFYMatches.push(match);
+                grossGains += netUnmatchedProceeds; // 100% taxable (no cost basis)
             }
         }
     }

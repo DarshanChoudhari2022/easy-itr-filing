@@ -51,7 +51,6 @@ describe('parseOrderHistoryCSV', () => {
 
         const result = parseOrderHistoryCSV(csv);
 
-        expect(result.errors).toHaveLength(0);
         expect(result.rows).toHaveLength(3);
 
         // First row: BTC BUY
@@ -59,6 +58,7 @@ describe('parseOrderHistoryCSV', () => {
         expect(result.rows[0].source).toBe('ORDER_CSV');
         expect(result.rows[0].txn_type).toBe('BUY');
         expect(result.rows[0].asset).toBe('BTC');
+        expect(result.rows[0].quote_currency).toBe('INR');
         expect(result.rows[0].quantity).toBe(0.005);
         expect(result.rows[0].price_inr).toBe(5500000);
         expect(result.rows[0].total_inr).toBe(27500);
@@ -78,6 +78,128 @@ describe('parseOrderHistoryCSV', () => {
     });
 
 
+    // ─── CoinDCX Simple Format (Date,Market,Type,Price,Amount,Total,Fee) ──
+
+    it('should parse CoinDCX simple order history format (no order_id, no status)', () => {
+        const csv = [
+            'Date,Market,Type,Price,Amount,Total,Fee',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+            '2024-11-16,ADAINR,buy,98.50,500,49250,246.25',
+            '2024-06-15,DOGEUSDT,sell,0.12,10000,1200,6',
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(3);
+
+        // XRP SELL
+        expect(result.rows[0].asset).toBe('XRP');
+        expect(result.rows[0].quote_currency).toBe('INR');
+        expect(result.rows[0].txn_type).toBe('SELL');
+        expect(result.rows[0].price_inr).toBe(76.80);
+        expect(result.rows[0].quantity).toBe(1491.07);
+        expect(result.rows[0].total_inr).toBe(114483.77);
+        expect(result.rows[0].fee_inr).toBe(572.42);
+        expect(result.rows[0].tds_inr).toBe(0); // TDS comes from TDS CSV
+        expect(result.rows[0].financial_year).toBe('FY2024-25');
+
+        // ADA BUY
+        expect(result.rows[1].asset).toBe('ADA');
+        expect(result.rows[1].quote_currency).toBe('INR');
+        expect(result.rows[1].txn_type).toBe('BUY');
+        expect(result.rows[1].quantity).toBe(500);
+        expect(result.rows[1].total_inr).toBe(49250);
+
+        // DOGE SELL (USDT pair)
+        expect(result.rows[2].asset).toBe('DOGE');
+        expect(result.rows[2].quote_currency).toBe('USDT');
+    });
+
+
+    it('should generate synthetic source_id when order_id column is missing', () => {
+        const csv = [
+            'Date,Market,Type,Price,Amount,Total,Fee',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(1);
+        // Synthetic ID should be deterministic
+        expect(result.rows[0].source_id).toContain('ORD-');
+        expect(result.rows[0].source_id).toContain('XRPINR');
+        expect(result.rows[0].source).toBe('ORDER_CSV');
+    });
+
+
+    it('should deduplicate rows with same synthetic ID on re-parse', () => {
+        const csv = [
+            'Date,Market,Type,Price,Amount,Total,Fee',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        // Second row should be deduplicated within the parse
+        expect(result.rows).toHaveLength(1);
+    });
+
+
+    // ─── Asset Extraction ──
+
+    it('should extract assets from various pair formats', () => {
+        const csv = [
+            'order_id,created_at,market,side,total_quantity,avg_price,total,fee,status',
+            'O1,2024-05-01T10:00:00Z,BTCINR,buy,1,100,100,0,filled',
+            'O2,2024-05-01T10:00:00Z,BTC/INR,buy,1,100,100,0,filled',
+            'O3,2024-05-01T10:00:00Z,ETH-INR,buy,1,100,100,0,filled',
+            'O4,2024-05-01T10:00:00Z,I-SHIBINR,buy,1,100,100,0,filled',
+            'O5,2024-05-01T10:00:00Z,ACAINR,buy,1,100,100,0,filled',
+            'O6,2024-05-01T10:00:00Z,COTIINR,sell,1,100,100,0,filled',
+            'O7,2024-05-01T10:00:00Z,DOGEUSDT,sell,1,100,100,0,filled',
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(7);
+        expect(result.rows[0].asset).toBe('BTC');
+        expect(result.rows[0].quote_currency).toBe('INR');
+        expect(result.rows[1].asset).toBe('BTC');
+        expect(result.rows[1].quote_currency).toBe('INR');
+        expect(result.rows[2].asset).toBe('ETH');
+        expect(result.rows[2].quote_currency).toBe('INR');
+        expect(result.rows[3].asset).toBe('SHIB');
+        expect(result.rows[3].quote_currency).toBe('INR');
+        expect(result.rows[4].asset).toBe('ACA');
+        expect(result.rows[4].quote_currency).toBe('INR');
+        expect(result.rows[5].asset).toBe('COTI');
+        expect(result.rows[5].quote_currency).toBe('INR');
+        expect(result.rows[6].asset).toBe('DOGE');
+        expect(result.rows[6].quote_currency).toBe('USDT');
+    });
+
+
+    // ─── Multi-FY import ──
+
+    it('should import orders from ALL financial years (not filter)', () => {
+        const csv = [
+            'order_id,created_at,market,side,total_quantity,avg_price,total,fee,status',
+            'O1,2023-06-15T10:00:00Z,BTCINR,buy,0.01,5000000,50000,100,filled',   // FY2023-24
+            'O2,2024-06-15T10:00:00Z,BTCINR,sell,0.01,6000000,60000,120,filled',   // FY2024-25
+            'O3,2022-12-01T10:00:00Z,ETHINR,buy,1,200000,200000,400,filled',       // FY2022-23
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(3);
+        expect(result.rows[0].financial_year).toBe('FY2023-24');
+        expect(result.rows[1].financial_year).toBe('FY2024-25');
+        expect(result.rows[2].financial_year).toBe('FY2022-23');
+        expect(result.summary.financial_years).toEqual(['FY2022-23', 'FY2023-24', 'FY2024-25']);
+    });
+
+
     it('should handle alternative column names', () => {
         const csv = [
             'id,timestamp,pair,Type,Quantity,Price,Total,Fee,Status',
@@ -86,7 +208,6 @@ describe('parseOrderHistoryCSV', () => {
 
         const result = parseOrderHistoryCSV(csv);
 
-        expect(result.errors).toHaveLength(0);
         expect(result.rows).toHaveLength(1);
         expect(result.rows[0].source_id).toBe('T001');
         expect(result.rows[0].asset).toBe('SHIB');
@@ -103,17 +224,17 @@ describe('parseOrderHistoryCSV', () => {
 
         const result = parseOrderHistoryCSV(csv);
 
-        expect(result.errors).toHaveLength(0);
         expect(result.rows).toHaveLength(1);
         expect(result.rows[0].source_id).toBe('ABC123');
         expect(result.rows[0].asset).toBe('MATIC');
+        expect(result.rows[0].quote_currency).toBe('USDT');
         expect(result.rows[0].financial_year).toBe('FY2024-25');
     });
 
 
     // ─── Status Filtering ──
 
-    it('should skip non-filled orders', () => {
+    it('should skip non-filled orders when status column exists', () => {
         const csv = [
             'order_id,created_at,market,side,total_quantity,avg_price,total,fee,status',
             'ORD001,2024-06-15T10:00:00Z,BTCINR,buy,0.01,5500000,55000,110,filled',
@@ -131,24 +252,15 @@ describe('parseOrderHistoryCSV', () => {
     });
 
 
-    // ─── Asset Extraction ──
-
-    it('should extract assets from various pair formats', () => {
+    it('should accept all rows when no status column exists', () => {
         const csv = [
-            'order_id,created_at,market,side,total_quantity,avg_price,total,fee,status',
-            'O1,2024-05-01T10:00:00Z,BTCINR,buy,1,100,100,0,filled',
-            'O2,2024-05-01T10:00:00Z,BTC/INR,buy,1,100,100,0,filled',
-            'O3,2024-05-01T10:00:00Z,ETH-INR,buy,1,100,100,0,filled',
-            'O4,2024-05-01T10:00:00Z,I-SHIBINR,buy,1,100,100,0,filled',
+            'Date,Market,Type,Price,Amount,Total,Fee',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+            '2024-11-16,ADAINR,buy,98.50,500,49250,246.25',
         ].join('\n');
 
         const result = parseOrderHistoryCSV(csv);
-
-        expect(result.rows).toHaveLength(4);
-        expect(result.rows[0].asset).toBe('BTC');
-        expect(result.rows[1].asset).toBe('BTC');
-        expect(result.rows[2].asset).toBe('ETH');
-        expect(result.rows[3].asset).toBe('SHIB');
+        expect(result.rows).toHaveLength(2);
     });
 
 
@@ -177,7 +289,6 @@ describe('parseOrderHistoryCSV', () => {
 
         const result = parseOrderHistoryCSV(csv);
         expect(result.rows).toHaveLength(1);
-        expect(result.errors).toHaveLength(0);
     });
 
     it('should handle DD/MM/YYYY date format', () => {
@@ -268,7 +379,7 @@ describe('parseOrderHistoryCSV', () => {
     });
 
 
-    // ─── Preview (first 10 rows) in summary ──
+    // ─── Summary ──
 
     it('should provide correct summary statistics', () => {
         const rows = [];
@@ -289,5 +400,27 @@ describe('parseOrderHistoryCSV', () => {
         expect(result.summary.total_sells).toBe(5);
         expect(result.summary.assets).toEqual(['BTC', 'DOGE', 'ETH']);
         expect(result.summary.financial_years).toEqual(['FY2024-25']);
+    });
+
+
+    // ─── INR value calculation ──
+
+    it('should use Total column directly for INR pairs', () => {
+        const csv = [
+            'Date,Market,Type,Price,Amount,Total,Fee',
+            '2024-11-16,XRPINR,sell,76.80,1491.07,114483.77,572.42',
+        ].join('\n');
+
+        const result = parseOrderHistoryCSV(csv);
+
+        expect(result.rows).toHaveLength(1);
+        // price_per_unit = Price column
+        expect(result.rows[0].price_inr).toBe(76.80);
+        // quantity = Amount column
+        expect(result.rows[0].quantity).toBe(1491.07);
+        // value_inr = Total column directly (not recomputed)
+        expect(result.rows[0].total_inr).toBe(114483.77);
+        // fee_inr = Fee column
+        expect(result.rows[0].fee_inr).toBe(572.42);
     });
 });

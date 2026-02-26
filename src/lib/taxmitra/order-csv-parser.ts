@@ -8,17 +8,21 @@
  *   Timestamp  → 'created_at' | 'timestamp' | 'Date'
  *   Pair       → 'market' | 'pair' | 'Market'
  *   Side       → 'side' | 'order_type' | 'Type'
- *   Quantity   → 'total_quantity' | 'quantity' | 'Quantity'
+ *   Quantity   → 'total_quantity' | 'quantity' | 'Amount'
  *   Avg Price  → 'avg_price' | 'price' | 'Price'
- *   Total      → 'total' | 'amount' | 'Total'
+ *   Total      → 'total' | 'Total'
  *   Fee        → 'fee' | 'commission' | 'Fee'
  *   Status     → 'status' | 'Status'
  *
  * Processing rules:
- *   - Skip rows where status ∉ {filled, completed, success}
+ *   - Skip rows where status ∉ {filled, completed, success} (if status column exists)
+ *   - If no status column present, assume all rows are filled orders
  *   - Extract asset from pair (BTCINR → BTC, BTC/INR → BTC, ETH-INR → ETH)
+ *   - Also extract quote_currency (INR, USDT, etc.) for proper valuation
  *   - Compute FY from timestamp (Apr 1 = start of FY)
  *   - Compute total_inr = qty × price if missing
+ *   - Import ALL financial years (BUY orders from older FYs are cost lots for FIFO)
+ *   - Generate synthetic source_id when order_id column is missing
  */
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -28,6 +32,7 @@ export interface ParsedOrderRow {
     source: 'ORDER_CSV';
     txn_type: 'BUY' | 'SELL';
     asset: string;
+    quote_currency: string;   // INR, USDT, BTC, etc.
     quantity: number;
     price_inr: number;
     total_inr: number;
@@ -51,6 +56,7 @@ export interface OrderCSVParseResult {
     summary: {
         total_buys: number;
         total_sells: number;
+        total_inr_volume: number;
         assets: string[];
         date_range: { from: string; to: string };
         financial_years: string[];
@@ -71,17 +77,31 @@ interface ColumnMap {
     status: number;
 }
 
+/**
+ * Column aliases — order matters within each field.
+ * More specific aliases come first to prevent false matches.
+ * 
+ * IMPORTANT: 'amount' is listed under quantity (not total) because
+ * CoinDCX Order History CSV uses "Amount" for the crypto quantity
+ * and "Total" for the INR value (Price × Amount).
+ */
 const COLUMN_ALIASES: Record<keyof ColumnMap, string[]> = {
     order_id: ['order_id', 'id', 'order id', 'orderid', 'trade_id', 'tradeid'],
     timestamp: ['created_at', 'timestamp', 'date', 'time', 'datetime', 'trade_date', 'executed_at', 'order_date'],
     pair: ['market', 'pair', 'symbol', 'trading_pair', 'coin_pair', 'instrument'],
     side: ['side', 'order_type', 'type', 'trade_type', 'buy/sell', 'direction', 'action'],
-    quantity: ['total_quantity', 'quantity', 'qty', 'executed_quantity', 'filled_quantity', 'volume', 'size', 'amount_of_coin'],
-    price: ['avg_price', 'price', 'price_per_unit', 'rate', 'execution_price', 'average_price', 'unit_price'],
-    total: ['total', 'amount', 'value', 'total_amount', 'gross_amount', 'net_amount', 'total_value'],
+    quantity: ['total_quantity', 'filled_quantity', 'executed_quantity', 'quantity', 'qty', 'volume', 'size', 'amount_of_coin', 'amount'],
+    price: ['avg_price', 'average_price', 'price', 'price_per_unit', 'rate', 'execution_price', 'unit_price'],
+    total: ['total', 'total_amount', 'total_value', 'gross_amount', 'net_amount', 'value'],
     fee: ['fee', 'commission', 'fee_amount', 'trading_fee', 'charges', 'brokerage'],
     status: ['status', 'order_status', 'state', 'fill_status'],
 };
+
+/**
+ * Known quote currencies to strip from concatenated pair strings.
+ * Order matters: longer suffixes first to avoid partial matches (e.g. BNB before BN).
+ */
+const KNOWN_QUOTE_CURRENCIES = ['USDT', 'BUSD', 'USDC', 'INR', 'BTC', 'ETH', 'BNB', 'DAI'];
 
 /**
  * Statuses we accept. Everything else is skipped.
@@ -123,11 +143,11 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
     const colMap = detectColumns(headerCells);
 
     // Validate minimum required columns
+    // order_id is OPTIONAL — we generate a synthetic ID if missing
     const missing: string[] = [];
-    if (colMap.order_id === -1) missing.push('Order ID');
-    if (colMap.timestamp === -1) missing.push('Timestamp');
-    if (colMap.pair === -1 && colMap.side === -1) missing.push('Pair or Side');
-    if (colMap.quantity === -1) missing.push('Quantity');
+    if (colMap.timestamp === -1) missing.push('Timestamp/Date');
+    if (colMap.pair === -1 && colMap.side === -1) missing.push('Pair/Market or Side/Type');
+    if (colMap.quantity === -1) missing.push('Quantity/Amount');
 
     if (missing.length > 0) {
         errors.push({
@@ -138,7 +158,19 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
         return { rows, errors, summary: emptySummary() };
     }
 
+    // Track if order_id column is missing — we'll generate synthetic IDs
+    const hasOrderIdColumn = colMap.order_id >= 0;
+    if (!hasOrderIdColumn) {
+        // Not an error — just a warning
+        errors.push({
+            row: 0,
+            reason: 'No "Order ID" / "id" column found. Generating synthetic IDs from row data.',
+        });
+    }
+
     // ── Step 2: Parse data rows ──
+    const seenIds = new Set<string>();
+
     for (let i = 1; i < lines.length; i++) {
         const rowNum = i + 1;  // 1-indexed (header = row 1)
         try {
@@ -155,17 +187,14 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             });
 
             // ── Status filter ──
-            const statusRaw = colMap.status >= 0 ? (cells[colMap.status] ?? '').trim() : 'filled';
-            if (!VALID_STATUSES.has(statusRaw) && !VALID_STATUSES.has(statusRaw.toLowerCase())) {
-                // Skip silently — not an error, just a non-filled order
-                continue;
-            }
-
-            // ── Order ID ──
-            const sourceId = (cells[colMap.order_id] ?? '').trim();
-            if (!sourceId) {
-                errors.push({ row: rowNum, reason: 'Missing order_id / source_id' });
-                continue;
+            // If no status column exists (common in CoinDCX "Order History" exports),
+            // treat all rows as filled/valid orders.
+            if (colMap.status >= 0) {
+                const statusRaw = (cells[colMap.status] ?? '').trim();
+                if (statusRaw && !VALID_STATUSES.has(statusRaw) && !VALID_STATUSES.has(statusRaw.toLowerCase())) {
+                    // Skip silently — not an error, just a non-filled order
+                    continue;
+                }
             }
 
             // ── Timestamp ──
@@ -176,13 +205,14 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
                 continue;
             }
 
-            // ── Pair & Asset ──
+            // ── Pair & Asset Extraction ──
             const pairRaw = colMap.pair >= 0 ? (cells[colMap.pair] ?? '').trim() : '';
-            const asset = extractAsset(pairRaw);
-            if (!asset) {
+            const extracted = extractAssetAndQuote(pairRaw);
+            if (!extracted) {
                 errors.push({ row: rowNum, reason: `Cannot extract asset from pair: "${pairRaw}"` });
                 continue;
             }
+            const { asset, quoteCurrency } = extracted;
 
             // ── Side / Txn Type ──
             const sideRaw = colMap.side >= 0 ? (cells[colMap.side] ?? '').trim().toUpperCase() : '';
@@ -207,19 +237,44 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
                 continue;
             }
 
-            // Compute total if missing
+            // For INR pairs: value_inr = Total column (already in INR)
+            // For non-INR pairs: value_inr = Price × Amount (approximation)
             if (total <= 0 && price > 0) {
                 total = quantity * price;
             }
 
+            // ── Order ID / Source ID ──
+            let sourceId: string;
+            if (hasOrderIdColumn) {
+                sourceId = (cells[colMap.order_id] ?? '').trim();
+                if (!sourceId) {
+                    // Generate synthetic ID even when column exists but value is empty
+                    sourceId = generateSyntheticId(tsRaw, pairRaw, sideRaw, quantity, price, i);
+                }
+            } else {
+                // No order_id column — generate synthetic ID from row content
+                sourceId = generateSyntheticId(tsRaw, pairRaw, sideRaw, quantity, price, i);
+            }
+
+            // ── Deduplication within this parse ──
+            if (seenIds.has(sourceId)) {
+                // Duplicate within same file — skip
+                continue;
+            }
+            seenIds.add(sourceId);
+
             // ── Financial Year ──
             const fy = computeFinancialYear(timestamp);
+
+            // ── Status ──
+            const statusValue = colMap.status >= 0 ? (cells[colMap.status] ?? '').trim() : 'filled';
 
             rows.push({
                 source_id: sourceId,
                 source: 'ORDER_CSV',
                 txn_type: txnType,
                 asset,
+                quote_currency: quoteCurrency,
                 quantity,
                 price_inr: price,
                 total_inr: total,
@@ -228,7 +283,7 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
                 timestamp: timestamp.toISOString(),
                 financial_year: fy,
                 pair: pairRaw,
-                status: statusRaw,
+                status: statusValue,
                 raw_data: rawData,
             });
         } catch (err) {
@@ -242,6 +297,34 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
     return { rows, errors, summary };
 }
 
+
+// ─── Synthetic ID Generation ─────────────────────────────────────────
+
+/**
+ * Generate a deterministic synthetic source_id from row data.
+ * This ensures the same CSV row always produces the same ID,
+ * enabling deduplication on re-upload (UNIQUE(user_id, source, source_id)).
+ * 
+ * Format: "ORD-{date}-{pair}-{side}-{qty}-{price}"
+ * This is deterministic: same row data → same ID.
+ */
+function generateSyntheticId(
+    dateStr: string,
+    pair: string,
+    side: string,
+    quantity: number,
+    price: number,
+    _rowIndex: number,
+): string {
+    // Normalize to create a stable fingerprint
+    const datePart = dateStr.replace(/[^0-9]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
+    const pairPart = pair.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const sidePart = side.charAt(0).toUpperCase(); // B or S
+    const qtyPart = quantity.toFixed(6).replace('.', 'd');
+    const pricePart = price.toFixed(2).replace('.', 'd');
+
+    return `ORD-${datePart}-${pairPart}-${sidePart}-${qtyPart}-${pricePart}`;
+}
 
 // ─── Column Detection ────────────────────────────────────────────────
 
@@ -276,13 +359,15 @@ function detectColumns(headers: string[]): ColumnMap {
     };
 
     // Order matters: detect more specific columns first to reduce collisions
-    const quantity = find(COLUMN_ALIASES.quantity);  // 'total_quantity' before 'total'
+    // CRITICAL: quantity MUST be detected before total, because 'amount' is a
+    // quantity alias and would otherwise be stolen by 'total' detection.
+    const quantity = find(COLUMN_ALIASES.quantity);  // 'total_quantity', 'amount' before 'total'
     const order_id = find(COLUMN_ALIASES.order_id);
     const timestamp = find(COLUMN_ALIASES.timestamp);
     const pair = find(COLUMN_ALIASES.pair);
     const side = find(COLUMN_ALIASES.side);
     const price = find(COLUMN_ALIASES.price);
-    const total = find(COLUMN_ALIASES.total);     // now won't collide with total_quantity
+    const total = find(COLUMN_ALIASES.total);     // now won't collide with total_quantity or amount
     const fee = find(COLUMN_ALIASES.fee);
     const status = find(COLUMN_ALIASES.status);
 
@@ -381,20 +466,22 @@ function safeParseTimestamp(raw: string): Date | null {
     return isNaN(last.getTime()) ? null : last;
 }
 
-// ─── Asset Extraction from Pair ──────────────────────────────────────
+// ─── Asset & Quote Currency Extraction from Pair ─────────────────────
 
 /**
- * Extract base asset from a trading pair string.
+ * Extract base asset AND quote currency from a trading pair string.
+ * 
  * Examples:
- *   BTCINR   → BTC
- *   BTC/INR  → BTC
- *   BTC-INR  → BTC
- *   ETHINR   → ETH
- *   SHIBINR  → SHIB
- *   MATICUSDT → MATIC
- *   I-BTCINR → BTC  (CoinDCX Insta prefix)
+ *   XRPINR    → { asset: 'XRP',   quoteCurrency: 'INR'  }
+ *   ADAINR    → { asset: 'ADA',   quoteCurrency: 'INR'  }
+ *   ACAINR    → { asset: 'ACA',   quoteCurrency: 'INR'  }
+ *   DOGEUSDT  → { asset: 'DOGE',  quoteCurrency: 'USDT' }
+ *   BTC/INR   → { asset: 'BTC',   quoteCurrency: 'INR'  }
+ *   ETH-USDT  → { asset: 'ETH',   quoteCurrency: 'USDT' }
+ *   I-BTCINR  → { asset: 'BTC',   quoteCurrency: 'INR'  }
+ *   COTIINR   → { asset: 'COTI',  quoteCurrency: 'INR'  }
  */
-function extractAsset(pair: string): string | null {
+function extractAssetAndQuote(pair: string): { asset: string; quoteCurrency: string } | null {
     if (!pair) return null;
 
     // Trim and uppercase
@@ -403,21 +490,44 @@ function extractAsset(pair: string): string | null {
     // Remove CoinDCX Insta prefix: I-BTCINR → BTCINR
     p = p.replace(/^I-/, '');
 
-    // Handle explicit separators: BTC/INR → BTC, BTC-INR → BTC
-    if (p.includes('/')) return p.split('/')[0] || null;
-    if (p.includes('-')) return p.split('-')[0] || null;
-    if (p.includes('_')) return p.split('_')[0] || null;
-
-    // Strip known quote currencies from the right
-    const quotes = ['USDT', 'BUSD', 'INR', 'BTC', 'ETH', 'USDC', 'DAI'];
-    for (const q of quotes) {
-        if (p.endsWith(q) && p.length > q.length) {
-            return p.slice(0, -q.length);
+    // Handle explicit separators: BTC/INR → BTC + INR
+    for (const sep of ['/', '-', '_']) {
+        if (p.includes(sep)) {
+            const parts = p.split(sep);
+            const base = parts[0] || null;
+            const quote = parts[1] || 'INR';
+            if (base && base.length >= 2) {
+                return { asset: base, quoteCurrency: quote };
+            }
         }
     }
 
-    // Fallback: return as-is if it looks like a single asset
-    return p.length >= 2 ? p : null;
+    // Handle concatenated pairs: XRPINR, DOGEUSDT, ADAINR, COTIINR
+    // Strip known quote currencies from the right (longest match first)
+    for (const q of KNOWN_QUOTE_CURRENCIES) {
+        if (p.endsWith(q) && p.length > q.length) {
+            const base = p.slice(0, -q.length);
+            if (base.length >= 2) {
+                return { asset: base, quoteCurrency: q };
+            }
+        }
+    }
+
+    // Fallback: return as-is if it looks like a single asset (assume INR quote)
+    if (p.length >= 2) {
+        return { asset: p, quoteCurrency: 'INR' };
+    }
+
+    return null;
+}
+
+/**
+ * Legacy wrapper for backward compatibility with existing tests.
+ * Extracts just the base asset from a trading pair string.
+ */
+function extractAsset(pair: string): string | null {
+    const result = extractAssetAndQuote(pair);
+    return result ? result.asset : null;
 }
 
 // ─── Financial Year Computation ──────────────────────────────────────
@@ -448,13 +558,14 @@ function parseNum(val: string | undefined): number {
     // Remove commas, currency symbols, spaces
     const cleaned = val.replace(/[₹$,\s]/g, '').trim();
     const n = parseFloat(cleaned);
-    return isNaN(n) ? 0 : n;
+    return isNaN(n) ? 0 : Math.abs(n);
 }
 
 function emptySummary(): OrderCSVParseResult['summary'] {
     return {
         total_buys: 0,
         total_sells: 0,
+        total_inr_volume: 0,
         assets: [],
         date_range: { from: '', to: '' },
         financial_years: [],
@@ -468,6 +579,7 @@ function buildSummary(rows: ParsedOrderRow[]): OrderCSVParseResult['summary'] {
     const sells = rows.filter(r => r.txn_type === 'SELL').length;
     const assetsSet = new Set(rows.map(r => r.asset));
     const fySet = new Set(rows.map(r => r.financial_year));
+    const totalInrVolume = rows.reduce((s, r) => s + r.total_inr, 0);
 
     // Sort timestamps for date range
     const timestamps = rows.map(r => new Date(r.timestamp).getTime()).sort((a, b) => a - b);
@@ -477,6 +589,7 @@ function buildSummary(rows: ParsedOrderRow[]): OrderCSVParseResult['summary'] {
     return {
         total_buys: buys,
         total_sells: sells,
+        total_inr_volume: Math.round(totalInrVolume * 100) / 100,
         assets: Array.from(assetsSet).sort(),
         date_range: { from, to },
         financial_years: Array.from(fySet).sort(),

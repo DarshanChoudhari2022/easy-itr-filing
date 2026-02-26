@@ -3,25 +3,28 @@
  * ==============================================
  * Pure parsing logic — no Supabase dependency.
  *
- * CoinDCX "Insta" = instant buy/sell (OTC-style trades).
+ * CoinDCX "Insta" = instant buy/sell (OTC-style trades) + staking/rewards.
  * These have a different CSV format from the Exchange order history.
  *
- * Column aliases:
- *   ID         → 'id' | 'transaction_id' | 'ID' | 'txn_id'
- *   Date       → 'created_at' | 'date' | 'Date' | 'timestamp'
- *   Type/Side  → 'type' | 'side' | 'Type' | 'action'
- *   Coin/Asset → 'coin' | 'asset' | 'Coin' | 'currency' | 'crypto'
- *   Quantity   → 'quantity' | 'crypto_amount' | 'Quantity' | 'amount'
- *   INR Amount → 'inr_amount' | 'amount' | 'INR Amount' | 'total' | 'inr_value'
- *   Fee        → 'fee' | 'charges' | 'Fee' | 'commission'
+ * Insta History CSV columns:
+ *   Timestamp | Type | Currency | Amount | INR_Value | Remarks
+ *
+ * Row types that can appear:
+ *   "buy"              → BUY trade (→ crypto_transactions)
+ *   "sell"             → SELL trade (→ crypto_transactions)
+ *   "staking_interest" → Staking income (→ crypto_income)
+ *   "reward"           → Cashback/reward (→ crypto_income)
  *
  * Processing:
- *   - source = 'INSTA_CSV'
- *   - price_inr = total_inr / quantity
+ *   - source = 'INSTA_CSV' (for trades) / 'coindcx_insta' (for income)
+ *   - price_inr = INR_Value / Amount (for trades)
  *   - FY computed from timestamp (Apr 1 = start)
+ *   - All FYs imported (historical BUY lots needed for FIFO)
+ *   - Synthetic source_id = hash(Timestamp+Currency+Amount+Type) for dedup
  */
 
 import { computeFinancialYear } from './order-csv-parser';
+import CryptoJS from 'crypto-js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -42,6 +45,20 @@ export interface ParsedInstaRow {
     raw_data: Record<string, string>;
 }
 
+/** Income events: staking_interest, reward, airdrop */
+export interface ParsedInstaIncomeRow {
+    source_id: string;
+    source: 'coindcx_insta';
+    income_type: 'staking' | 'reward' | 'airdrop' | 'interest';
+    asset: string;
+    quantity: number;
+    value_inr: number;
+    transaction_date: string;     // ISO 8601
+    financial_year: string;       // e.g. FY2024-25
+    remarks: string;
+    raw_data: Record<string, string>;
+}
+
 export interface InstaParseError {
     row: number;
     reason: string;
@@ -49,11 +66,14 @@ export interface InstaParseError {
 
 export interface InstaCSVParseResult {
     rows: ParsedInstaRow[];
+    incomeRows: ParsedInstaIncomeRow[];
     errors: InstaParseError[];
     summary: {
         total_buys: number;
         total_sells: number;
+        total_income_events: number;
         total_inr_volume: number;
+        total_income_inr: number;
         assets: string[];
         date_range: { from: string; to: string };
         financial_years: string[];
@@ -65,27 +85,57 @@ export interface InstaCSVParseResult {
 interface InstaColumnMap {
     id: number;
     date: number;
-    side: number;
-    asset: number;
-    quantity: number;
-    inr_amount: number;
+    side: number;       // Type column: buy, sell, staking_interest, reward
+    asset: number;      // Currency column
+    quantity: number;    // Amount column (crypto amount)
+    inr_amount: number; // INR_Value column
     fee: number;
+    remarks: number;
 }
 
+/**
+ * Column aliases cover both CoinDCX "Insta History" and "Insta OTC" formats.
+ * 
+ * CRITICAL detection order:
+ *   1. quantity MUST be detected before inr_amount (because 'amount' matches both)
+ *   2. quantity aliases: 'quantity', 'crypto_amount', 'amount' (the Amount column)
+ *   3. inr_amount aliases: 'inr_value', 'inr_amount', 'total', 'value' 
+ *      (NOT 'amount' — that's claimed by quantity)
+ */
 const INSTA_COLUMN_ALIASES: Record<keyof InstaColumnMap, string[]> = {
     id: ['id', 'transaction_id', 'txn_id', 'trade_id', 'order_id', 'ref'],
-    date: ['created_at', 'date', 'timestamp', 'time', 'datetime', 'trade_date'],
+    date: ['timestamp', 'created_at', 'date', 'time', 'datetime', 'trade_date'],
     side: ['type', 'side', 'action', 'order_type', 'trade_type', 'buy/sell', 'direction'],
-    asset: ['coin', 'asset', 'currency', 'crypto', 'symbol', 'token', 'coin_name'],
-    quantity: ['quantity', 'crypto_amount', 'qty', 'volume', 'size', 'units'],
-    inr_amount: ['inr_amount', 'inr_value', 'inr amount', 'amount', 'total', 'total_inr', 'fiat_amount', 'inr', 'value', 'gross_amount'],
+    asset: ['currency', 'coin', 'asset', 'crypto', 'symbol', 'token', 'coin_name'],
+    quantity: ['quantity', 'crypto_amount', 'qty', 'amount', 'volume', 'size', 'units'],
+    inr_amount: ['inr_value', 'inr_amount', 'inr amount', 'total', 'total_inr', 'fiat_amount', 'inr', 'value', 'gross_amount'],
     fee: ['fee', 'charges', 'commission', 'fee_amount', 'trading_fee', 'brokerage'],
+    remarks: ['remarks', 'remark', 'notes', 'note', 'description', 'comment'],
+};
+
+/**
+ * Map raw Type values to our normalized income_type.
+ * Any Type not in TRADE_TYPES or INCOME_TYPES is skipped.
+ */
+const TRADE_TYPES = new Set(['buy', 'sell']);
+const INCOME_TYPE_MAP: Record<string, ParsedInstaIncomeRow['income_type']> = {
+    'staking_interest': 'staking',
+    'staking': 'staking',
+    'staking_reward': 'staking',
+    'reward': 'reward',
+    'cashback': 'reward',
+    'referral': 'reward',
+    'airdrop': 'airdrop',
+    'interest': 'interest',
+    'lending_interest': 'interest',
+    'reward_interest': 'staking',
 };
 
 // ─── Core Parser ─────────────────────────────────────────────────────
 
 export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
     const rows: ParsedInstaRow[] = [];
+    const incomeRows: ParsedInstaIncomeRow[] = [];
     const errors: InstaParseError[] = [];
 
     const lines = csvText
@@ -96,18 +146,17 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
 
     if (lines.length < 2) {
         errors.push({ row: 0, reason: 'CSV file is empty or has only a header row' });
-        return { rows, errors, summary: emptySummary() };
+        return { rows, incomeRows, errors, summary: emptySummary() };
     }
 
     const headerCells = parseCSVRow(lines[0]);
     const colMap = detectInstaColumns(headerCells);
 
-    // Validate required columns
+    // Validate required columns — ID is optional (we generate synthetic IDs)
     const missing: string[] = [];
-    if (colMap.id === -1) missing.push('ID');
-    if (colMap.date === -1) missing.push('Date');
+    if (colMap.date === -1) missing.push('Timestamp/Date');
     if (colMap.side === -1) missing.push('Type/Side');
-    if (colMap.quantity === -1 && colMap.inr_amount === -1) missing.push('Quantity or INR Amount');
+    if (colMap.quantity === -1 && colMap.inr_amount === -1) missing.push('Amount or INR_Value');
 
     if (missing.length > 0) {
         errors.push({
@@ -115,8 +164,19 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
             reason: `Could not detect required column(s): ${missing.join(', ')}. ` +
                 `Headers found: [${headerCells.join(', ')}]`,
         });
-        return { rows, errors, summary: emptySummary() };
+        return { rows, incomeRows, errors, summary: emptySummary() };
     }
+
+    const hasIdColumn = colMap.id >= 0;
+    if (!hasIdColumn) {
+        // Not an error — just informational
+        errors.push({
+            row: 0,
+            reason: 'No "ID" column found. Generating synthetic IDs from row data for dedup.',
+        });
+    }
+
+    const seenIds = new Set<string>();
 
     for (let i = 1; i < lines.length; i++) {
         const rowNum = i + 1;
@@ -133,13 +193,6 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
                 rawData[h] = cells[idx] ?? '';
             });
 
-            // ── ID ──
-            const sourceId = (cells[colMap.id] ?? '').trim();
-            if (!sourceId) {
-                errors.push({ row: rowNum, reason: 'Missing ID / transaction_id' });
-                continue;
-            }
-
             // ── Date ──
             const dateRaw = colMap.date >= 0 ? (cells[colMap.date] ?? '').trim() : '';
             const timestamp = safeParseTimestamp(dateRaw);
@@ -148,15 +201,10 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
                 continue;
             }
 
-            // ── Side / Type ──
-            const sideRaw = colMap.side >= 0 ? (cells[colMap.side] ?? '').trim().toUpperCase() : '';
-            let txnType: 'BUY' | 'SELL';
-            if (sideRaw.includes('BUY') || sideRaw === 'B') {
-                txnType = 'BUY';
-            } else if (sideRaw.includes('SELL') || sideRaw === 'S') {
-                txnType = 'SELL';
-            } else {
-                errors.push({ row: rowNum, reason: `Unknown type/side: "${sideRaw}"` });
+            // ── Type / Side ──
+            const typeRaw = colMap.side >= 0 ? (cells[colMap.side] ?? '').trim().toLowerCase() : '';
+            if (!typeRaw) {
+                errors.push({ row: rowNum, reason: 'Missing Type/Side value' });
                 continue;
             }
 
@@ -167,7 +215,7 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
                 asset = extractInstaAsset(assetRaw) || 'UNKNOWN';
             }
             if (asset === 'UNKNOWN') {
-                errors.push({ row: rowNum, reason: 'Missing or unrecognized asset/coin' });
+                errors.push({ row: rowNum, reason: 'Missing or unrecognized asset/currency' });
                 continue;
             }
 
@@ -175,50 +223,114 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
             const quantity = colMap.quantity >= 0 ? parseNum(cells[colMap.quantity]) : 0;
 
             // ── INR Amount ──
-            const totalInr = colMap.inr_amount >= 0 ? parseNum(cells[colMap.inr_amount]) : 0;
+            const inrValue = colMap.inr_amount >= 0 ? parseNum(cells[colMap.inr_amount]) : 0;
 
             // ── Fee ──
             const fee = colMap.fee >= 0 ? parseNum(cells[colMap.fee]) : 0;
 
-            // Validate: need at least quantity or total
-            if (quantity <= 0 && totalInr <= 0) {
-                errors.push({ row: rowNum, reason: `Both quantity (${quantity}) and INR amount (${totalInr}) are zero/invalid` });
-                continue;
+            // ── Remarks ──
+            const remarks = colMap.remarks >= 0 ? (cells[colMap.remarks] ?? '').trim() : '';
+
+            // ── Source ID (for dedup) ──
+            let sourceId: string;
+            if (hasIdColumn) {
+                sourceId = (cells[colMap.id] ?? '').trim();
+                if (!sourceId) {
+                    sourceId = generateInstaId(dateRaw, typeRaw, asset, quantity, inrValue);
+                }
+            } else {
+                sourceId = generateInstaId(dateRaw, typeRaw, asset, quantity, inrValue);
             }
 
-            // ── Compute price_inr ──
-            let priceInr = 0;
-            if (quantity > 0 && totalInr > 0) {
-                priceInr = totalInr / quantity;
+            // Dedup within this parse
+            if (seenIds.has(sourceId)) {
+                continue;
             }
+            seenIds.add(sourceId);
 
             // ── Financial Year ──
             const fy = computeFinancialYear(timestamp);
 
-            rows.push({
-                source_id: sourceId,
-                source: 'INSTA_CSV',
-                txn_type: txnType,
-                asset,
-                quantity,
-                price_inr: Math.round(priceInr * 100) / 100,
-                total_inr: totalInr,
-                fee_inr: fee,
-                tds_inr: 0,
-                timestamp: timestamp.toISOString(),
-                financial_year: fy,
-                pair: `${asset}INR`,
-                status: 'COMPLETED',
-                raw_data: rawData,
-            });
+            // ── Route by Type ──
+            if (TRADE_TYPES.has(typeRaw)) {
+                // ───── BUY / SELL trade ─────
+                if (quantity <= 0 && inrValue <= 0) {
+                    errors.push({ row: rowNum, reason: `Both quantity (${quantity}) and INR value (${inrValue}) are zero/invalid` });
+                    continue;
+                }
+
+                let priceInr = 0;
+                if (quantity > 0 && inrValue > 0) {
+                    priceInr = inrValue / quantity;
+                }
+
+                const txnType = typeRaw === 'buy' ? 'BUY' : 'SELL';
+
+                rows.push({
+                    source_id: sourceId,
+                    source: 'INSTA_CSV',
+                    txn_type: txnType as 'BUY' | 'SELL',
+                    asset,
+                    quantity,
+                    price_inr: Math.round(priceInr * 100) / 100,
+                    total_inr: inrValue,
+                    fee_inr: fee,
+                    tds_inr: 0, // TDS comes from TDS CSV
+                    timestamp: timestamp.toISOString(),
+                    financial_year: fy,
+                    pair: `${asset}INR`,
+                    status: 'COMPLETED',
+                    raw_data: rawData,
+                });
+
+            } else if (INCOME_TYPE_MAP[typeRaw]) {
+                // ───── Staking / Reward / Airdrop income ─────
+                const incomeType = INCOME_TYPE_MAP[typeRaw];
+
+                incomeRows.push({
+                    source_id: sourceId,
+                    source: 'coindcx_insta',
+                    income_type: incomeType,
+                    asset,
+                    quantity,
+                    value_inr: inrValue,
+                    transaction_date: timestamp.toISOString(),
+                    financial_year: fy,
+                    remarks,
+                    raw_data: rawData,
+                });
+
+            } else {
+                // Unknown type — skip with warning (not an error)
+                errors.push({ row: rowNum, reason: `Unknown transaction type: "${typeRaw}" — skipping (not buy/sell/staking/reward)` });
+            }
+
         } catch (err) {
             errors.push({ row: rowNum, reason: `Unexpected error: ${(err as Error).message}` });
         }
     }
 
-    return { rows, errors, summary: buildInstaSummary(rows) };
+    return { rows, incomeRows, errors, summary: buildInstaSummary(rows, incomeRows) };
 }
 
+
+// ─── Synthetic ID Generation ─────────────────────────────────────────
+
+/**
+ * Generate a deterministic synthetic ID from row content.
+ * Same row → same ID for dedup across re-uploads.
+ */
+function generateInstaId(
+    dateStr: string,
+    type: string,
+    asset: string,
+    quantity: number,
+    inrValue: number,
+): string {
+    const raw = `${dateStr}|${type}|${asset}|${quantity}|${inrValue}`;
+    const hash = CryptoJS.SHA256(raw).toString().slice(0, 16);
+    return `INSTA-${hash}`;
+}
 
 // ─── Column Detection ────────────────────────────────────────────────
 
@@ -245,16 +357,20 @@ function detectInstaColumns(headers: string[]): InstaColumnMap {
         return -1;
     };
 
-    // Detect specific columns first to avoid collisions
-    const id = find(INSTA_COLUMN_ALIASES.id);
-    const asset = find(INSTA_COLUMN_ALIASES.asset);
-    const inr_amount = find(INSTA_COLUMN_ALIASES.inr_amount);
+    // CRITICAL ORDER:
+    // 1. quantity BEFORE inr_amount (prevent 'amount' substring collision)
+    // 2. side BEFORE id (prevent 'id' stealing 'Side' via "side".includes("id"))
+    // 3. date early (prevent 'created_at' collisions)
     const quantity = find(INSTA_COLUMN_ALIASES.quantity);
     const date = find(INSTA_COLUMN_ALIASES.date);
     const side = find(INSTA_COLUMN_ALIASES.side);
+    const asset = find(INSTA_COLUMN_ALIASES.asset);
+    const inr_amount = find(INSTA_COLUMN_ALIASES.inr_amount);
+    const id = find(INSTA_COLUMN_ALIASES.id);
     const fee = find(INSTA_COLUMN_ALIASES.fee);
+    const remarks = find(INSTA_COLUMN_ALIASES.remarks);
 
-    return { id, date, side, asset, quantity, inr_amount, fee };
+    return { id, date, side, asset, quantity, inr_amount, fee, remarks };
 }
 
 
@@ -336,6 +452,7 @@ function extractInstaAsset(raw: string): string | null {
     for (const q of ['USDT', 'BUSD', 'INR', 'USDC']) {
         if (p.endsWith(q) && p.length > q.length) return p.slice(0, -q.length);
     }
+    // Accept raw asset (e.g. "ADA", "SHIB", "INR")
     return p.length >= 2 ? p : null;
 }
 
@@ -346,34 +463,47 @@ function parseNum(val: string | undefined): number {
     if (!val) return 0;
     const cleaned = val.replace(/[₹$,\s]/g, '').trim();
     const n = parseFloat(cleaned);
-    return isNaN(n) ? 0 : n;
+    return isNaN(n) ? 0 : Math.abs(n);
 }
 
 function emptySummary(): InstaCSVParseResult['summary'] {
     return {
         total_buys: 0,
         total_sells: 0,
+        total_income_events: 0,
         total_inr_volume: 0,
+        total_income_inr: 0,
         assets: [],
         date_range: { from: '', to: '' },
         financial_years: [],
     };
 }
 
-function buildInstaSummary(rows: ParsedInstaRow[]): InstaCSVParseResult['summary'] {
-    if (rows.length === 0) return emptySummary();
+function buildInstaSummary(
+    rows: ParsedInstaRow[],
+    incomeRows: ParsedInstaIncomeRow[],
+): InstaCSVParseResult['summary'] {
+    const allRows = [
+        ...rows.map(r => ({ timestamp: r.timestamp, asset: r.asset, fy: r.financial_year })),
+        ...incomeRows.map(r => ({ timestamp: r.transaction_date, asset: r.asset, fy: r.financial_year })),
+    ];
+
+    if (allRows.length === 0) return emptySummary();
 
     const buys = rows.filter(r => r.txn_type === 'BUY').length;
     const sells = rows.filter(r => r.txn_type === 'SELL').length;
     const totalVol = rows.reduce((s, r) => s + r.total_inr, 0);
-    const assetsSet = new Set(rows.map(r => r.asset));
-    const fySet = new Set(rows.map(r => r.financial_year));
-    const ts = rows.map(r => new Date(r.timestamp).getTime()).sort((a, b) => a - b);
+    const totalIncomeInr = incomeRows.reduce((s, r) => s + r.value_inr, 0);
+    const assetsSet = new Set(allRows.map(r => r.asset));
+    const fySet = new Set(allRows.map(r => r.fy));
+    const ts = allRows.map(r => new Date(r.timestamp).getTime()).sort((a, b) => a - b);
 
     return {
         total_buys: buys,
         total_sells: sells,
+        total_income_events: incomeRows.length,
         total_inr_volume: Math.round(totalVol * 100) / 100,
+        total_income_inr: Math.round(totalIncomeInr * 100) / 100,
         assets: [...assetsSet].sort(),
         date_range: {
             from: new Date(ts[0]).toISOString().split('T')[0],

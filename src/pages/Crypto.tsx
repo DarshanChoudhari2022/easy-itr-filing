@@ -136,6 +136,9 @@ export default function CryptoTaxPage() {
   const [loading, setLoading] = useState(false);
   const [taxComputation, setTaxComputation] = useState<TaxComputationResult | null>(null);
   const [importSessions, setImportSessions] = useState<any[]>([]);
+  // Transaction tab filters
+  const [txTypeFilter, setTxTypeFilter] = useState<string>('all');
+  const [txAssetFilter, setTxAssetFilter] = useState<string>('');
   // Client-side parsed data — loaded from DB (primary) and localStorage (cache)
   const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
   const [parsedTDSRecords, setParsedTDSRecords] = useState<TDSRecord[]>([]);
@@ -468,15 +471,30 @@ export default function CryptoTaxPage() {
       );
       console.log('[CryptoTax] Saved tax summary to DB + localStorage:', cryptoTaxSummary);
 
-      // ── Persist to Supabase income_sources so it appears in Filing Wizard ──
+      // ── Persist crypto data so it appears in Filing Wizard ──
+      // BUG 3 FIX: Use user_data_store (always works) + income_sources with correct schema
       if (user) {
         const ay = result.assessmentYear || '2026-27';
-        saveIncomeSources({
+
+        // Primary: Save to user_data_store (guaranteed to work)
+        saveUserData('taxmitra_crypto_income_sources', {
           assessment_year: ay,
           has_crypto: true,
           crypto_gains: Math.round(result.taxableCapitalGains),
           crypto_tds: Math.round(result.totalTDSCredit),
-        }).then(() => {
+        }).catch(err => {
+          console.warn('[CryptoTax] Could not save crypto income to user_data_store:', err.message);
+        });
+
+        // Secondary: Try saving to income_sources with correct schema columns
+        // income_sources requires: source_type (enum), amount, tds_deducted, assessment_year
+        saveIncomeSources({
+          assessment_year: ay,
+          source_type: 'capital_gains_equity' as any,
+          amount: Math.round(result.taxableCapitalGains),
+          tds_deducted: Math.round(result.totalTDSCredit),
+          description: `Crypto VDA Capital Gains (Section 115BBH) - ${result.totalVDAEntries} transfers`,
+        } as any).then(() => {
           console.log('[CryptoTax] ✅ Saved crypto data to income_sources for filing wizard');
         }).catch(err => {
           console.warn('[CryptoTax] Could not save to income_sources:', err.message);
@@ -1086,21 +1104,26 @@ export default function CryptoTaxPage() {
     // Use engine computation if available
     if (taxComputation) {
       // ── Use engine's sell count (VDA report lines = unique sell events, matches KoinX) ──
-      // totalVDAEntries = number of sell events processed by FIFO engine
-      // This is more accurate than raw fySells.length which counts raw CSV rows
       const engineSellCount = taxComputation.totalVDAEntries || fySells.length;
+
+      // Gross tax and cess
+      const taxableTotal = (taxComputation.taxableCapitalGains || 0) + (taxComputation.otherVDAIncome || 0);
+      const grossTax30 = taxableTotal * 0.30;
+      const cess4 = grossTax30 * 0.04;
+
       return {
         totalTrades: fyBuys.length + engineSellCount,
         buyTrades: fyBuys.length,
         sellTrades: engineSellCount,
         rewardTrades: fyRewards.length,
-        // BUG FIX: totalBuyValueInr = cost of ALL buys (including unsold inventory) — WRONG
-        // totalCostOfAcquisitionInr = FIFO-matched cost for SOLD assets only — CORRECT
         buyVolume: taxComputation.totalCostOfAcquisitionInr,
         sellVolume: taxComputation.totalConsiderationInr,
         netGain: taxComputation.netGainLossInfo,
         taxableGain: taxComputation.taxableCapitalGains,
+        grossLosses: taxComputation.grossCapitalLosses || 0,
         taxPayable: taxComputation.totalTaxLiability,
+        grossTax: Math.round(grossTax30 * 100) / 100,
+        cess: Math.round(cess4 * 100) / 100,
         tdsCredit: taxComputation.totalTDSCredit,
         uniqueTokens: taxComputation.uniqueAssets,
         otherIncome: taxComputation.otherVDAIncome || 0,
@@ -1118,7 +1141,10 @@ export default function CryptoTaxPage() {
       sellVolume: 0,
       netGain: 0,
       taxableGain: 0,
+      grossLosses: 0,
       taxPayable: 0,
+      grossTax: 0,
+      cess: 0,
       tdsCredit: 0,
       uniqueTokens: 0,
       otherIncome: 0,
@@ -1156,12 +1182,15 @@ export default function CryptoTaxPage() {
   }, [filteredTrades]);
 
   // ============= HELPERS =============
+  // Indian number formatting: ₹756, ₹28.8K, ₹1.62L, ₹1.23Cr
   const formatCurrency = (value: number | string | undefined | null): string => {
     const v = Number(value) || 0;
-    if (Math.abs(v) >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
-    if (Math.abs(v) >= 100000) return `₹${(v / 100000).toFixed(2)} L`;
-    if (Math.abs(v) >= 1000) return `₹${(v / 1000).toFixed(1)} K`;
-    return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    const abs = Math.abs(v);
+    const sign = v < 0 ? '-' : '';
+    if (abs >= 10000000) return `${sign}₹${(abs / 10000000).toFixed(2)}Cr`;
+    if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(2)}L`;
+    if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(1)}K`;
+    return `${sign}₹${abs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
   // ============= SAMPLE CSV GENERATOR =============
@@ -1423,7 +1452,7 @@ export default function CryptoTaxPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   <StatCard
                     label="Capital Gain Trades"
-                    value={stats.totalTrades.toString()}
+                    value={stats.sellTrades.toString()}
                     subtext={`${stats.buyTrades} buys · ${stats.sellTrades} sells`}
                     icon={<Activity className="h-5 w-5 text-indigo-600" />}
                   />
@@ -1442,16 +1471,16 @@ export default function CryptoTaxPage() {
                   <StatCard
                     label="Capital Gains"
                     value={formatCurrency(stats.taxableGain)}
-                    subtext={stats.taxableGain >= 0 ? 'Taxable gains (§115BBH)' : 'Net loss (info only)'}
+                    subtext="Taxable gains (§115BBH)"
                     icon={<Target className="h-5 w-5 text-purple-600" />}
-                    highlight={stats.taxableGain >= 0 ? 'positive' : 'negative'}
+                    highlight={stats.taxableGain > 0 ? 'positive' : undefined}
                   />
                   <StatCard
                     label="Other Income"
                     value={formatCurrency(stats.otherIncome)}
-                    subtext={`Rewards/Staking${(stats as any).rewardTrades > 0 ? ` · ${(stats as any).rewardTrades} txns` : ' · Add manually ↗'}`}
+                    subtext={`Rewards/Staking${stats.rewardTrades > 0 ? ` · ${stats.rewardTrades} txns` : ''}`}
                     icon={<Gift className="h-5 w-5 text-pink-600" />}
-                    highlight="positive"
+                    highlight={stats.otherIncome > 0 ? 'positive' : undefined}
                   />
                   <StatCard
                     label="TDS Credit"
@@ -1461,17 +1490,37 @@ export default function CryptoTaxPage() {
                   />
                 </div>
 
+                {/* Non-Deductible Losses Card (only show when losses exist) */}
+                {stats.grossLosses > 0 && (
+                  <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-orange-50 border-l-4 border-l-orange-400">
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm text-orange-700 font-medium mb-1">Non-Deductible Losses</p>
+                          <p className="text-2xl font-semibold text-orange-600">{formatCurrency(stats.grossLosses)}</p>
+                          <p className="text-xs text-orange-500 mt-1">Cannot be set off against gains (§115BBH)</p>
+                        </div>
+                        <div className="h-10 w-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                          <AlertTriangle className="h-5 w-5 text-orange-500" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Tax Summary Card */}
                 <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                   <CardContent className="p-6">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div>
                         <p className="text-indigo-200 text-sm font-medium">Estimated Tax Liability ({selectedFY})</p>
-                        <p className="text-4xl font-bold mt-1">{formatCurrency(Math.max(0, stats.taxPayable))}</p>
+                        <p className="text-4xl font-bold mt-1">{formatCurrency(stats.taxPayable)}</p>
                         <p className="text-indigo-200 text-sm mt-1">
-                          Capital Gains: {formatCurrency(stats.taxableGain)} + Other Income: {formatCurrency(stats.otherIncome)}
+                          Capital Gains: {formatCurrency(stats.taxableGain)} + Other Income: {formatCurrency(stats.otherIncome)} @ 30% + 4% cess
                         </p>
-                        <p className="text-indigo-300 text-xs mt-1">@ 30% flat rate + 4% cess (§115BBH)</p>
+                        <p className="text-indigo-300 text-xs mt-1">
+                          Gross Tax: {formatCurrency(stats.grossTax)} + Cess: {formatCurrency(stats.cess)} = {formatCurrency(stats.taxPayable)}
+                        </p>
                       </div>
                       <div className="flex flex-col sm:items-end gap-2">
                         <div className="flex items-center gap-2">
@@ -1482,6 +1531,12 @@ export default function CryptoTaxPage() {
                           <span className="text-indigo-200 text-sm">Net Payable:</span>
                           <span className="text-xl font-bold">{formatCurrency(Math.max(0, stats.taxPayable - stats.tdsCredit))}</span>
                         </div>
+                        {stats.tdsCredit > stats.taxPayable && stats.taxPayable > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-200 text-sm">🎉 Refund Eligible:</span>
+                            <span className="text-emerald-100 font-semibold">{formatCurrency(stats.tdsCredit - stats.taxPayable)}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <span className="text-indigo-300 text-xs">Gross Tax: {formatCurrency(stats.taxPayable)}</span>
                         </div>
@@ -1714,78 +1769,176 @@ export default function CryptoTaxPage() {
             )}
 
             {/* ============= TRANSACTIONS TAB ============= */}
-            {activeTab === 'transactions' && (
-              <Card className="border-0 shadow-sm">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base font-semibold text-slate-900">All Transactions</CardTitle>
-                    <CardDescription>{trades.length} total trades</CardDescription>
-                  </div>
-                  {trades.length > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleDeleteAllTrades} className="text-red-600 border-red-200 hover:bg-red-50">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete All
-                    </Button>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {trades.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Token</TableHead>
-                            <TableHead className="text-right">Quantity</TableHead>
-                            <TableHead className="text-right">Price</TableHead>
-                            <TableHead className="text-right">Value</TableHead>
-                            <TableHead>Exchange</TableHead>
-                            <TableHead></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {trades.map(trade => (
-                            <TableRow key={trade.id}>
-                              <TableCell className="text-slate-600">{new Date(trade.trade_date).toLocaleDateString('en-IN')}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className={
-                                  trade.trade_type === 'buy' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' :
-                                    trade.trade_type === 'sell' ? 'border-amber-200 text-amber-700 bg-amber-50' :
-                                      trade.trade_type.startsWith('reward_') ? 'border-purple-200 text-purple-700 bg-purple-50' :
-                                        trade.trade_type === 'deposit' ? 'border-blue-200 text-blue-700 bg-blue-50' :
-                                          'border-slate-200 text-slate-700 bg-slate-50'
-                                }>
-                                  {trade.trade_type === 'reward_staking' ? '🥩 STAKING' :
-                                    trade.trade_type === 'reward_airdrop' ? '🎁 AIRDROP' :
-                                      trade.trade_type === 'reward_interest' ? '💰 INTEREST' :
-                                        trade.trade_type === 'reward_mining' ? '⛏️ MINING' :
-                                          trade.trade_type.toUpperCase()}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-medium text-slate-900">{trade.token_symbol}</TableCell>
-                              <TableCell className="text-right text-slate-600">{Number(trade.quantity || 0).toFixed(6)}</TableCell>
-                              <TableCell className="text-right text-slate-600">{formatCurrency(trade.buy_price)}</TableCell>
-                              <TableCell className="text-right font-medium text-slate-900">{formatCurrency(Number(trade.quantity || 0) * Number(trade.buy_price || 0))}</TableCell>
-                              <TableCell className="text-slate-500">{trade.exchange || '-'}</TableCell>
-                              <TableCell>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTrade(trade.id)}>
-                                  <Trash2 className="h-4 w-4 text-slate-400 hover:text-red-500" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
+            {activeTab === 'transactions' && (() => {
+              // Available assets for filter dropdown
+              const uniqueAssets = [...new Set(fySpecificTransactions.map(tx => tx.assetSymbol))].sort();
+
+              // Filter transactions
+              const filteredTxns = fySpecificTransactions.filter(tx => {
+                // Type filter
+                if (txTypeFilter !== 'all') {
+                  const type = tx.transactionType.toLowerCase();
+                  if (txTypeFilter === 'buy' && type !== 'buy') return false;
+                  if (txTypeFilter === 'sell' && type !== 'sell') return false;
+                  if (txTypeFilter === 'staking' && !type.includes('staking') && type !== 'staking_reward') return false;
+                  if (txTypeFilter === 'reward' && !type.startsWith('reward') && type !== 'airdrop') return false;
+                }
+                // Asset filter
+                if (txAssetFilter && tx.assetSymbol !== txAssetFilter) return false;
+                return true;
+              }).sort((a, b) => new Date(b.tradeTimestamp).getTime() - new Date(a.tradeTimestamp).getTime());
+
+              // Badge color helper
+              const typeBadge = (type: string) => {
+                const t = type.toLowerCase();
+                if (t === 'buy') return { class: 'border-emerald-200 text-emerald-700 bg-emerald-50', label: 'BUY' };
+                if (t === 'sell') return { class: 'border-red-200 text-red-700 bg-red-50', label: 'SELL' };
+                if (t.includes('staking') || t === 'staking_reward') return { class: 'border-blue-200 text-blue-700 bg-blue-50', label: '🥩 STAKING' };
+                if (t.startsWith('reward') || t === 'airdrop') return { class: 'border-purple-200 text-purple-700 bg-purple-50', label: t === 'airdrop' ? '🎁 AIRDROP' : '🎁 REWARD' };
+                if (t === 'deposit') return { class: 'border-cyan-200 text-cyan-700 bg-cyan-50', label: 'DEPOSIT' };
+                if (t === 'withdrawal') return { class: 'border-amber-200 text-amber-700 bg-amber-50', label: 'WITHDRAW' };
+                return { class: 'border-slate-200 text-slate-700 bg-slate-50', label: t.toUpperCase() };
+              };
+
+              // Gain/loss lookup for sell rows
+              const getGainForSell = (tx: typeof fySpecificTransactions[0]) => {
+                if (tx.transactionType !== 'sell' || !taxComputation?.lotMatches) return null;
+                const matches = taxComputation.lotMatches.filter(m =>
+                  m.assetSymbol === tx.assetSymbol &&
+                  m.sellDate && new Date(m.sellDate).getTime() === new Date(tx.tradeTimestamp).getTime()
+                );
+                if (matches.length === 0) return null;
+                return matches.reduce((s, m) => s + (m.gainLoss || 0), 0);
+              };
+
+              return (
+                <div className="space-y-4">
+                  {/* Filter Bar */}
+                  <Card className="border-0 shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* Type Filter */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500 font-medium">Type:</span>
+                          {['all', 'buy', 'sell', 'staking', 'reward'].map(type => (
+                            <button
+                              key={type}
+                              onClick={() => setTxTypeFilter(type)}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${txTypeFilter === type
+                                ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                              {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1)}
+                            </button>
                           ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <p className="text-slate-500">No transactions found. Import or add trades to get started.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                        </div>
+
+                        {/* Asset Filter */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500 font-medium">Asset:</span>
+                          <select
+                            value={txAssetFilter}
+                            onChange={e => setTxAssetFilter(e.target.value)}
+                            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700"
+                          >
+                            <option value="">All Assets</option>
+                            {uniqueAssets.map(a => (
+                              <option key={a} value={a}>{a}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Count */}
+                        <span className="ml-auto text-xs text-slate-400">
+                          {filteredTxns.length} of {fySpecificTransactions.length} transactions
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Transaction Table */}
+                  <Card className="border-0 shadow-sm">
+                    <CardContent className="p-0">
+                      {filteredTxns.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-slate-50">
+                                <TableHead className="text-xs">Date</TableHead>
+                                <TableHead className="text-xs">Type</TableHead>
+                                <TableHead className="text-xs">Asset</TableHead>
+                                <TableHead className="text-xs text-right">Quantity</TableHead>
+                                <TableHead className="text-xs text-right">Price/unit</TableHead>
+                                <TableHead className="text-xs text-right">Value (INR)</TableHead>
+                                <TableHead className="text-xs text-right">Fee (INR)</TableHead>
+                                <TableHead className="text-xs text-right">TDS (INR)</TableHead>
+                                <TableHead className="text-xs">Source</TableHead>
+                                <TableHead className="text-xs text-right">Gain/Loss</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredTxns.map((tx, idx) => {
+                                const badge = typeBadge(tx.transactionType);
+                                const gain = getGainForSell(tx);
+                                const ts = tx.tradeTimestamp instanceof Date
+                                  ? tx.tradeTimestamp
+                                  : new Date(tx.tradeTimestamp);
+
+                                return (
+                                  <TableRow key={tx.externalId || idx} className="hover:bg-slate-50">
+                                    <TableCell className="text-xs text-slate-600 font-mono whitespace-nowrap">
+                                      {ts.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline" className={`text-[10px] ${badge.class}`}>
+                                        {badge.label}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="font-semibold text-slate-900 text-xs">{tx.assetSymbol}</TableCell>
+                                    <TableCell className="text-right text-xs text-slate-600 font-mono">
+                                      {Number(tx.quantity || 0).toFixed(4)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-slate-600 font-mono">
+                                      {formatCurrency(tx.priceInr || tx.pricePerUnit || 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs font-medium text-slate-900 font-mono">
+                                      {formatCurrency(tx.grossAmountInr || 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-slate-500 font-mono">
+                                      {(tx.feeInr || 0) > 0 ? formatCurrency(tx.feeInr) : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-slate-500 font-mono">
+                                      {(tx.tdsAmount || 0) > 0 ? formatCurrency(tx.tdsAmount) : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-slate-400">
+                                      {tx.exchange || '—'}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs font-mono">
+                                      {gain !== null ? (
+                                        <span className={`font-bold ${gain >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                          {gain >= 0 ? '+' : ''}{formatCurrency(gain)}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-300">—</span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <div className="text-center py-12">
+                          <p className="text-slate-500">No transactions found{txTypeFilter !== 'all' ? ` for "${txTypeFilter}" filter` : ''}. Import data to get started.</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              );
+            })()}
 
             {/* ============= IMPORT TAB — GUIDED WIZARD ============= */}
             {activeTab === 'import' && (
@@ -2070,7 +2223,7 @@ export default function CryptoTaxPage() {
                 {taxComputation ? (
                   <Card className="border-0 shadow-sm">
                     <CardContent className="p-5">
-                      <TaxDrillDown taxResult={taxComputation} />
+                      <TaxDrillDown taxResult={taxComputation} selectedFY={selectedFY} />
                     </CardContent>
                   </Card>
                 ) : (

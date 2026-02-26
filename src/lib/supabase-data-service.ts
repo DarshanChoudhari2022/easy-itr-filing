@@ -52,13 +52,17 @@ export async function saveIncomeSources(data: IncomeSourcesData) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
+    // BUG 3 FIX: Use upsert instead of insert to prevent 409 Conflict errors
+    // when income_sources is saved multiple times for the same user + assessment year.
     const { data: result, error } = await supabase
         .from('income_sources' as any)
-        .insert({
+        .upsert({
             user_id: user.id,
             ...data,
             updated_at: new Date().toISOString(),
-        } as any)
+        } as any, {
+            onConflict: 'user_id,assessment_year',
+        })
         .select()
         .single();
 
