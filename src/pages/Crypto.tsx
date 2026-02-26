@@ -376,9 +376,10 @@ export default function CryptoTaxPage() {
   }, [user]);
 
   // Financial Year state and helper
-  // Smart FY: auto-detect from data, default to current FY (2025-26)
+  // Smart FY: auto-detect from data on initial load, then respect user's manual selection
   const [selectedFY, setSelectedFY] = useState<string>('2025-26');
   const [fyAutoDetected, setFyAutoDetected] = useState(false);
+  const [userManuallySelectedFY, setUserManuallySelectedFY] = useState(false);
 
   // Available Financial Years
   const FINANCIAL_YEARS = [
@@ -563,8 +564,8 @@ export default function CryptoTaxPage() {
   // Also auto-detect the best FY from the data (once)
   useEffect(() => {
     if (parsedTransactions.length > 0) {
-      // ── Auto-detect FY from data (run once after first load) ──
-      if (!fyAutoDetected) {
+      // ── Auto-detect FY from data (run once on initial load, NEVER override manual selection) ──
+      if (!fyAutoDetected && !userManuallySelectedFY) {
         const fyCounts: Record<string, number> = {};
         for (const tx of parsedTransactions) {
           // Only count buy/sell trades (not deposits/withdrawals)
@@ -587,7 +588,7 @@ export default function CryptoTaxPage() {
       recomputeTax(parsedTransactions, parsedTDSRecords, selectedFY);
       setTrades(mapTransactionsToTrades(parsedTransactions));
     }
-  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades, fyAutoDetected]);
+  }, [parsedTransactions, parsedTDSRecords, selectedFY, recomputeTax, mapTransactionsToTrades, fyAutoDetected, userManuallySelectedFY]);
 
   // ═══ FAIL-SAFE: Initialize checklist whenever FY changes ═══
   useEffect(() => {
@@ -819,7 +820,7 @@ export default function CryptoTaxPage() {
       // Critical fix: preserve ALL existing transactions (from any source: API, Order CSV, TDS CSV, Insta CSV)
       // that don't conflict with the new upload. Previous bug only kept source='api' transactions,
       // causing each CSV upload to wipe all previous CSV data.
-      setFyAutoDetected(false); // Will trigger FY re-detection from new data
+      // NOTE: Do NOT reset fyAutoDetected here — it would override user's manual FY selection
 
       // ── SMART MERGE with multi-level deduplication ──
       //
@@ -1287,7 +1288,7 @@ export default function CryptoTaxPage() {
                   <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-all hover:border-indigo-300">
                     <Calendar className="h-4 w-4 text-indigo-500" />
                     <span className="text-sm font-medium text-slate-600 whitespace-nowrap">FY</span>
-                    <Select value={selectedFY} onValueChange={setSelectedFY}>
+                    <Select value={selectedFY} onValueChange={(v) => { setSelectedFY(v); setUserManuallySelectedFY(true); }}>
                       <SelectTrigger className="w-[120px] h-8 border-0 shadow-none focus:ring-0 p-0 hover:bg-transparent">
                         <SelectValue placeholder="Select FY" />
                       </SelectTrigger>
