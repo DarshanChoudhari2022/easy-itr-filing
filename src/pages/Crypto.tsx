@@ -821,13 +821,39 @@ export default function CryptoTaxPage() {
       // causing each CSV upload to wipe all previous CSV data.
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
 
-      // MERGE mode: Keep existing transactions that DON'T match any new transaction
-      // Match criteria: contentHash, orderId, or externalId
+      // ── SMART MERGE with multi-level deduplication ──
+      //
+      // Level 1: Exact match — contentHash, orderId, or externalId
+      // Level 2: Fuzzy match — same asset + date (within 24h) + INR value (within 10%)
+      //   This catches the same sell appearing in Order CSV (real) and TDS CSV (synthetic)
+      //   with different IDs. Prefer the one with actual quantity/price (non-TDS-synthetic).
+      //
+      const isFuzzyMatch = (a: NormalizedTransaction, b: NormalizedTransaction): boolean => {
+        // Both must be same type (sell=sell, buy=buy)
+        if (a.transactionType !== b.transactionType) return false;
+        // Same asset
+        if (a.assetSymbol !== b.assetSymbol) return false;
+        // Date within 24 hours
+        const dateA = new Date(a.tradeTimestamp).getTime();
+        const dateB = new Date(b.tradeTimestamp).getTime();
+        if (Math.abs(dateA - dateB) > 24 * 60 * 60 * 1000) return false;
+        // INR value within 10% (handles rounding differences between CSVs)
+        const valA = a.grossAmountInr || 0;
+        const valB = b.grossAmountInr || 0;
+        if (valA === 0 && valB === 0) return true; // Both zero = match
+        if (valA === 0 || valB === 0) return false;
+        const ratio = Math.abs(valA - valB) / Math.max(valA, valB);
+        return ratio < 0.10; // Within 10%
+      };
+
       const existingNonConflicting = parsedTransactions.filter(tx =>
         !allTransactions.some(newTx =>
+          // Level 1: Exact match
           newTx.contentHash === tx.contentHash ||
           (newTx.orderId && newTx.orderId === tx.orderId) ||
-          (newTx.externalId && newTx.externalId === tx.externalId)
+          (newTx.externalId && newTx.externalId === tx.externalId) ||
+          // Level 2: Fuzzy match for cross-CSV dedup
+          isFuzzyMatch(newTx, tx)
         )
       );
       const existingNonConflictingTds = parsedTDSRecords.filter(tds =>
@@ -839,7 +865,7 @@ export default function CryptoTaxPage() {
       // New data takes priority over existing (in case of conflict, new wins)
       const mergedTransactions = [...existingNonConflicting, ...allTransactions];
       const mergedTDS = [...existingNonConflictingTds, ...allTDSRecords];
-      console.log(`[CryptoImport] MERGE mode: ${existingNonConflicting.length} existing preserved + ${allTransactions.length} new = ${mergedTransactions.length} total`);
+      console.log(`[CryptoImport] MERGE: ${existingNonConflicting.length} existing preserved + ${allTransactions.length} new = ${mergedTransactions.length} total`);
       messages.push(`🔄 Merged: ${existingNonConflicting.length} existing + ${allTransactions.length} new = ${mergedTransactions.length} total transactions`);
 
       setParsedTransactions(mergedTransactions);
@@ -2053,7 +2079,8 @@ export default function CryptoTaxPage() {
                   setApiSyncResult(null);
                   toast.success('CoinDCX disconnected');
                 }}
-                onReset={() => {
+                onReset={async () => {
+                  // Clear ALL state
                   setParsedTransactions([]);
                   setParsedTDSRecords([]);
                   setTrades([]);
@@ -2064,9 +2091,28 @@ export default function CryptoTaxPage() {
                   setApiSecret('');
                   setApiSyncResult(null);
                   setFyChecklist(null);
+
+                  // Clear localStorage
                   localStorage.removeItem('taxmitra_transactions');
+                  localStorage.removeItem('taxmitra_tds');
                   localStorage.removeItem('taxmitra_tds_records');
                   localStorage.removeItem('taxmitra_crypto_tax_summary');
+                  localStorage.removeItem('taxmitra_crypto_income_sources');
+                  localStorage.removeItem('taxSettings');
+
+                  // Clear Supabase user_data_store — critical so data doesn't come back on refresh
+                  try {
+                    await Promise.all([
+                      deleteUserData('taxmitra_transactions'),
+                      deleteUserData('taxmitra_tds'),
+                      deleteUserData('taxmitra_crypto_tax_summary'),
+                      deleteUserData('taxmitra_crypto_income_sources'),
+                    ]);
+                    console.log('[CryptoTax] ✅ All data cleared from Supabase');
+                  } catch (e) {
+                    console.error('[CryptoTax] Failed to clear Supabase data:', e);
+                  }
+                  toast.success('All crypto data cleared! You can now re-upload fresh.');
                 }}
                 formatCurrency={formatCurrency}
               />
