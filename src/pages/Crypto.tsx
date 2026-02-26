@@ -815,31 +815,32 @@ export default function CryptoTaxPage() {
           }
         }
       }
-      // 4. Store parsed data in state — REPLACE all old data (not append)
-      // This prevents stale data accumulation from old API syncs/imports
-      // that had fabricated TDS or other bad values
+      // 4. Store parsed data in state — MERGE with all existing data
+      // Critical fix: preserve ALL existing transactions (from any source: API, Order CSV, TDS CSV, Insta CSV)
+      // that don't conflict with the new upload. Previous bug only kept source='api' transactions,
+      // causing each CSV upload to wipe all previous CSV data.
       setFyAutoDetected(false); // Will trigger FY re-detection from new data
 
-      // MERGE mode: combine CSV data with existing API data, deduplicating
-      // This ensures API-synced data (eg historical buys from 2021) is preserved
-      // when user uploads CSV for the current FY — critical for cross-FY FIFO cost basis
-      const existingApiTxs = parsedTransactions.filter(tx =>
-        tx.rawData?.source === 'api' && !allTransactions.some(newTx =>
+      // MERGE mode: Keep existing transactions that DON'T match any new transaction
+      // Match criteria: contentHash, orderId, or externalId
+      const existingNonConflicting = parsedTransactions.filter(tx =>
+        !allTransactions.some(newTx =>
           newTx.contentHash === tx.contentHash ||
           (newTx.orderId && newTx.orderId === tx.orderId) ||
           (newTx.externalId && newTx.externalId === tx.externalId)
         )
       );
-      const existingApiTds = parsedTDSRecords.filter(tds =>
+      const existingNonConflictingTds = parsedTDSRecords.filter(tds =>
         !allTDSRecords.some(newTds =>
           Math.abs(newTds.tdsAmountInr - tds.tdsAmountInr) < 0.01 &&
           newTds.tdsDate?.getTime() === tds.tdsDate?.getTime()
         )
       );
-      const mergedTransactions = [...existingApiTxs, ...allTransactions];
-      const mergedTDS = [...existingApiTds, ...allTDSRecords];
-      console.log(`[CryptoImport] MERGE mode: ${existingApiTxs.length} API txs preserved + ${allTransactions.length} CSV txs = ${mergedTransactions.length} total`);
-      messages.push(`🔄 Merged: ${existingApiTxs.length} API + ${allTransactions.length} CSV = ${mergedTransactions.length} total transactions`);
+      // New data takes priority over existing (in case of conflict, new wins)
+      const mergedTransactions = [...existingNonConflicting, ...allTransactions];
+      const mergedTDS = [...existingNonConflictingTds, ...allTDSRecords];
+      console.log(`[CryptoImport] MERGE mode: ${existingNonConflicting.length} existing preserved + ${allTransactions.length} new = ${mergedTransactions.length} total`);
+      messages.push(`🔄 Merged: ${existingNonConflicting.length} existing + ${allTransactions.length} new = ${mergedTransactions.length} total transactions`);
 
       setParsedTransactions(mergedTransactions);
       setParsedTDSRecords(mergedTDS);
