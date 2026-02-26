@@ -839,7 +839,27 @@ function convertTradesToNormalized(
         // CRITICAL: CoinDCX API returns these as strings — must cast to Number
         const fee = Number(trade.fee_amount) || 0;
         const qty = Number(trade.quantity) || 0;
-        const price = Number(trade.price) || 0;  // weighted-avg price in quote currency
+
+        // ═══ v7 FIX: Price extraction with multiple fallbacks ═══
+        // CoinDCX trade_history API sometimes returns price=0 or price=1 (placeholder).
+        // The avg_price field (from order-level data) is often more reliable.
+        // Priority: price (if valid) > avg_price > price_per_unit > 0
+        let rawPrice = Number(trade.price) || 0;
+        const avgPrice = Number(trade.avg_price) || 0;
+
+        // Detect suspicious placeholder prices
+        const isPriceSuspicious = rawPrice <= 0 || (rawPrice === 1 && qty > 1);
+
+        if (isPriceSuspicious && avgPrice > 0) {
+            console.warn(`[CoinDCX] Using avg_price=${avgPrice} instead of suspicious price=${rawPrice} for ${trade.symbol} order ${trade.order_id}`);
+            rawPrice = avgPrice;
+        }
+
+        if (rawPrice <= 0) {
+            console.warn(`[CoinDCX] ⚠️ No valid price for ${trade.symbol} trade ${trade.id} (price=${trade.price}, avg_price=${trade.avg_price}). Trade value will be inaccurate.`);
+        }
+
+        const price = rawPrice;  // Best available price in quote currency
         const grossAmountQuote = qty * price;     // total in quote currency
 
         // ── INR Conversion using HISTORICAL rates ──
