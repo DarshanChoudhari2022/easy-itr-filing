@@ -825,9 +825,9 @@ export default function CryptoTaxPage() {
       // ── SMART MERGE with multi-level deduplication ──
       //
       // Level 1: Exact match — contentHash, orderId, or externalId
-      // Level 2: Fuzzy match — same asset + date (within 24h) + INR value (within 10%)
-      //   This catches the same sell appearing in Order CSV (real) and TDS CSV (synthetic)
-      //   with different IDs. Prefer the one with actual quantity/price (non-TDS-synthetic).
+      // Level 2: Fuzzy match — same asset + date (within 24h)
+      //   For SELLS: match by date+asset alone — prices in Order CSV can be wrong (₹1.00 bug)
+      //   For BUYS: match by date+asset+amount (within 10%)
       //
       const isFuzzyMatch = (a: NormalizedTransaction, b: NormalizedTransaction): boolean => {
         // Both must be same type (sell=sell, buy=buy)
@@ -838,13 +838,17 @@ export default function CryptoTaxPage() {
         const dateA = new Date(a.tradeTimestamp).getTime();
         const dateB = new Date(b.tradeTimestamp).getTime();
         if (Math.abs(dateA - dateB) > 24 * 60 * 60 * 1000) return false;
-        // INR value within 10% (handles rounding differences between CSVs)
+
+        // For SELLS: date+asset is enough (prices might be wildly wrong in one source)
+        if (a.transactionType === 'sell') return true;
+
+        // For BUYS: also check INR value within 10% (handles rounding differences)
         const valA = a.grossAmountInr || 0;
         const valB = b.grossAmountInr || 0;
-        if (valA === 0 && valB === 0) return true; // Both zero = match
+        if (valA === 0 && valB === 0) return true;
         if (valA === 0 || valB === 0) return false;
         const ratio = Math.abs(valA - valB) / Math.max(valA, valB);
-        return ratio < 0.10; // Within 10%
+        return ratio < 0.10;
       };
 
       const existingNonConflicting = parsedTransactions.filter(tx =>
@@ -863,11 +867,41 @@ export default function CryptoTaxPage() {
           newTds.tdsDate?.getTime() === tds.tdsDate?.getTime()
         )
       );
-      // New data takes priority over existing (in case of conflict, new wins)
-      const mergedTransactions = [...existingNonConflicting, ...allTransactions];
+
+      // Merge: new data takes priority
+      let mergedTransactions = [...existingNonConflicting, ...allTransactions];
       const mergedTDS = [...existingNonConflictingTds, ...allTDSRecords];
-      console.log(`[CryptoImport] MERGE: ${existingNonConflicting.length} existing preserved + ${allTransactions.length} new = ${mergedTransactions.length} total`);
-      messages.push(`🔄 Merged: ${existingNonConflicting.length} existing + ${allTransactions.length} new = ${mergedTransactions.length} total transactions`);
+
+      // ── POST-MERGE DEDUP: for any remaining duplicate sells (same asset+day),
+      //    keep the one with the HIGHEST grossAmountInr (TDS-derived is correct) ──
+      const sellsByKey = new Map<string, NormalizedTransaction[]>();
+      const nonSells: NormalizedTransaction[] = [];
+      for (const tx of mergedTransactions) {
+        if (tx.transactionType === 'sell') {
+          const d = new Date(tx.tradeTimestamp);
+          const key = `${tx.assetSymbol}_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const arr = sellsByKey.get(key) || [];
+          arr.push(tx);
+          sellsByKey.set(key, arr);
+        } else {
+          nonSells.push(tx);
+        }
+      }
+      const dedupedSells: NormalizedTransaction[] = [];
+      for (const [key, group] of sellsByKey) {
+        if (group.length === 1) {
+          dedupedSells.push(group[0]);
+        } else {
+          // Keep the sell with highest grossAmountInr (most accurate consideration)
+          group.sort((a, b) => (b.grossAmountInr || 0) - (a.grossAmountInr || 0));
+          dedupedSells.push(group[0]);
+          console.log(`[CryptoImport] 🔀 Deduped ${group.length - 1} duplicate sell(s) for ${key}: kept ₹${(group[0].grossAmountInr || 0).toFixed(2)}, dropped ${group.slice(1).map(g => `₹${(g.grossAmountInr || 0).toFixed(2)}`).join(', ')}`);
+        }
+      }
+      mergedTransactions = [...nonSells, ...dedupedSells];
+
+      console.log(`[CryptoImport] MERGE: ${existingNonConflicting.length} existing + ${allTransactions.length} new → ${mergedTransactions.length} final (${dedupedSells.length} sells, ${nonSells.length} non-sells)`);
+      messages.push(`🔄 Merged: ${mergedTransactions.length} total transactions (${dedupedSells.length} sells + ${nonSells.length} buys/other)`);
 
       setParsedTransactions(mergedTransactions);
       setParsedTDSRecords(mergedTDS);
