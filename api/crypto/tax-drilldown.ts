@@ -1,12 +1,10 @@
 /**
- * Vercel Serverless Function — Crypto Tax Drilldown (Asset-wise P&L)
+ * Vercel Serverless Function — Asset-wise P&L
  *
  * GET /api/crypto/tax-drilldown?fy=FY2024-25
  *   Auth: Bearer JWT
  *
- * Returns asset-wise breakdown of profits, losses, and net taxable amount.
- * Each row = one crypto asset with its aggregated gains/losses from FIFO matching.
- * Powers the "Tax Drill-Down" / "Asset P&L" screen.
+ * Returns asset-wise profit/loss table — computed from crypto_tax_lots.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -28,104 +26,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const { userId, supabase } = auth;
 
-        // ── Fetch all computation rows with lot details ──
-        // Join with crypto_tax_lots to get the asset name
-        const { data: comps, error: compErr } = await supabase
-            .from('crypto_tax_computations')
-            .select(`
-                capital_gain,
-                sale_consideration,
-                cost_of_acquisition,
-                qty_matched,
-                is_unknown_lot,
-                lot:crypto_tax_lots!lot_id(asset),
-                sell:crypto_transactions!sell_txn_id(asset)
-            `)
+        const { data: lots, error } = await supabase
+            .from('crypto_tax_lots')
+            .select('asset, gain_inr, taxable_gain_inr, proceeds_inr, cost_inr, qty_matched, buy_date, sell_date')
             .eq('user_id', userId)
             .eq('financial_year', fy);
 
-        if (compErr) {
-            return res.status(500).json({ success: false, error: `Computation fetch failed: ${compErr.message}` });
+        if (error) {
+            return res.status(500).json({ success: false, error: error.message });
         }
 
-        // ── Aggregate by asset ──
-        const assetMap: Record<string, {
-            gross_profit: number;
-            gross_loss: number;
+        const byAsset: Record<string, {
+            asset: string;
+            sale: number;
+            cost: number;
+            profit: number;
+            loss: number;
             net_taxable: number;
-            total_sale: number;
-            total_cost: number;
-            trade_count: number;
+            num_lots: number;
         }> = {};
 
-        for (const c of (comps || [])) {
-            // Determine asset: prefer lot.asset (buy-side), fallback to sell.asset
-            const asset = (c.lot as any)?.asset || (c.sell as any)?.asset || 'UNKNOWN';
-
-            if (!assetMap[asset]) {
-                assetMap[asset] = {
-                    gross_profit: 0,
-                    gross_loss: 0,
-                    net_taxable: 0,
-                    total_sale: 0,
-                    total_cost: 0,
-                    trade_count: 0,
-                };
+        for (const lot of (lots || [])) {
+            const asset = lot.asset;
+            if (!byAsset[asset]) {
+                byAsset[asset] = { asset, sale: 0, cost: 0, profit: 0, loss: 0, net_taxable: 0, num_lots: 0 };
             }
-
-            const gain = Number(c.capital_gain) || 0;
-            const sale = Number(c.sale_consideration) || 0;
-            const cost = Number(c.cost_of_acquisition) || 0;
-
-            assetMap[asset].total_sale += sale;
-            assetMap[asset].total_cost += cost;
-            assetMap[asset].trade_count += 1;
-
-            if (gain > 0) {
-                assetMap[asset].gross_profit += gain;
-                assetMap[asset].net_taxable += gain;     // Only profits are taxable
-            } else {
-                assetMap[asset].gross_loss += Math.abs(gain);
-                // net_taxable does NOT decrease — 115BBH: losses not deducted
-            }
+            const g = Number(lot.gain_inr);
+            byAsset[asset].sale += Number(lot.proceeds_inr);
+            byAsset[asset].cost += Number(lot.cost_inr);
+            byAsset[asset].net_taxable += Number(lot.taxable_gain_inr);
+            byAsset[asset].num_lots += 1;
+            if (g > 0) byAsset[asset].profit += g;
+            else byAsset[asset].loss += Math.abs(g);
         }
 
-        // ── Sort by net_taxable DESC ──
-        const assets = Object.entries(assetMap)
-            .map(([asset, data]) => ({
-                asset,
-                gross_profit: round2(data.gross_profit),
-                gross_loss: round2(data.gross_loss),
-                net_taxable: round2(data.net_taxable),
-                total_sale: round2(data.total_sale),
-                total_cost: round2(data.total_cost),
-                trade_count: data.trade_count,
+        const result = Object.values(byAsset)
+            .map(a => ({
+                ...a,
+                sale: round2(a.sale),
+                cost: round2(a.cost),
+                profit: round2(a.profit),
+                loss: round2(a.loss),
+                net_taxable: round2(a.net_taxable),
             }))
             .sort((a, b) => b.net_taxable - a.net_taxable);
-
-        // ── Totals ──
-        const totals = {
-            gross_profit: round2(assets.reduce((s, a) => s + a.gross_profit, 0)),
-            gross_loss: round2(assets.reduce((s, a) => s + a.gross_loss, 0)),
-            net_taxable: round2(assets.reduce((s, a) => s + a.net_taxable, 0)),
-            total_sale: round2(assets.reduce((s, a) => s + a.total_sale, 0)),
-            total_cost: round2(assets.reduce((s, a) => s + a.total_cost, 0)),
-            trade_count: assets.reduce((s, a) => s + a.trade_count, 0),
-        };
 
         return res.status(200).json({
             success: true,
             financial_year: fy,
-            assets,
-            totals,
+            assets: result,
+            totals: {
+                sale: round2(result.reduce((s, a) => s + a.sale, 0)),
+                cost: round2(result.reduce((s, a) => s + a.cost, 0)),
+                profit: round2(result.reduce((s, a) => s + a.profit, 0)),
+                loss: round2(result.reduce((s, a) => s + a.loss, 0)),
+                net_taxable: round2(result.reduce((s, a) => s + a.net_taxable, 0)),
+            },
         });
     } catch (err) {
-        console.error('[Tax Drilldown API] Unhandled error:', err);
-        return res.status(500).json({
-            success: false,
-            error: 'Internal server error',
-            message: (err as Error).message,
-        });
+        console.error('[Tax Drilldown API] Error:', err);
+        return res.status(500).json({ success: false, error: (err as Error).message });
     }
 }
 

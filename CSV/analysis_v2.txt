@@ -1,0 +1,72 @@
+﻿
+PARSING ORDER HISTORY CSV...
+Order History: 39 trades (5 need INR correction)
+PARSING INSTA HISTORY CSV...
+Insta History: 153 trades
+  WARNING: Skipping non-INR trade without Insta match: sell BTTC qty=0.3496 on 2025-06-28 02:41:43 UTC
+  WARNING: Skipping non-INR trade without Insta match: sell 1000SATS qty=0.0093 on 2025-06-24 11:16:52 UTC
+  WARNING: Skipping non-INR trade without Insta match: sell ACA qty=6326.1100 on 2025-01-17 07:30:27 UTC
+  WARNING: Skipping non-INR trade without Insta match: buy ONDO qty=1723.3913 on 2024-12-04 04:28:55 UTC
+  WARNING: Skipping non-INR trade without Insta match: sell ACA qty=31195.1700 on 2024-12-04 04:02:44 UTC
+
+Merge: 0 dupes, 34 unique OH added, 5 OH skipped (no INR), 187 total
+
+FINANCIAL YEAR BREAKDOWN:
+  FY2021-22: 39 buys, 27 sells = 66 total
+  FY2022-23: 5 buys, 7 sells = 12 total
+  FY2023-24: 21 buys, 14 sells = 35 total
+  FY2024-25: 30 buys, 17 sells = 47 total
+  FY2025-26: 15 buys, 12 sells = 27 total
+
+FIFO TAX CALCULATION ΓÇö FY2024-25
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+Buy lots loaded: 110 | Sells in FY24-25: 17
+
+ASSET-WISE P&L:
+Asset               Sale          Cost          Gain          Loss       Taxable
+--------------------------------------------------------------------------------
+ONDO         1,37,796.55        67,601     70,195.55             0     70,195.55
+ADA          5,58,096.75   5,02,135.85     62,519.58      6,558.68     62,519.58
+XRP          1,14,526.49      93,946.6     24,874.21      4,294.32     24,874.21
+DOGE         2,95,711.15      2,82,437     13,274.15             0     13,274.15
+GOAT         1,20,003.93   1,13,057.31      6,946.62             0      6,946.62
+ETH          1,13,579.76   1,07,459.78      6,119.98             0      6,119.98
+GALA           57,672.42     57,908.94      6,015.57      6,252.09      6,015.57
+HBAR           62,892.65     56,969.95       5,922.7             0       5,922.7
+COTI         2,93,448.36   2,89,030.11      4,418.25             0      4,418.25
+AKT          1,17,339.16   1,13,301.33      4,037.83             0      4,037.83
+TON          1,14,447.94   1,12,441.28      2,006.67             0      2,006.67
+IO             49,058.46        47,766      1,292.46             0      1,292.46
+ENA            20,231.24     19,406.02        825.22             0        825.22
+USDT            2,766.41      2,879.67             0        113.26             0
+USDC           12,176.11        12,194             0         17.89             0
+
+UNMATCHED SELLS (no buy lot):
+  ONDO qty=20.55 proceeds=3342.66 date=2024-12-11 15:09:07 UTC
+  ONDO qty=855.83 proceeds=140929.25 date=2024-12-11 23:38:11 UTC
+  USDC qty=594.72 proceeds=54845.85 date=2025-01-17 13:17:22 UTC
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+TAX SUMMARY ΓÇö FY2024-25
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Sell Events:         17
+  FIFO Lots:           45
+  Sale Consideration:  22,68,865.12
+  Cost of Acquisition: 18,78,534.84
+  Capital Gains:       4,07,566.54
+  Gross Losses:        17,236.26
+  TDS Credit:          22,620.8
+  Gross Tax (30%):     1,22,269.96
+  Cess (4%):           4,890.8
+  Total Tax:           1,27,160.76
+  Net Payable:         1,04,539.96
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+vs KOINX
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  KoinX Capital Gains: ~1,62,000
+  Ours:                4,07,566.54
+  KoinX TDS:           28,770
+  Ours:                22,620.8
+

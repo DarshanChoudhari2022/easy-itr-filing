@@ -1,0 +1,78 @@
+﻿ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+ACA INVENTORY TRACE (All Time)
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+Date                    Side    Qty             Total INR      Source
+----------------------------------------------------------------------
+2023-12-27 09:13:41 UTC buy          1952.9072          19,500  insta                Running: 1952.91
+2024-01-09 13:51:41 UTC buy            45.0794             400  insta                Running: 1997.99
+2024-02-13 07:45:42 UTC sell         1997.9700       20,627.12  insta                Running: 0.02
+2024-03-07 07:55:04 UTC buy          1760.8757          19,126  insta                Running: 1760.89
+2024-03-08 06:26:09 UTC sell         1760.8900       19,881.83  insta                Running: 0
+2024-12-03 03:35:50 UTC buy          5863.8261          50,000  insta                Running: 5863.83
+2024-12-03 03:36:08 UTC buy          5863.6749          50,000  insta                Running: 11727.5
+2024-12-03 03:36:19 UTC buy          5863.1846          50,000  insta                Running: 17590.69
+2024-12-03 03:36:31 UTC buy          5856.8962          50,000  insta                Running: 23447.58
+2024-12-03 03:37:09 UTC buy          5854.8887          50,000  insta                Running: 29302.47
+2024-12-03 03:37:50 UTC buy          1892.7012          16,184  insta                Running: 31195.17
+2024-12-04 04:02:44 UTC sell        31195.1700     2,84,358.38  OH(ACA_USDT)         Running: 0
+2025-01-16 13:11:52 UTC buy          6326.1071          49,705  insta                Running: 6326.11
+2025-01-17 07:30:27 UTC sell         6326.1100          55,554  OH(ACA_USDT)         Running: 0
+
+ACA Total Bought: 41280.14
+ACA Total Sold:   41280.14
+ACA Deficit:      0
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+USDC INVENTORY TRACE (All Time)
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+Date                    Side    Qty             Total INR      Source
+----------------------------------------------------------------------
+2025-01-17 03:21:32 UTC buy           132.0311          12,194  insta                Running: 132.03
+2025-01-17 13:17:22 UTC sell          726.7500       67,021.96  insta                Running: -594.72
+
+USDC Total Bought: 132.03
+USDC Total Sold:   726.75
+USDC Deficit:      594.72
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+USDT INVENTORY TRACE (All Time)
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+Date                    Side    Qty             Total INR      Source
+----------------------------------------------------------------------
+2023-07-03 11:12:59 UTC buy           300.1030          26,423  insta                          Running: 300.1
+2023-07-13 10:27:59 UTC buy           576.6166          50,756  insta                          Running: 876.72
+2023-07-14 18:41:17 UTC buy           392.3203          34,095  insta                          Running: 1269.04
+2023-07-20 03:41:30 UTC sell          877.4430       76,181.17  insta                          Running: 391.6
+2023-07-20 07:45:23 UTC sell          392.3200       34,037.87  insta                          Running: -0.72
+2024-02-16 13:22:50 UTC buy           240.6678          21,262  insta                          Running: 239.94
+2024-02-17 06:51:38 UTC sell          240.6680       21,004.73  insta                          Running: -0.72
+2024-12-04 04:02:44 UTC buy          3328.5246     2,84,358.38  OH-ACA_USDT (received)         Running: 3327.8
+2024-12-04 04:28:55 UTC sell         3202.2678     2,74,782.67  OH-ONDO_USDT (spent)           Running: 125.53
+2024-12-04 13:29:37 UTC sell           32.7063        2,766.41  insta                          Running: 92.83
+2025-01-17 07:30:27 UTC buy           606.6739          55,554  OH-ACA_USDT (received)         Running: 699.5
+2025-06-24 11:16:52 UTC buy             0.0000               0  OH-1000SATS_USDT (received)    Running: 699.5
+2025-06-28 02:41:43 UTC buy             0.0000               0  OH-BTTC_USDT (received)        Running: 699.5
+
+USDT Total Bought: 5444.91
+USDT Total Sold:   4745.41
+USDT Balance:      699.5
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+MISSING BUY LOT SUMMARY
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+ACA: The Insta CSV only shows buys for some ACA.
+The OH sells 31195+6326 = 37521 ACA on USDT pairs.
+But total ACA buys in both CSVs may be less.
+Missing ACA buys would have come from deposits/transfers.
+
+USDC: 726.75 sold but only 132.03 bought.
+The 594.72 USDC deficit likely came from a USDTΓåÆUSDC swap
+or deposit that is NOT in either CSV.
+
+CONCLUSION: The Γé╣2.54L gap = phantom gains from missing buy lots
+for ACA (Γé╣2.11L) and USDC (Γé╣0.55L).
+KoinX has these buy lots from their API integration, we dont.

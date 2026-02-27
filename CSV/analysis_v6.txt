@@ -1,0 +1,63 @@
+﻿ACA BUYS in Insta History:
+  2025-01-16 13:11:52 UTC buy 6326.1071 ACA Γé╣49,705
+  2024-12-03 03:37:50 UTC buy 1892.7012 ACA Γé╣16,184
+  2024-12-03 03:37:09 UTC buy 5854.8887 ACA Γé╣50,000
+  2024-12-03 03:36:31 UTC buy 5856.8962 ACA Γé╣50,000
+  2024-12-03 03:36:19 UTC buy 5863.1846 ACA Γé╣50,000
+  2024-12-03 03:36:08 UTC buy 5863.6749 ACA Γé╣50,000
+  2024-12-03 03:35:50 UTC buy 5863.8261 ACA Γé╣50,000
+  2024-03-07 07:55:04 UTC buy 1760.8757 ACA Γé╣19,126
+  2024-01-09 13:51:41 UTC buy 45.0794 ACA Γé╣400
+  2023-12-27 09:13:41 UTC buy 1952.9072 ACA Γé╣19,500
+Total: 10 buys, 41280.14 ACA
+
+ACA in Order History:
+  2025-01-17 07:30:27 UTC sell 6326.1100 ACA pair=B-ACA_USDT status=filled
+  2024-12-04 04:02:44 UTC sell 31195.1700 ACA pair=B-ACA_USDT status=filled
+
+
+DEDUP CHECK: Would ACA Insta buys be deduped with OH ACA sells?
+  Insta ACA buys: 2024-12-03 03:35-03:37
+  OH ACA sell: 2024-12-04 04:02
+  Time diff: ~24h, type: buy vs sell ΓåÆ NO false dedup
+
+But WAIT. When we normalize the OH ACA_USDT sell, we create:
+  1. SELL ACA 31195 (the sell leg)
+  2. BUY USDT 3328 (the buy leg)
+The ACA SELL 31195 goes into the trade list.
+The 6 Insta ACA BUYS (total 31195) also go into the trade list.
+These are NOT duplicates (different types: buy vs sell).
+So they should all survive dedup.
+
+THE BUG MUST BE IN v4 PRIOR-YEAR CONSUMPTION!
+
+ACA FY2023-24 buys:  1952.91 + 45.08 = 1997.99
+ACA FY2023-24 sells: 1997.97 + 1760.89 = 3758.86
+ACA FY2023-24 buys:  1997.99 + 1760.88 = 3758.87
+ΓåÆ Prior-year consumption is CORRECT, these balance out.
+
+ACA FY2024-25 buys:  5863.83+5863.67+5863.18+5856.90+5854.89+1892.70+6326.11 = 37521.28
+ACA FY2024-25 sells: 31195.17 + 6326.11 = 37521.28
+ΓåÆ These should also balance perfectly!
+
+So the v4 ACA unmatched sells must be a BUG in the dedup or FIFO.
+Let me check if Insta ACA buys from Dec 3 are being deduped with
+something they shouldnt be...
+
+=== POST-NORMALIZATION ACA TRADES ===
+This shows what v4 would have in its trade list for ACA:
+
+  2024-12-03 03:35:50  buy        5863.83 ACA  Γé╣    50,000  insta           Running: 5863.83
+  2024-12-03 03:36:08  buy        5863.67 ACA  Γé╣    50,000  insta           Running: 11727.5
+  2024-12-03 03:36:19  buy        5863.18 ACA  Γé╣    50,000  insta           Running: 17590.68
+  2024-12-03 03:36:31  buy        5856.90 ACA  Γé╣    50,000  insta           Running: 23447.58
+  2024-12-03 03:37:09  buy        5854.89 ACA  Γé╣    50,000  insta           Running: 29302.47
+  2024-12-03 03:37:50  buy        1892.70 ACA  Γé╣    16,184  insta           Running: 31195.17
+  2024-12-04 04:02:44  sell      31195.17 ACA  Γé╣  2,84,358  oh_usdt_sell    Running: 0
+  2025-01-16 13:11:52  buy        6326.11 ACA  Γé╣    49,705  insta           Running: 6326.11
+  2025-01-17 07:30:27  sell       6326.11 ACA  Γé╣    55,554  oh_usdt_sell    Running: 0
+
+Final ACA balance: 0 (should be ~0)
+
+If this shows 0, the v4 FIFO bug is that FY2024-25 buys are being
+wrongly consumed by prior-year sells, or dedup is eating them.

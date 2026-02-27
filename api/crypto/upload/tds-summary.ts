@@ -1,67 +1,22 @@
 /**
- * Vercel Serverless Function — CoinDCX TDS Summary CSV Upload
+ * Vercel Serverless Function — CoinDCX TDS Certificate CSV Upload
  *
- * POST /api/crypto/upload/tds-summary?fy=FY2024-25
+ * POST /api/crypto/upload/tds-summary
+ *   Content-Type: multipart/form-data OR application/json with { csv: "..." }
+ *   Auth: Bearer JWT
  *
- * Accept:  multipart/form-data with field name "file"
- * Auth:    Bearer JWT (Supabase access token)
- * Query:   fy — the financial year being uploaded (e.g. FY2024-25)
+ * CoinDCX TDS Certificate CSV columns (actual):
+ *   Created At | Order Type | Side | Crypto Pair / Token name |
+ *   Order Value | TDS deducted | TDS (In INR)
  *
- * Response:
- *   {
- *     success: true,
- *     imported: N,
- *     matched_to_orders: M,
- *     skipped: K,
- *     total_tds_inr: 28770.38,
- *     errors: []
- *   }
+ * Note: This CSV has NO Order ID. We match TDS to sell trades
+ * by asset + date + value proximity.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-
-// ─── Types ───────────────────────────────────────────────────────────
-
-interface ParsedTDSRow {
-    source_id: string;
-    source: 'TDS_CSV';
-    txn_type: 'TDS';
-    asset: string;
-    quantity: number;
-    price_inr: number;
-    total_inr: number;
-    fee_inr: number;
-    tds_inr: number;
-    timestamp: string;
-    financial_year: string;
-    pair: string;
-    status: string;
-    raw_data: Record<string, string>;
-    has_order_id: boolean;
-    order_id: string;
-}
-
-interface ParseError {
-    row: number;
-    reason: string;
-}
-
-// ─── Column Aliases ──────────────────────────────────────────────────
-
-const TDS_COLUMN_ALIASES: Record<string, string[]> = {
-    date: ['date', 'transaction_date', 'tds_date', 'trade_date', 'deduction_date', 'timestamp', 'created_at'],
-    tds_amount: ['tds_amount', 'tds_deducted', 'tds amount', 'tds deducted', 'tds', 'tds_inr', 'tax_deducted', 'tds_value'],
-    sale_amount: ['sale_amount', 'total_sale_value', 'sale value', 'sale_value', 'gross_amount', 'gross amount', 'gross_consideration', 'consideration', 'total', 'amount', 'total_amount', 'value'],
-    asset: ['asset', 'coin', 'market', 'currency', 'symbol', 'pair', 'crypto', 'token', 'asset_name', 'coin_name'],
-    order_id: ['order_id', 'reference', 'order id', 'trade_reference', 'trade reference', 'ref', 'txn_id', 'transaction_id', 'id'],
-};
-
-// ─── Handler ─────────────────────────────────────────────────────────
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -72,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        // ── 1. Auth: extract user from JWT ──
+        // ── 1. Auth ──
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) {
             return res.status(401).json({ success: false, error: 'Missing Authorization header' });
@@ -82,24 +37,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
         const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+        const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey);
 
-        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey);
-
-        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
 
-        // ── 2. Get FY ──
-        const fy = (req.query.fy as string) || '';
-        if (!fy || !fy.startsWith('FY')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing or invalid ?fy= query parameter. Expected format: FY2024-25',
-            });
-        }
-
-        // ── 3. Extract CSV content ──
+        // ── 2. Extract CSV text ──
         let csvText: string;
         if (req.body?.file) {
             const fileData = req.body.file;
@@ -112,161 +57,143 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else if (req.body?.csv) {
             csvText = req.body.csv;
         } else {
-            return res.status(400).json({
-                success: false,
-                error: 'No file found. Send as multipart/form-data with field "file", or JSON with field "csv".',
-            });
+            return res.status(400).json({ success: false, error: 'No file found.' });
         }
 
-        // ── 4. Parse TDS CSV ──
-        const parseResult = parseTDSCSV(csvText);
-
-        if (parseResult.rows.length === 0) {
-            return res.status(200).json({
-                success: false,
-                imported: 0,
-                matched_to_orders: 0,
-                skipped: 0,
-                total_tds_inr: 0,
-                errors: parseResult.errors.length > 0
-                    ? parseResult.errors
-                    : [{ row: 0, reason: 'No valid TDS rows found in CSV' }],
-            });
+        // ── 3. Parse CSV ──
+        const lines = csvText.replace(/\r\n/g, '\n').split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length < 2) {
+            return res.status(400).json({ success: false, error: 'Empty CSV' });
         }
 
-        // ── 5. Filter to requested FY ──
-        const fyRows = parseResult.rows.filter(r => r.financial_year === fy);
-        const otherFYRows = parseResult.rows.filter(r => r.financial_year !== fy);
+        const headerCells = parseCSVRow(lines[0]);
+        const headers = headerCells.map(h => h.trim());
 
-        if (otherFYRows.length > 0) {
-            parseResult.errors.push({
-                row: 0,
-                reason: `${otherFYRows.length} TDS row(s) from other FY(s) skipped: ${[...new Set(otherFYRows.map(r => r.financial_year))].join(', ')}`,
-            });
-        }
+        const cols = {
+            date: findCol(headers, ['created at', 'created_at', 'date', 'timestamp', 'deduction date', 'transaction_date']),
+            orderType: findCol(headers, ['order type', 'order_type', 'type']),
+            side: findCol(headers, ['side', 'direction']),
+            asset: findCol(headers, ['crypto pair / token name', 'crypto pair', 'token name', 'asset', 'currency', 'pair']),
+            orderValue: findCol(headers, ['order value', 'order_value', 'total', 'consideration', 'sale value', 'transaction value', 'amount']),
+            tdsDeducted: findCol(headers, ['tds deducted', 'tds', 'tds amount', 'tds_amount', 'tax deducted']),
+            tdsInr: findCol(headers, ['tds (in inr)', 'tds in inr', 'tds_inr', 'tds inr']),
+            orderId: findCol(headers, ['order id', 'orderid', 'order_id', 'reference', 'txn id', 'transaction id']),
+        };
 
-        if (fyRows.length === 0) {
-            return res.status(200).json({
-                success: false,
-                imported: 0,
-                matched_to_orders: 0,
-                skipped: 0,
-                total_tds_inr: 0,
-                errors: [{
-                    row: 0,
-                    reason: `No TDS rows found for ${fy}. All ${parseResult.rows.length} rows belong to other FY(s).`,
-                }],
-            });
-        }
+        // Use tdsInr if available, fall back to tdsDeducted
+        const tdsCol = cols.tdsInr || cols.tdsDeducted;
 
-        // ── 6. Process: match to orders + insert standalone ──
-        let matchedToOrders = 0;
-        let imported = 0;
-        let skipped = 0;
-        let totalTdsInr = 0;
+        let matched = 0;
+        let totalTDS = 0;
+        const unmatched: { asset: string; tdsAmount: number; date: string; note: string }[] = [];
+        const errors: { row: number; issue: string }[] = [];
 
-        // 6a. Rows with order_id — try to match to ORDER_CSV records
-        const rowsWithOrderId = fyRows.filter(r => r.has_order_id);
-        const rowsForStandalone = fyRows.filter(r => !r.has_order_id);
+        // Load all user sell trades for matching
+        const { data: allSells } = await supabase
+            .from('crypto_trades')
+            .select('id, asset, trade_date, value_inr, tds_inr')
+            .eq('user_id', user.id)
+            .eq('type', 'sell')
+            .order('trade_date', { ascending: true });
 
-        for (const row of rowsWithOrderId) {
+        const usedTradeIds = new Set<string>();
+
+        for (let i = 1; i < lines.length; i++) {
             try {
-                const { data: updated, error: updateErr } = await supabaseAdmin
-                    .from('crypto_transactions')
-                    .update({ tds_inr: row.tds_inr })
-                    .eq('user_id', user.id)
-                    .eq('source', 'ORDER_CSV')
-                    .eq('source_id', row.order_id)
-                    .select('id');
+                const cells = parseCSVRow(lines[i]);
+                const row: Record<string, string> = {};
+                headers.forEach((h, idx) => { row[h] = (cells[idx] ?? '').trim(); });
 
-                if (!updateErr && updated && updated.length > 0) {
-                    matchedToOrders++;
-                    totalTdsInr += row.tds_inr;
-                } else {
-                    // No match — treat as standalone
-                    rowsForStandalone.push(row);
+                const tdsAmount = tdsCol ? parseNum(row[tdsCol]) : 0;
+                if (isNaN(tdsAmount) || tdsAmount <= 0) continue;
+                totalTDS += tdsAmount;
+
+                // Extract asset name (strip "INR" suffix from order value display)
+                const rawAsset = cols.asset ? row[cols.asset].trim().toUpperCase() : '';
+                const rawDate = cols.date ? row[cols.date].trim() : '';
+                const rawOrderValue = cols.orderValue ? parseNum(row[cols.orderValue].replace(/\s*INR$/i, '')) : 0;
+                const orderId = cols.orderId ? row[cols.orderId].trim() : '';
+
+                let didMatch = false;
+
+                // Strategy 1: Match by Order ID if available
+                if (orderId && allSells) {
+                    const trade = allSells.find(s =>
+                        !usedTradeIds.has(s.id) &&
+                        (s.asset === rawAsset)
+                    );
+                    if (trade) {
+                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', trade.id);
+                        usedTradeIds.add(trade.id);
+                        matched++;
+                        didMatch = true;
+                    }
                 }
-            } catch {
-                rowsForStandalone.push(row);
-            }
-        }
 
-        // 6b. Insert standalone TDS records
-        if (rowsForStandalone.length > 0) {
-            const dbRows = rowsForStandalone.map(row => ({
-                user_id: user.id,
-                source: row.source,
-                source_id: row.source_id,
-                txn_type: row.txn_type,
-                asset: row.asset,
-                quantity: row.quantity,
-                price_inr: row.price_inr,
-                total_inr: row.total_inr,
-                fee_inr: row.fee_inr,
-                tds_inr: row.tds_inr,
-                timestamp: row.timestamp,
-                financial_year: row.financial_year,
-                pair: row.pair,
-                status: row.status,
-                raw_data: row.raw_data,
-            }));
-
-            const BATCH_SIZE = 500;
-            for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
-                const batch = dbRows.slice(i, i + BATCH_SIZE);
-
-                const { data: inserted, error: insertErr } = await supabaseAdmin
-                    .from('crypto_transactions')
-                    .upsert(batch, {
-                        onConflict: 'user_id,source,source_id',
-                        ignoreDuplicates: true,
-                    })
-                    .select('id');
-
-                if (insertErr) {
-                    console.error('[TDS API] Batch error:', insertErr);
-                    parseResult.errors.push({
-                        row: i + 1,
-                        reason: `DB insert error: ${insertErr.message}`,
+                // Strategy 2: Match by asset + date + value proximity
+                if (!didMatch && allSells && rawDate) {
+                    const tdsDate = new Date(rawDate);
+                    const match = allSells.find(s => {
+                        if (usedTradeIds.has(s.id)) return false;
+                        if (s.asset !== rawAsset) return false;
+                        const tradeDate = new Date(s.trade_date);
+                        // Within 5 minutes
+                        if (Math.abs(tradeDate.getTime() - tdsDate.getTime()) > 300000) return false;
+                        // Value within 5%
+                        if (rawOrderValue > 0) {
+                            const valDiff = Math.abs(Number(s.value_inr) - rawOrderValue) / Math.max(rawOrderValue, 1);
+                            if (valDiff > 0.05) return false;
+                        }
+                        return true;
                     });
-                } else {
-                    const count = (inserted as any[])?.length ?? 0;
-                    imported += count;
-                    skipped += batch.length - count;
-                    totalTdsInr += batch.slice(0, count).reduce((s, r) => s + (r.tds_inr || 0), 0);
+
+                    if (match) {
+                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
+                        usedTradeIds.add(match.id);
+                        matched++;
+                        didMatch = true;
+                    }
                 }
+
+                // Strategy 3: Match by asset only (last resort)
+                if (!didMatch && allSells) {
+                    const match = allSells.find(s => {
+                        if (usedTradeIds.has(s.id)) return false;
+                        if (s.asset !== rawAsset) return false;
+                        if (Number(s.tds_inr || 0) > 0) return false; // Already has TDS
+                        return true;
+                    });
+
+                    if (match) {
+                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
+                        usedTradeIds.add(match.id);
+                        matched++;
+                        didMatch = true;
+                    }
+                }
+
+                if (!didMatch) {
+                    unmatched.push({ asset: rawAsset, tdsAmount, date: rawDate, note: 'No matching sell trade found' });
+                }
+            } catch (e) {
+                errors.push({ row: i + 1, issue: (e as Error).message });
             }
         }
 
-        // ── 7. Update coverage ──
-        try {
-            await supabaseAdmin
-                .from('crypto_data_coverage')
-                .upsert(
-                    {
-                        user_id: user.id,
-                        financial_year: fy,
-                        tds_csv_status: 'UPLOADED',
-                        tds_csv_rows: imported + matchedToOrders,
-                        last_updated: new Date().toISOString(),
-                    },
-                    { onConflict: 'user_id,financial_year' },
-                );
-        } catch (coverageErr) {
-            console.warn('[TDS API] Coverage update failed:', coverageErr);
-        }
-
-        // ── 8. Respond ──
         return res.status(200).json({
             success: true,
-            imported,
-            matched_to_orders: matchedToOrders,
-            skipped,
-            total_tds_inr: Math.round(totalTdsInr * 100) / 100,
-            errors: parseResult.errors,
+            tds_records: lines.length - 1,
+            matched_to_trades: matched,
+            unmatched,
+            total_tds_credit: parseFloat(totalTDS.toFixed(2)),
+            errors,
+            note: unmatched.length > 0
+                ? 'Some TDS entries could not be matched to trades. Total TDS credit is still correct.'
+                : 'All TDS entries matched.',
+            message: `Processed ${lines.length - 1} TDS records. ${matched} matched to sell trades. Total TDS: ₹${totalTDS.toFixed(2)}.`,
         });
     } catch (err) {
-        console.error('[TDS API] Unhandled error:', err);
+        console.error('[TDS Upload] Unhandled error:', err);
         return res.status(500).json({
             success: false,
             error: 'Internal server error',
@@ -276,132 +203,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════
-// INLINE TDS CSV PARSER (self-contained for Vercel serverless)
-// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Inline Utilities
+// ═══════════════════════════════════════════════════════════════════
 
-function parseTDSCSV(csvText: string): {
-    rows: ParsedTDSRow[];
-    errors: ParseError[];
-} {
-    const rows: ParsedTDSRow[] = [];
-    const errors: ParseError[] = [];
-
-    const lines = csvText
-        .replace(/\r\n/g, '\n')
-        .split('\n')
-        .map(l => l.trim())
-        .filter(l => l.length > 0);
-
-    if (lines.length < 2) {
-        errors.push({ row: 0, reason: 'CSV file is empty or has only a header row' });
-        return { rows, errors };
+function findCol(headers: string[], candidates: string[]): string | null {
+    const lower = headers.map(h => h.toLowerCase().replace(/[^a-z0-9_ /]/g, '').trim());
+    for (const candidate of candidates) {
+        const cn = candidate.toLowerCase().trim();
+        const idx = lower.findIndex(h => h === cn || h.includes(cn));
+        if (idx >= 0) return headers[idx];
     }
-
-    const headerCells = parseCSVRow(lines[0]);
-    const colMap = detectColumns(headerCells);
-
-    const missing: string[] = [];
-    if (colMap.date === -1) missing.push('Date');
-    if (colMap.tds_amount === -1) missing.push('TDS Amount');
-    if (missing.length > 0) {
-        errors.push({
-            row: 1,
-            reason: `Missing column(s): ${missing.join(', ')}. Headers: [${headerCells.join(', ')}]`,
-        });
-        return { rows, errors };
-    }
-
-    for (let i = 1; i < lines.length; i++) {
-        const rowNum = i + 1;
-        try {
-            const cells = parseCSVRow(lines[i]);
-            if (cells.length < 2) { errors.push({ row: rowNum, reason: 'Too few columns' }); continue; }
-
-            const rawData: Record<string, string> = {};
-            headerCells.forEach((h, idx) => { rawData[h] = cells[idx] ?? ''; });
-
-            const dateRaw = (cells[colMap.date] ?? '').trim();
-            const timestamp = safeParseTimestamp(dateRaw);
-            if (!timestamp) { errors.push({ row: rowNum, reason: `Invalid date: "${dateRaw}"` }); continue; }
-
-            const tdsInr = parseNum(cells[colMap.tds_amount]);
-            if (tdsInr <= 0) { errors.push({ row: rowNum, reason: `Invalid TDS amount: ${cells[colMap.tds_amount]}` }); continue; }
-
-            const saleInr = colMap.sale_amount >= 0 ? parseNum(cells[colMap.sale_amount]) : 0;
-
-            let asset = 'UNKNOWN';
-            if (colMap.asset >= 0) {
-                const assetRaw = (cells[colMap.asset] ?? '').trim().toUpperCase();
-                asset = extractAsset(assetRaw) || 'UNKNOWN';
-            }
-
-            const orderId = colMap.order_id >= 0 ? (cells[colMap.order_id] ?? '').trim() : '';
-            const hasOrderId = orderId.length > 0;
-
-            const sourceId = hasOrderId
-                ? `TDS-${orderId}`
-                : `TDS-${simpleHash(dateRaw + asset + tdsInr.toString())}`;
-
-            const fy = computeFY(timestamp);
-
-            rows.push({
-                source_id: sourceId,
-                source: 'TDS_CSV',
-                txn_type: 'TDS',
-                asset,
-                quantity: 0,
-                price_inr: 0,
-                total_inr: saleInr,
-                fee_inr: 0,
-                tds_inr: tdsInr,
-                timestamp: timestamp.toISOString(),
-                financial_year: fy,
-                pair: '',
-                status: 'CONFIRMED',
-                raw_data: rawData,
-                has_order_id: hasOrderId,
-                order_id: orderId,
-            });
-        } catch (err) {
-            errors.push({ row: rowNum, reason: `Error: ${(err as Error).message}` });
-        }
-    }
-
-    return { rows, errors };
+    return null;
 }
-
-
-// ─── Column detection ──
-
-function detectColumns(headers: string[]): Record<string, number> {
-    const norm = headers.map(h =>
-        h.toLowerCase().replace(/[^a-z0-9_/]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
-    );
-    const claimed = new Set<number>();
-    const find = (aliases: string[]): number => {
-        for (const a of aliases) {
-            const an = a.toLowerCase().replace(/[^a-z0-9_/]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-            const idx = norm.findIndex((h, i) => !claimed.has(i) && h === an);
-            if (idx !== -1) { claimed.add(idx); return idx; }
-        }
-        for (const a of aliases) {
-            const an = a.toLowerCase().replace(/[^a-z0-9_/]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-            const idx = norm.findIndex((h, i) => !claimed.has(i) && h.includes(an));
-            if (idx !== -1) { claimed.add(idx); return idx; }
-        }
-        return -1;
-    };
-    const tds_amount = find(TDS_COLUMN_ALIASES.tds_amount);
-    const date = find(TDS_COLUMN_ALIASES.date);
-    const asset = find(TDS_COLUMN_ALIASES.asset);
-    const order_id = find(TDS_COLUMN_ALIASES.order_id);
-    const sale_amount = find(TDS_COLUMN_ALIASES.sale_amount);
-    return { date, tds_amount, sale_amount, asset, order_id };
-}
-
-
-// ─── CSV row parser ──
 
 function parseCSVRow(line: string): string[] {
     const result: string[] = [];
@@ -410,76 +224,15 @@ function parseCSVRow(line: string): string[] {
     for (let i = 0; i < line.length; i++) {
         const ch = line[i];
         if (ch === '"') {
-            if (inQuotes && i + 1 < line.length && line[i + 1] === '"') { current += '"'; i++; }
-            else inQuotes = !inQuotes;
-        } else if (ch === ',' && !inQuotes) { result.push(current.trim()); current = ''; }
-        else current += ch;
+            if (inQuotes && i + 1 < line.length && line[i + 1] === '"') { current += '"'; i++; } else inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) { result.push(current.trim()); current = ''; } else current += ch;
     }
     result.push(current.trim());
     return result;
 }
 
-
-// ─── Date parsing ──
-
-function safeParseTimestamp(raw: string): Date | null {
-    if (!raw) return null;
-    const s = raw.trim();
-    if (/^\d{13}$/.test(s)) { const d = new Date(parseInt(s)); return isNaN(d.getTime()) ? null : d; }
-    if (/^\d{10}$/.test(s)) { const d = new Date(parseInt(s) * 1000); return isNaN(d.getTime()) ? null : d; }
-    if (/^\d{4}[-/]\d{2}[-/]\d{2}/.test(s)) { const d = new Date(s); return isNaN(d.getTime()) ? null : d; }
-    const dmyMatch = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
-    if (dmyMatch) {
-        const [, day, month, year, h, m, sec] = dmyMatch;
-        const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day),
-            h ? parseInt(h) : 0, m ? parseInt(m) : 0, sec ? parseInt(sec) : 0);
-        return isNaN(d.getTime()) ? null : d;
-    }
-    const last = new Date(s);
-    return isNaN(last.getTime()) ? null : last;
-}
-
-
-// ─── Asset extraction ──
-
-function extractAsset(raw: string): string | null {
-    if (!raw) return null;
-    let p = raw.trim().toUpperCase().replace(/^I-/, '');
-    const parenMatch = p.match(/\(([A-Z0-9]+)\)/);
-    if (parenMatch) return parenMatch[1];
-    if (p.includes('/')) return p.split('/')[0] || null;
-    if (p.includes('-')) return p.split('-')[0] || null;
-    for (const q of ['USDT', 'BUSD', 'INR', 'USDC']) {
-        if (p.endsWith(q) && p.length > q.length) return p.slice(0, -q.length);
-    }
-    return p.length >= 2 ? p : null;
-}
-
-
-// ─── FY computation ──
-
-function computeFY(date: Date): string {
-    const month = date.getMonth();
-    const year = date.getFullYear();
-    if (month >= 3) return `FY${year}-${String(year + 1).slice(-2)}`;
-    return `FY${year - 1}-${String(year).slice(-2)}`;
-}
-
-
-// ─── Helpers ──
-
 function parseNum(val: string | undefined): number {
     if (!val) return 0;
     const n = parseFloat(val.replace(/[₹$,\s]/g, '').trim());
     return isNaN(n) ? 0 : n;
-}
-
-function simpleHash(input: string): string {
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-        const char = input.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
-    }
-    return Math.abs(hash).toString(36);
 }

@@ -1,0 +1,175 @@
+﻿1. PARSING TDS CERTIFICATE CSV...
+
+TDS Headers: Created At | Order Type | Side | Crypto Pair / Token name | Order Value | TDS deducted | TDS (In INR)
+TDS entries: 0
+Total TDS from certificate: Γé╣0
+Total Sale Value from TDS: Γé╣0
+
+First 3 TDS rows (raw):
+  Row 1: 2025-01-17 18:47:22 +0530,Insta,Sell,USDC,67021.95710640495868 INR,666.26527559477169 INR,666.26527559477169
+  Row 2: 2025-01-17 13:30:48 +0530,Insta,Sell,ADA,288686.05952647956246 INR,2869.82811775273333 INR,2869.82811775273333
+  Row 3: 2024-12-04 18:59:37 +0530,Insta,Sell,USDT,2766.40875335065479 INR,27.60875935843953 INR,27.60875935843953
+
+2. PARSING ORDER HISTORY CSV...
+
+Non-INR Order History trades:
+  sell  BTTC           0.3496 USDT  price=6.173635085e-7 fee=0 tds=1.921065e-7 -> INR=0 (tds_derived)
+  sell  1000SATS       0.0093 USDT  price=0.00003880328214 fee=0 tds=3.1834264e-7 -> INR=0 (tds_derived)
+  sell  ACA         6326.1100 USDT  price=0.0959 fee=1.213347898 tds=555.5399784823994 -> INR=55,554 (tds_derived)
+  buy   ONDO        1723.3913 USDT  price=1.85812 fee=6.411916295588 tds=2747.8267284742374 -> INR=2,74,782.67 (tds_derived)
+  sell  ACA        31195.1700 USDT  price=0.1067 fee=6.633743864 tds=2843.583841913732 -> INR=2,84,358.38 (tds_derived)
+
+3. PARSING INSTA HISTORY CSV...
+
+Insta History: 153 trades
+
+4. SMART MERGE...
+
+Dupes: 0, OH unique added: 39, Total: 192
+
+5. FY2024-25 TRADES DETAIL
+
+Total FY2024-25 trades: 50
+  Buys: 31, Sells: 19
+
+ALL SELLS in FY2024-25:
+#  Date          Asset              Qty     Value INR       TDS      Source
+---------------------------------------------------------------------------
+1  2024-11-16    XRP          1491.0709   1,14,526.49  1,138.51insta_history
+2  2024-11-18    ENA           389.8200     20,231.24    201.12insta_history
+3  2024-11-18    IO            239.9789     49,058.46    487.69insta_history
+4  2024-11-20    GOAT         1195.3000   1,20,606.97  1,200.04order_history
+5  2024-11-21    ETH             0.4005   1,14,150.51   1,135.8order_history
+6  2024-11-23    TON           230.9700   1,15,023.06  1,144.48order_history
+7  2024-11-26    AKT           327.5800    1,17,928.8  1,173.39order_history
+8  2024-12-03    ADA          2457.0000   2,69,950.59  2,694.11order_history
+9  2024-12-04    ACA         31195.1700   2,84,358.38  2,843.58order_history
+10 2024-12-04    USDT           32.7063      2,766.41     27.61insta_history
+11 2024-12-11    ONDO          867.5630   1,41,422.05  1,411.39order_history
+12 2024-12-11    ONDO          855.8283   1,41,211.67  1,409.29order_history
+13 2025-01-02    GALA        14447.0000        57,788    576.72order_history
+14 2025-01-16    HBAR         1992.0000     63,265.92    628.93order_history
+15 2025-01-17    ACA          6326.1100        55,554    555.54order_history
+16 2025-01-17    ADA          2826.9247   2,88,686.06  2,869.83insta_history
+17 2025-01-17    DOGE         7738.0000   2,97,444.85  2,921.15order_history
+18 2025-01-17    USDC          726.7500     67,021.96    666.27insta_history
+19 2025-01-17    COTI        24195.9000   2,95,189.98  2,934.48order_history
+---------------------------------------------------------------------------
+   TOTAL                                 26,16,185.39 26,019.92
+
+6. FIFO CALCULATION ΓÇö FY2024-25
+
+Buy inventory (all FYs):
+  POLY     3 lots, qty=      109.7343, cost=Γé╣    6,499.08
+  BTT      1 lots, qty=     3171.3363, cost=Γé╣       1,000
+  TRX      4 lots, qty=     9960.7245, cost=Γé╣   69,103.92
+  XRP      11 lots, qty=     2859.2017, cost=Γé╣ 1,93,020.12
+  ENJ      8 lots, qty=      523.3480, cost=Γé╣   87,643.41
+  ADA      16 lots, qty=     7491.0048, cost=Γé╣ 6,75,847.98
+  SAND     1 lots, qty=       35.0248, cost=Γé╣      11,976
+  AXS      2 lots, qty=        2.6715, cost=Γé╣       9,982
+  SOL      3 lots, qty=        2.2473, cost=Γé╣      24,251
+  ZIL      4 lots, qty=     4725.1623, cost=Γé╣      54,128
+  FTM      1 lots, qty=      211.8355, cost=Γé╣      24,300
+  APE      2 lots, qty=      610.4510, cost=Γé╣      84,373
+  MATIC    1 lots, qty=      229.2388, cost=Γé╣      19,345
+  GALA     3 lots, qty=    74335.2697, cost=Γé╣    1,64,374
+  USDT     4 lots, qty=     1509.7076, cost=Γé╣    1,32,536
+  ACA      10 lots, qty=    41280.1410, cost=Γé╣    3,54,915
+  TRU      1 lots, qty=      921.0745, cost=Γé╣       4,300
+  1000SATS 3 lots, qty=   905454.1093, cost=Γé╣      40,675
+  DOT      1 lots, qty=       28.9794, cost=Γé╣      21,630
+  PIXEL    1 lots, qty=      444.8310, cost=Γé╣      22,110
+  SHIB     1 lots, qty=  8458852.0055, cost=Γé╣      24,463
+  MANTA    1 lots, qty=       81.6030, cost=Γé╣      25,206
+  SC       1 lots, qty=    44527.0000, cost=Γé╣    45,684.7
+  ENA      1 lots, qty=      389.8200, cost=Γé╣   19,292.19
+  GOAT     3 lots, qty=     1195.3020, cost=Γé╣    1,12,792
+  IO       1 lots, qty=      239.9789, cost=Γé╣      47,766
+  ETH      2 lots, qty=        0.7091, cost=Γé╣    1,77,051
+  TON      1 lots, qty=      230.9769, cost=Γé╣ 1,11,885.21
+  AKT      1 lots, qty=      327.5862, cost=Γé╣ 1,12,739.77
+  ONDO     4 lots, qty=     2570.4075, cost=Γé╣ 3,42,383.67
+  XLM      2 lots, qty=     2782.0205, cost=Γé╣   73,165.16
+  HBAR     2 lots, qty=     6755.4563, cost=Γé╣ 1,40,716.54
+  USDC     1 lots, qty=      132.0311, cost=Γé╣      12,194
+  DOGE     2 lots, qty=    15187.2466, cost=Γé╣ 5,71,255.65
+  COTI     3 lots, qty=    24195.9264, cost=Γé╣ 2,87,497.88
+  MOODENG  1 lots, qty=      498.6163, cost=Γé╣       8,468
+  VIRTUAL  2 lots, qty=      603.1267, cost=Γé╣      91,048
+  PEPE     2 lots, qty= 78943820.2247, cost=Γé╣      98,524
+
+ASSET-WISE P&L:
+Asset             Sale        Cost        Gain        Loss     Taxable
+----------------------------------------------------------------------
+ADA        5,58,636.65 5,02,135.85   62,995.67    6,494.87   62,995.67
+USDC         67,021.96      12,194   54,845.85       17.89   54,845.85
+XRP        1,14,526.49    93,946.6   24,874.21    4,294.32   24,874.21
+ACA        3,39,912.38 3,25,381.17   19,304.37    4,773.15   19,304.37
+DOGE       2,97,444.85    2,82,437   15,007.85           0   15,007.85
+ONDO       2,82,633.72 2,74,789.08    7,844.64           0    7,844.64
+GOAT       1,20,606.97 1,13,057.31    7,549.65           0    7,549.65
+ETH        1,14,150.51 1,07,459.78    6,690.73           0    6,690.73
+HBAR         63,265.92   56,969.95    6,295.97           0    6,295.97
+COTI       2,95,189.98 2,89,030.11    6,159.87           0    6,159.87
+GALA            57,788   57,908.94       6,105    6,225.94       6,105
+AKT         1,17,928.8 1,13,301.33    4,627.47           0    4,627.47
+TON        1,15,023.06 1,12,441.28    2,581.78           0    2,581.78
+IO           49,058.46      47,766    1,292.46           0    1,292.46
+ENA          20,231.24   19,406.02      825.22           0      825.22
+USDT          2,766.41    2,879.67           0      113.26           0
+
+UNMATCHED SELLS (no buy lot ΓåÆ cost=0):
+  USDC qty=594.72 proceeds=Γé╣54,845.85 date=2025-01-17 13:17:22 UTC
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+TAX SUMMARY ΓÇö FY2024-25
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Sell Events:         19
+  FIFO Lots:           55
+  Sale Consideration:  Γé╣26,16,185.39
+  Cost of Acquisition: Γé╣24,11,104.09
+  Capital Gains:       Γé╣2,27,000.75
+  Gross Losses:        Γé╣21,919.45
+  TDS from trades:     Γé╣26,019.92
+  TDS from cert:       Γé╣0
+  Gross Tax (30%):     Γé╣68,100.23
+  Cess (4%):           Γé╣2,724.01
+  Total Tax:           Γé╣70,824.24
+  Net Payable:         Γé╣44,804.31
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+KOINX COMPARISON
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+Metric                             Ours         KoinX          Diff
+-------------------------------------------------------------------
+Capital Gains               2,27,000.75      1,62,000     65,000.75
+Sale Consideration         26,16,185.39     28,92,000  -2,75,814.61
+Cost of Acquisition        24,11,104.09    ~27,30,000  -3,18,895.91
+TDS                           26,019.92        28,770     -2,750.08
+Losses                        21,919.45      1,08,000    -86,080.55
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+GAP ANALYSIS ΓÇö What KoinX has that we dont
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+KoinX shows 71 trades total. Our CSV has 50 for FY24-25.
+KoinX trade types: Spot 80.28% (~57), Deposit 2.82% (~2), Withdrawal 4.23% (~3), Others 12.68% (~9)
+
+Missing from our CSVs:
+  1. DEPOSITS ΓÇö crypto deposited from external wallets (cost basis unknown to us)
+  2. WITHDRAWALS ΓÇö crypto withdrawn (not taxable but affects inventory)
+  3. USDTΓåöINR conversion rates for non-INR pairs
+  4. Possible WazirX trades (KoinX shows WazirX-1 integration)
+
+KoinX integrations: CoinDCX Wallet, WazirX-1
+Our CSVs: CoinDCX only
+
+CRITICAL: KoinX has WazirX trades we do NOT have!
+If there were old WazirX buys, those would increase the cost basis,
+reducing capital gains significantly.
+
+Assets with sells but insufficient buys:
+  USDC: Need to find 594.72 units of buy history (maybe from WazirX?)
+

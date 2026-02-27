@@ -1,0 +1,148 @@
+﻿1. TDS CERTIFICATE
+
+Headers: Created At | Order Type | Side | Crypto Pair / Token name | Order Value | TDS deducted | TDS (In INR)
+TDS entries: 100, Total TDS: Γé╣57,535.5
+
+2. ORDER HISTORY
+
+Order History: 39 valid trades
+
+3. INSTA HISTORY
+
+Insta History: 153 trades
+
+4. NORMALIZE TO INR (handle USDT/USDC pairs)
+
+  TWO-LEG SELL: BTTC_USDT ΓåÆ SELL 0.3496 BTTC (Γé╣0) + BUY 0 USDT
+  TWO-LEG SELL: 1000SATS_USDT ΓåÆ SELL 0.0093 1000SATS (Γé╣0) + BUY 0 USDT
+  TWO-LEG SELL: ACA_USDT ΓåÆ SELL 6326.1100 ACA (Γé╣55,554) + BUY 606.67 USDT
+  TWO-LEG BUY: ONDO_USDT ΓåÆ BUY 1723.3913 ONDO (Γé╣2,74,782.67) + SELL 3202.27 USDT
+  TWO-LEG SELL: ACA_USDT ΓåÆ SELL 31195.1700 ACA (Γé╣2,84,358.38) + BUY 3328.52 USDT
+
+Total normalized trades: 197
+
+5. DEDUPLICATION
+
+Duplicates removed: 5
+Final trade count: 192
+
+6. FY2024-25 COMPLETE TRADE LIST
+
+FY2024-25: 49 total (29 buys, 20 sells)
+
+ALL SELLS in FY2024-25:
+#  Date        Asset              Qty     INR Value       TDS  Note
+------------------------------------------------------------------------------------------
+1  2024-11-16  XRP          1491.0709   1,14,526.49  1,138.51  insta_direct_inr
+2  2024-11-18  ENA           389.8200     20,231.24    201.12  insta_direct_inr
+3  2024-11-18  IO            239.9789     49,058.46    487.69  insta_direct_inr
+4  2024-11-20  GOAT         1195.3000   1,20,606.97  1,200.04  oh_direct_inr
+5  2024-11-21  ETH             0.4005   1,14,150.51   1,135.8  oh_direct_inr
+6  2024-11-23  TON           230.9700   1,15,023.06  1,144.48  oh_direct_inr
+7  2024-11-26  AKT           327.5800    1,17,928.8  1,173.39  oh_direct_inr
+8  2024-12-03  ADA          2457.0000   2,69,950.59  2,694.11  oh_direct_inr
+9  2024-12-04  ACA         31195.1700   2,84,358.38  2,843.58  oh_usdt_sell_leg (USDT)
+10 2024-12-04  USDT         3202.2678   2,74,782.67  2,747.83  oh_usdt_sell_leg (spent 3202.27 USDT)
+11 2024-12-04  USDT           32.7063      2,766.41     27.61  insta_direct_inr
+12 2024-12-11  ONDO          867.5630   1,41,422.05  1,411.39  oh_direct_inr
+13 2024-12-11  ONDO          855.8283   1,41,211.67  1,409.29  oh_direct_inr
+14 2025-01-02  GALA        14447.0000        57,788    576.72  oh_direct_inr
+15 2025-01-16  HBAR         1992.0000     63,265.92    628.93  oh_direct_inr
+16 2025-01-17  ACA          6326.1100        55,554    555.54  oh_usdt_sell_leg (USDT)
+17 2025-01-17  ADA          2826.9247   2,88,686.06  2,869.83  insta_direct_inr
+18 2025-01-17  DOGE         7738.0000   2,97,444.85  2,921.15  oh_direct_inr
+19 2025-01-17  USDC          726.7500     67,021.96    666.27  insta_direct_inr
+20 2025-01-17  COTI        24195.9000   2,95,189.98  2,934.48  oh_direct_inr
+------------------------------------------------------------------------------------------
+   TOTAL                               28,90,968.06 28,767.75
+
+KoinX shows: Sale=Γé╣28,92,000  TDS=Γé╣28,770  |  Diff: Sale=-1,031.94, TDS=-2.25
+
+7. FIFO CALCULATION
+
+Processing 48 prior-year sells first to consume buy lots...
+
+Buy inventory AFTER prior-year consumption:
+  POLY     1 lots, qty=        0.0043, cost=Γé╣        0.23
+  BTT      1 lots, qty=        0.0003, cost=Γé╣           0
+  XRP      2 lots, qty=     1490.9817, cost=Γé╣ 1,08,023.83
+  ENJ      1 lots, qty=        0.0080, cost=Γé╣        0.83
+  ADA      16 lots, qty=     7491.0048, cost=Γé╣ 6,75,847.98
+  SAND     1 lots, qty=        0.0048, cost=Γé╣        1.64
+  AXS      1 lots, qty=        0.0000, cost=Γé╣        0.02
+  SOL      3 lots, qty=        0.9817, cost=Γé╣   14,252.36
+  ZIL      3 lots, qty=     2332.2423, cost=Γé╣   35,128.07
+  FTM      1 lots, qty=        0.0055, cost=Γé╣        0.63
+  APE      2 lots, qty=      610.4510, cost=Γé╣      84,373
+  GALA     3 lots, qty=    71067.2697, cost=Γé╣ 1,45,077.03
+  USDT     4 lots, qty=     3934.4752, cost=Γé╣ 3,39,850.58
+  ACA      4 lots, qty=    14082.6366, cost=Γé╣ 1,15,889.02
+  TRU      1 lots, qty=        0.1745, cost=Γé╣        0.81
+  1000SATS 1 lots, qty=        0.0093, cost=Γé╣           0
+  DOT      1 lots, qty=        0.0004, cost=Γé╣        0.31
+  PIXEL    1 lots, qty=        0.0310, cost=Γé╣        1.54
+  MANTA    1 lots, qty=        0.0030, cost=Γé╣        0.92
+  SC       1 lots, qty=    44527.0000, cost=Γé╣    45,684.7
+  ENA      1 lots, qty=      389.8200, cost=Γé╣   19,292.19
+  GOAT     3 lots, qty=     1195.3020, cost=Γé╣    1,12,792
+  IO       1 lots, qty=      239.9789, cost=Γé╣      47,766
+  ETH      2 lots, qty=        0.7059, cost=Γé╣ 1,76,203.13
+  TON      1 lots, qty=      230.9769, cost=Γé╣ 1,11,885.21
+  AKT      1 lots, qty=      327.5862, cost=Γé╣ 1,12,739.77
+  ONDO     4 lots, qty=     2570.4075, cost=Γé╣ 3,42,383.67
+  XLM      2 lots, qty=     2782.0205, cost=Γé╣   73,165.16
+  HBAR     2 lots, qty=     6755.4563, cost=Γé╣ 1,40,716.54
+  USDC     1 lots, qty=      132.0311, cost=Γé╣      12,194
+  DOGE     2 lots, qty=    15187.2466, cost=Γé╣ 5,71,255.65
+  COTI     3 lots, qty=    24195.9264, cost=Γé╣ 2,87,497.88
+  MOODENG  1 lots, qty=      498.6163, cost=Γé╣       8,468
+  VIRTUAL  2 lots, qty=      603.1267, cost=Γé╣      91,048
+  PEPE     1 lots, qty= 40000000.0000, cost=Γé╣      50,000
+
+ASSET-WISE P&L:
+Asset    Lots          Sale          Cost        Gain        Loss     Taxable
+------------------------------------------------------------------------------
+ACA         4   3,39,912.38   1,15,889.02 2,24,023.36           0 2,24,023.36
+ADA        15   5,58,636.65   5,02,135.85   62,995.67    6,494.87   62,995.67
+USDC        1     67,021.96        12,194   54,845.85       17.89   54,845.85
+DOGE        1   2,97,444.85      2,82,437   15,007.85           0   15,007.85
+GALA        2        57,788      49,899.2    7,889.78        0.98    7,889.78
+ONDO        2   2,82,633.72   2,74,789.08    7,844.64           0    7,844.64
+GOAT        3   1,20,606.97   1,13,057.31    7,549.65           0    7,549.65
+ETH         2   1,14,150.51   1,07,324.84    6,825.67           0    6,825.67
+XRP         2   1,14,526.49   1,08,023.83    6,502.66           0    6,502.66
+HBAR        1     63,265.92     56,969.95    6,295.97           0    6,295.97
+COTI        3   2,95,189.98   2,89,030.11    6,159.87           0    6,159.87
+AKT         1    1,17,928.8   1,13,301.33    4,627.47           0    4,627.47
+TON         1   1,15,023.06   1,12,441.28    2,581.78           0    2,581.78
+IO          1     49,058.46        47,766    1,292.46           0    1,292.46
+USDT        2   2,77,549.08   2,76,366.29     1,210.5       27.71     1,210.5
+ENA         1     20,231.24     19,406.02      825.22           0      825.22
+
+UNMATCHED SELLS (cost=0):
+  XRP qty=0.09 proceeds=Γé╣6.85 insta_direct_inr 2024-11-16 04:31:41 UTC
+  ACA qty=17112.53 proceeds=Γé╣1,55,988.65 oh_usdt_sell_leg (USDT) 2024-12-04 04:02:44 UTC
+  ACA qty=6326.11 proceeds=Γé╣55,554 oh_usdt_sell_leg (USDT) 2025-01-17 07:30:27 UTC
+  USDC qty=594.72 proceeds=Γé╣54,845.85 insta_direct_inr 2025-01-17 13:17:22 UTC
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+FINAL TAX SUMMARY ΓÇö FY2024-25
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Sell Events:         20
+  FIFO Lots:           42
+  Sale Consideration:  Γé╣28,90,968.06
+  Cost of Acquisition: Γé╣24,81,031.11
+  Capital Gains:       Γé╣4,16,478.41
+  Gross Losses:        Γé╣6,541.46
+  TDS:                 Γé╣28,767.75
+  Gross Tax (30%):     Γé╣1,24,943.52
+  Cess (4%):           Γé╣4,997.74
+  Total Tax:           Γé╣1,29,941.26
+  Net Payable:         Γé╣1,01,173.52
+
+vs KoinX:
+  Capital Gains: Ours=Γé╣4,16,478.41 KoinX=Γé╣1,62,000 Diff=Γé╣2,54,478.41
+  Sale Value:    Ours=Γé╣28,90,968.06 KoinX=Γé╣28,92,000 Diff=Γé╣-1,031.94
+  TDS:           Ours=Γé╣28,767.75 KoinX=Γé╣28,770 Diff=Γé╣-2.25
+  Losses:        Ours=Γé╣6,541.46 KoinX=Γé╣1,08,000 Diff=Γé╣-1,01,458.54
+
