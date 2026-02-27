@@ -71,9 +71,11 @@ interface ColumnMap {
     pair: number;
     side: number;
     quantity: number;
+    remaining: number;
     price: number;
     total: number;
     fee: number;
+    tds: number;
     status: number;
 }
 
@@ -84,16 +86,22 @@ interface ColumnMap {
  * IMPORTANT: 'amount' is listed under quantity (not total) because
  * CoinDCX Order History CSV uses "Amount" for the crypto quantity
  * and "Total" for the INR value (Price × Amount).
+ * 
+ * CRITICAL v7 additions:
+ *   - remaining: 'remaining_quantity' for partial fill handling
+ *   - tds: 'total_tds_inr' for USDT→INR conversion
  */
 const COLUMN_ALIASES: Record<keyof ColumnMap, string[]> = {
     order_id: ['order_id', 'id', 'order id', 'orderid', 'trade_id', 'tradeid'],
-    timestamp: ['created_at', 'timestamp', 'date', 'time', 'datetime', 'trade_date', 'executed_at', 'order_date'],
-    pair: ['market', 'pair', 'symbol', 'trading_pair', 'coin_pair', 'instrument'],
+    timestamp: ['created_at', 'created at', 'timestamp', 'date', 'time', 'datetime', 'trade_date', 'executed_at', 'order_date'],
+    pair: ['pair', 'market', 'symbol', 'trading_pair', 'coin_pair', 'instrument'],
     side: ['side', 'order_type', 'type', 'trade_type', 'buy/sell', 'direction', 'action'],
-    quantity: ['total_quantity', 'filled_quantity', 'executed_quantity', 'quantity', 'qty', 'volume', 'size', 'amount_of_coin', 'amount'],
-    price: ['avg_price', 'average_price', 'price', 'price_per_unit', 'rate', 'execution_price', 'unit_price'],
+    quantity: ['total_quantity', 'total quantity', 'filled_quantity', 'executed_quantity', 'quantity', 'qty', 'volume', 'size', 'amount_of_coin', 'amount'],
+    remaining: ['remaining_quantity', 'remaining quantity', 'remaining'],
+    price: ['price_per_unit', 'price per unit', 'avg_price', 'average_price', 'price', 'rate', 'execution_price', 'unit_price'],
     total: ['total', 'total_amount', 'total_value', 'gross_amount', 'net_amount', 'value'],
-    fee: ['fee', 'commission', 'fee_amount', 'trading_fee', 'charges', 'brokerage'],
+    fee: ['fee_amount', 'fee amount', 'fee', 'commission', 'trading_fee', 'charges', 'brokerage'],
+    tds: ['total_tds_inr', 'total tds inr', 'tds', 'tds_inr', 'tds_amount', 'tds amount'],
     status: ['status', 'order_status', 'state', 'fill_status'],
 };
 
@@ -111,7 +119,7 @@ const VALID_STATUSES = new Set([
     'FILLED', 'COMPLETED', 'SUCCESS',
     'Filled', 'Completed', 'Success',
     // partial fills — sometimes CoinDCX exports use these
-    'partially_filled', 'partial',
+    'partially_filled', 'partial', 'partially_cancelled',
 ]);
 
 // ─── Core Parser ─────────────────────────────────────────────────────
@@ -227,20 +235,35 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             }
 
             // ── Numeric fields ──
-            const quantity = parseNum(cells[colMap.quantity]);
+            const rawQuantity = parseNum(cells[colMap.quantity]);
+            const rawRemaining = colMap.remaining >= 0 ? parseNum(cells[colMap.remaining]) : 0;
             const price = colMap.price >= 0 ? parseNum(cells[colMap.price]) : 0;
             let total = colMap.total >= 0 ? parseNum(cells[colMap.total]) : 0;
             const fee = colMap.fee >= 0 ? parseNum(cells[colMap.fee]) : 0;
+            const tds = colMap.tds >= 0 ? parseNum(cells[colMap.tds]) : 0;
 
+            // Handle partial fills: filledQty = Total Quantity - Remaining Quantity
+            const quantity = rawQuantity - rawRemaining;
             if (quantity <= 0) {
-                errors.push({ row: rowNum, reason: `Invalid quantity: ${quantity}` });
-                continue;
+                continue; // Fully cancelled or empty order
             }
 
-            // For INR pairs: value_inr = Total column (already in INR)
-            // For non-INR pairs: value_inr = Price × Amount (approximation)
-            if (total <= 0 && price > 0) {
-                total = quantity * price;
+            // ── INR VALUE COMPUTATION ──
+            // For INR pairs: value_inr = qty × price
+            // For NON-INR pairs (USDT/USDC): derive from TDS (TDS = 1% of INR value)
+            let valueInr: number;
+            if (quoteCurrency === 'INR') {
+                valueInr = quantity * price;
+                if (valueInr <= 0 && total > 0) valueInr = total;
+            } else {
+                // Non-INR pair: derive INR from TDS or fee
+                if (tds > 0) {
+                    valueInr = tds / 0.01; // TDS is 1% of INR sale value
+                } else if (fee > 0) {
+                    valueInr = fee / 0.002; // Fee is ~0.2% on Binance exchange
+                } else {
+                    valueInr = 0; // Dust trade
+                }
             }
 
             // ── Order ID / Source ID ──
@@ -248,20 +271,11 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             if (hasOrderIdColumn) {
                 sourceId = (cells[colMap.order_id] ?? '').trim();
                 if (!sourceId) {
-                    // Generate synthetic ID even when column exists but value is empty
                     sourceId = generateSyntheticId(tsRaw, pairRaw, sideRaw, quantity, price, i);
                 }
             } else {
-                // No order_id column — generate synthetic ID from row content
                 sourceId = generateSyntheticId(tsRaw, pairRaw, sideRaw, quantity, price, i);
             }
-
-            // ── Deduplication within this parse ──
-            if (seenIds.has(sourceId)) {
-                // Duplicate within same file — skip
-                continue;
-            }
-            seenIds.add(sourceId);
 
             // ── Financial Year ──
             const fy = computeFinancialYear(timestamp);
@@ -269,23 +283,80 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             // ── Status ──
             const statusValue = colMap.status >= 0 ? (cells[colMap.status] ?? '').trim() : 'filled';
 
-            rows.push({
-                source_id: sourceId,
-                source: 'ORDER_CSV',
-                txn_type: txnType,
-                asset,
-                quote_currency: quoteCurrency,
-                quantity,
-                price_inr: price,
-                total_inr: total,
-                fee_inr: fee,
-                tds_inr: 0,  // TDS comes from TDS CSV, not order history
-                timestamp: timestamp.toISOString(),
-                financial_year: fy,
-                pair: pairRaw,
-                status: statusValue,
-                raw_data: rawData,
-            });
+            if (quoteCurrency === 'INR') {
+                // ── Simple INR pair: ONE record ──
+                if (seenIds.has(sourceId)) continue;
+                seenIds.add(sourceId);
+
+                rows.push({
+                    source_id: sourceId,
+                    source: 'ORDER_CSV',
+                    txn_type: txnType,
+                    asset,
+                    quote_currency: quoteCurrency,
+                    quantity,
+                    price_inr: price,
+                    total_inr: valueInr,
+                    fee_inr: fee,
+                    tds_inr: tds,
+                    timestamp: timestamp.toISOString(),
+                    financial_year: fy,
+                    pair: pairRaw,
+                    status: statusValue,
+                    raw_data: rawData,
+                });
+            } else {
+                // ── NON-INR pair: TWO records ──
+                // sell ACA_USDT → SELL ACA + BUY USDT
+                // buy ONDO_USDT → BUY ONDO + SELL USDT
+                const quoteQty = quantity * price; // qty in USDT/USDC
+
+                // Leg 1: The crypto asset
+                const assetId = sourceId + '_asset';
+                if (!seenIds.has(assetId)) {
+                    seenIds.add(assetId);
+                    rows.push({
+                        source_id: assetId,
+                        source: 'ORDER_CSV',
+                        txn_type: txnType,
+                        asset,
+                        quote_currency: quoteCurrency,
+                        quantity,
+                        price_inr: valueInr > 0 ? valueInr / quantity : 0,
+                        total_inr: valueInr,
+                        fee_inr: fee,
+                        tds_inr: txnType === 'SELL' ? tds : 0,
+                        timestamp: timestamp.toISOString(),
+                        financial_year: fy,
+                        pair: pairRaw,
+                        status: statusValue,
+                        raw_data: rawData,
+                    });
+                }
+
+                // Leg 2: The quote currency (reverse side)
+                const quoteId = sourceId + '_quote';
+                if (!seenIds.has(quoteId)) {
+                    seenIds.add(quoteId);
+                    rows.push({
+                        source_id: quoteId,
+                        source: 'ORDER_CSV',
+                        txn_type: txnType === 'SELL' ? 'BUY' : 'SELL',
+                        asset: quoteCurrency, // USDT, USDC, etc.
+                        quote_currency: 'INR',
+                        quantity: quoteQty,
+                        price_inr: valueInr > 0 ? valueInr / quoteQty : 0,
+                        total_inr: valueInr,
+                        fee_inr: 0,
+                        tds_inr: txnType === 'BUY' ? tds : 0,
+                        timestamp: timestamp.toISOString(),
+                        financial_year: fy,
+                        pair: `${quoteCurrency}_INR`,
+                        status: statusValue,
+                        raw_data: rawData,
+                    });
+                }
+            }
         } catch (err) {
             errors.push({ row: rowNum, reason: `Unexpected error: ${(err as Error).message}` });
         }
@@ -362,6 +433,7 @@ function detectColumns(headers: string[]): ColumnMap {
     // CRITICAL: quantity MUST be detected before total, because 'amount' is a
     // quantity alias and would otherwise be stolen by 'total' detection.
     const quantity = find(COLUMN_ALIASES.quantity);  // 'total_quantity', 'amount' before 'total'
+    const remaining = find(COLUMN_ALIASES.remaining); // 'remaining_quantity'
     const order_id = find(COLUMN_ALIASES.order_id);
     const timestamp = find(COLUMN_ALIASES.timestamp);
     const pair = find(COLUMN_ALIASES.pair);
@@ -369,9 +441,10 @@ function detectColumns(headers: string[]): ColumnMap {
     const price = find(COLUMN_ALIASES.price);
     const total = find(COLUMN_ALIASES.total);     // now won't collide with total_quantity or amount
     const fee = find(COLUMN_ALIASES.fee);
+    const tds = find(COLUMN_ALIASES.tds);         // 'total_tds_inr'
     const status = find(COLUMN_ALIASES.status);
 
-    return { order_id, timestamp, pair, side, quantity, price, total, fee, status };
+    return { order_id, timestamp, pair, side, quantity, remaining, price, total, fee, tds, status };
 }
 
 // ─── CSV Row Parser (handles quoted fields with commas) ──────────────
@@ -487,8 +560,8 @@ function extractAssetAndQuote(pair: string): { asset: string; quoteCurrency: str
     // Trim and uppercase
     let p = pair.trim().toUpperCase();
 
-    // Remove CoinDCX Insta prefix: I-BTCINR → BTCINR
-    p = p.replace(/^I-/, '');
+    // Remove CoinDCX exchange prefix: I-BTCINR, B-ACA_USDT, KC-ONDO_USDT → base pair
+    p = p.replace(/^[A-Z]+-/, '');
 
     // Handle explicit separators: BTC/INR → BTC + INR
     for (const sep of ['/', '-', '_']) {
