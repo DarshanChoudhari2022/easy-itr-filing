@@ -271,11 +271,25 @@ export async function deleteAllCryptoData(): Promise<{ success: boolean }> {
 
     const userId = session.user.id;
 
-    // Delete in order due to foreign keys
-    await supabase.from('crypto_tax_lots').delete().eq('user_id', userId);
-    await supabase.from('crypto_tax_summary').delete().eq('user_id', userId);
-    await supabase.from('crypto_income_events').delete().eq('user_id', userId);
-    await supabase.from('crypto_trades').delete().eq('user_id', userId);
+    // Delete from ALL crypto tables (both v5 new schema AND legacy tables)
+    // Order matters: child tables first due to foreign keys
+    const tablesToClear = [
+        'crypto_tax_computations', // legacy
+        'crypto_tax_lots',         // v5 (has FK to crypto_trades)
+        'crypto_tax_summary',      // v5
+        'crypto_income_events',    // v5
+        'crypto_income',           // legacy
+        'crypto_trades',           // v5
+        'crypto_transactions',     // legacy
+    ];
+
+    for (const table of tablesToClear) {
+        try {
+            await supabase.from(table as any).delete().eq('user_id', userId);
+        } catch {
+            // Table may not exist — that's OK
+        }
+    }
 
     return { success: true };
 }
