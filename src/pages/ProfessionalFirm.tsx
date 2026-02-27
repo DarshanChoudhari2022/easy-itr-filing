@@ -13,20 +13,29 @@ import {
     Search,
     CheckCircle2,
     TrendingUp,
-    ShieldAlert
+    ShieldAlert,
+    UsersRound
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-export default function ProfessionalFirm() {
-    const [activeTab, setActiveTab] = useState('clients');
+interface FirmClient {
+    id: number;
+    name: string;
+    pan: string;
+    status: string;
+    assignedTo: string;
+    risk: string;
+}
 
-    const clients = [
-        { id: 1, name: "Acme Corp (Pvt Ltd)", pan: "ABCD1234E", status: "Filed", assignedTo: "Junior CA 1", risk: "Low" },
-        { id: 2, name: "Rahul Sharma", pan: "ERPT5432G", status: "In Progress", assignedTo: "Junior CA 2", risk: "High" },
-        { id: 3, name: "Global Tech Inc", pan: "FGHT9876Q", status: "Ready", assignedTo: "Senior Manager", risk: "Medium" },
-        { id: 4, name: "Priya Exports", pan: "PLKM0098F", status: "Draft", assignedTo: "Intern", risk: "Low" },
-    ];
+export default function ProfessionalFirm() {
+    const [clients] = useState<FirmClient[]>([]);
+    const [searchQuery, setSearchQuery] = useState("");
+
+    const filteredClients = clients.filter(c =>
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.pan.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     return (
         <AppLayout>
@@ -41,17 +50,19 @@ export default function ProfessionalFirm() {
                         <p className="text-muted-foreground font-medium">Enterprise console for CA Firms & Tax Professionals.</p>
                     </div>
                     <div className="flex gap-3">
-                        <Button variant="outline" className="gap-2"><Download className="h-4 w-4" /> Export All Data</Button>
+                        {clients.length > 0 && (
+                            <Button variant="outline" className="gap-2"><Download className="h-4 w-4" /> Export All Data</Button>
+                        )}
                         <Button className="gap-2 bg-primary shadow-xl shadow-primary/20"><Plus className="h-4 w-4" /> Add New Client</Button>
                     </div>
                 </div>
 
                 {/* Firm Stats Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <FirmStat label="Active Clients" value="1,248" sub="+12 this week" icon={<Users className="text-blue-500" />} />
-                    <FirmStat label="Total Filings" value="942" sub="85% of target" icon={<FileCheck className="text-emerald-500" />} />
-                    <FirmStat label="Avg. Turnaround" value="2.4 days" sub="Fastest in region" icon={<Clock className="text-amber-500" />} />
-                    <FirmStat label="Revenue" value="₹24.8L" sub="Q1 2026 Prediction" icon={<TrendingUp className="text-indigo-500" />} />
+                    <FirmStat label="Active Clients" value={String(clients.length)} sub={clients.length > 0 ? "Managed" : "Add clients to begin"} icon={<Users className="text-blue-500" />} />
+                    <FirmStat label="Total Filings" value="0" sub="No filings yet" icon={<FileCheck className="text-emerald-500" />} />
+                    <FirmStat label="Avg. Turnaround" value="—" sub="Track processing time" icon={<Clock className="text-amber-500" />} />
+                    <FirmStat label="Revenue" value="—" sub="Track in firm settings" icon={<TrendingUp className="text-indigo-500" />} />
                 </div>
 
                 {/* Client Management Interface */}
@@ -64,49 +75,69 @@ export default function ProfessionalFirm() {
                             </div>
                             <div className="relative max-w-sm">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                                <Input placeholder="Search PAN or Client Name..." className="pl-10 h-10 w-full" />
+                                <Input
+                                    placeholder="Search PAN or Client Name..."
+                                    className="pl-10 h-10 w-full"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
                             </div>
                         </div>
                     </CardHeader>
                     <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-slate-50">
-                                <TableRow>
-                                    <TableHead className="font-bold">Client Name</TableHead>
-                                    <TableHead className="font-bold">PAN Details</TableHead>
-                                    <TableHead className="font-bold text-center">Audit Risk</TableHead>
-                                    <TableHead className="font-bold">Assigned Staff</TableHead>
-                                    <TableHead className="font-bold">Status</TableHead>
-                                    <TableHead className="text-right">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {clients.map(client => (
-                                    <TableRow key={client.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <TableCell className="font-bold text-slate-900">{client.name}</TableCell>
-                                        <TableCell className="font-mono text-xs uppercase text-slate-500">{client.pan}</TableCell>
-                                        <TableCell className="text-center">
-                                            <Badge className={
-                                                client.risk === 'High' ? 'bg-rose-500 font-black' :
-                                                    client.risk === 'Medium' ? 'bg-amber-500' : 'bg-emerald-500'
-                                            }>
-                                                {client.risk.toUpperCase()}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-sm font-medium text-slate-600">{client.assignedTo}</TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-2">
-                                                <div className={`h-2 w-2 rounded-full ${client.status === 'Filed' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></div>
-                                                <span className="text-xs font-bold uppercase tracking-tighter">{client.status}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <Button variant="ghost" size="sm" className="font-bold text-primary">MANAGE</Button>
-                                        </TableCell>
+                        {filteredClients.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                                <div className="h-16 w-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
+                                    <UsersRound className="h-8 w-8 text-slate-300" />
+                                </div>
+                                <h3 className="text-lg font-semibold mb-2">No clients added yet</h3>
+                                <p className="text-sm text-muted-foreground max-w-sm mb-6">
+                                    Add your first client to start managing their ITR and GST filings from this professional dashboard.
+                                </p>
+                                <Button className="gap-2 bg-primary shadow-xl shadow-primary/20">
+                                    <Plus className="h-4 w-4" /> Add First Client
+                                </Button>
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader className="bg-slate-50">
+                                    <TableRow>
+                                        <TableHead className="font-bold">Client Name</TableHead>
+                                        <TableHead className="font-bold">PAN Details</TableHead>
+                                        <TableHead className="font-bold text-center">Audit Risk</TableHead>
+                                        <TableHead className="font-bold">Assigned Staff</TableHead>
+                                        <TableHead className="font-bold">Status</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {filteredClients.map(client => (
+                                        <TableRow key={client.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <TableCell className="font-bold text-slate-900">{client.name}</TableCell>
+                                            <TableCell className="font-mono text-xs uppercase text-slate-500">{client.pan}</TableCell>
+                                            <TableCell className="text-center">
+                                                <Badge className={
+                                                    client.risk === 'High' ? 'bg-rose-500 font-black' :
+                                                        client.risk === 'Medium' ? 'bg-amber-500' : 'bg-emerald-500'
+                                                }>
+                                                    {client.risk.toUpperCase()}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-sm font-medium text-slate-600">{client.assignedTo}</TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`h-2 w-2 rounded-full ${client.status === 'Filed' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></div>
+                                                    <span className="text-xs font-bold uppercase tracking-tighter">{client.status}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Button variant="ghost" size="sm" className="font-bold text-primary">MANAGE</Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -121,10 +152,10 @@ export default function ProfessionalFirm() {
                         <CardContent className="space-y-4">
                             <div className="p-4 rounded-xl bg-white border border-rose-100 shadow-sm flex items-center justify-between">
                                 <div>
-                                    <p className="font-bold text-slate-900">12 High-Risk Disclosures</p>
-                                    <p className="text-xs text-slate-500 mt-1">Clients with unlinked AIS dividends &gt; ₹2.5L</p>
+                                    <p className="font-bold text-slate-900">No high-risk disclosures</p>
+                                    <p className="text-xs text-slate-500 mt-1">Add clients to start risk monitoring</p>
                                 </div>
-                                <Button variant="outline" size="sm" className="border-rose-200 text-rose-600">Review All</Button>
+                                <Button variant="outline" size="sm" className="border-rose-200 text-rose-600">Review</Button>
                             </div>
                         </CardContent>
                     </Card>
@@ -138,10 +169,10 @@ export default function ProfessionalFirm() {
                         <CardContent className="space-y-4">
                             <div className="p-4 rounded-xl bg-white border border-emerald-100 shadow-sm flex items-center justify-between">
                                 <div>
-                                    <p className="font-bold text-slate-900">88% Auto-Filled</p>
+                                    <p className="font-bold text-slate-900">Auto-fill ready</p>
                                     <p className="text-xs text-slate-500 mt-1">Data fetched via AIS/26AS/TaxMitra Engine</p>
                                 </div>
-                                <Badge className="bg-emerald-500">EXCELLENT</Badge>
+                                <Badge className="bg-emerald-500">READY</Badge>
                             </div>
                         </CardContent>
                     </Card>

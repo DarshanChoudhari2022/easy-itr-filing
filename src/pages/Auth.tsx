@@ -275,7 +275,7 @@ export default function Auth() {
                       <Input
                         id="signup-name"
                         type="text"
-                        placeholder="John Doe"
+                        placeholder="Full Name"
                         value={signupName}
                         onChange={(e) => setSignupName(e.target.value)}
                         disabled={loading}

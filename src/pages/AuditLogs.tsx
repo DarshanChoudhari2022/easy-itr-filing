@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,19 +9,31 @@ import {
     Download,
     AlertCircle,
     CheckCircle2,
-    Info
+    Info,
+    ClipboardList
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
+interface AuditLog {
+    id: number;
+    action: string;
+    user: string;
+    module: string;
+    timestamp: string;
+    severity: "info" | "warning" | "success";
+}
+
 export default function AuditLogs() {
-    const [logs, setLogs] = useState([
-        { id: 1, action: "ITR-2 Generated", user: "Darshan C.", module: "Income Tax", timestamp: "2026-01-29 18:45", severity: "info" },
-        { id: 2, action: "GSTR-2B Mismatch Flagged", user: "System", module: "GST", timestamp: "2026-01-29 17:30", severity: "warning" },
-        { id: 3, action: "Crypto FIFO Recalculated", user: "Darshan C.", module: "Assets", timestamp: "2026-01-29 16:15", severity: "info" },
-        { id: 4, action: "Sch FA Declaration Added", user: "Darshan C.", module: "Foreign Compliance", timestamp: "2026-01-29 15:00", severity: "success" },
-    ]);
+    const [logs] = useState<AuditLog[]>([]);
+    const [searchQuery, setSearchQuery] = useState("");
+
+    const filteredLogs = logs.filter(log =>
+        log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        log.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        log.module.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     return (
         <AppLayout>
@@ -35,9 +47,11 @@ export default function AuditLogs() {
                         <p className="text-muted-foreground italic">Comprehensive logs for enterprise compliance & security.</p>
                     </div>
                     <div className="flex gap-3">
-                        <Button variant="outline" className="gap-2">
-                            <Download className="h-4 w-4" /> Export for Auditor
-                        </Button>
+                        {logs.length > 0 && (
+                            <Button variant="outline" className="gap-2">
+                                <Download className="h-4 w-4" /> Export for Auditor
+                            </Button>
+                        )}
                     </div>
                 </div>
 
@@ -51,7 +65,12 @@ export default function AuditLogs() {
                             <div className="flex items-center gap-2 max-w-sm w-full">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                    <Input placeholder="Filter by action or user..." className="pl-8" />
+                                    <Input
+                                        placeholder="Filter by action or user..."
+                                        className="pl-8"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
                                 </div>
                                 <Button variant="outline" size="icon">
                                     <Filter className="h-4 w-4" />
@@ -60,37 +79,49 @@ export default function AuditLogs() {
                         </div>
                     </CardHeader>
                     <CardContent className="p-0">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Timestamp</TableHead>
-                                    <TableHead>Action</TableHead>
-                                    <TableHead>Module</TableHead>
-                                    <TableHead>User</TableHead>
-                                    <TableHead>Severity</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {logs.map((log) => (
-                                    <TableRow key={log.id}>
-                                        <TableCell className="text-xs font-mono text-muted-foreground">{log.timestamp}</TableCell>
-                                        <TableCell className="font-bold">{log.action}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline">{log.module}</Badge>
-                                        </TableCell>
-                                        <TableCell className="text-sm">{log.user}</TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                variant={log.severity === 'warning' ? 'destructive' : log.severity === 'success' ? 'default' : 'secondary'}
-                                                className={log.severity === 'success' ? 'bg-success/10 text-success' : ''}
-                                            >
-                                                {log.severity.toUpperCase()}
-                                            </Badge>
-                                        </TableCell>
+                        {filteredLogs.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                                <div className="h-16 w-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                                    <ClipboardList className="h-8 w-8 text-muted-foreground/50" />
+                                </div>
+                                <h3 className="text-lg font-semibold mb-2">No activity recorded yet</h3>
+                                <p className="text-sm text-muted-foreground max-w-sm">
+                                    System actions like tax computations, data imports, and filing events will appear here automatically as you use TaxMitra.
+                                </p>
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Timestamp</TableHead>
+                                        <TableHead>Action</TableHead>
+                                        <TableHead>Module</TableHead>
+                                        <TableHead>User</TableHead>
+                                        <TableHead>Severity</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {filteredLogs.map((log) => (
+                                        <TableRow key={log.id}>
+                                            <TableCell className="text-xs font-mono text-muted-foreground">{log.timestamp}</TableCell>
+                                            <TableCell className="font-bold">{log.action}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline">{log.module}</Badge>
+                                            </TableCell>
+                                            <TableCell className="text-sm">{log.user}</TableCell>
+                                            <TableCell>
+                                                <Badge
+                                                    variant={log.severity === 'warning' ? 'destructive' : log.severity === 'success' ? 'default' : 'secondary'}
+                                                    className={log.severity === 'success' ? 'bg-success/10 text-success' : ''}
+                                                >
+                                                    {log.severity.toUpperCase()}
+                                                </Badge>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
                     </CardContent>
                 </Card>
             </div>

@@ -112,20 +112,23 @@ export default function ForeignCompliance() {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            <TableRow>
-                                                <TableCell className="font-bold">Equity (RSUs)</TableCell>
-                                                <TableCell><Badge variant="secondary">USA</Badge></TableCell>
-                                                <TableCell>Alphabet Inc. (Google)</TableCell>
-                                                <TableCell className="text-right font-mono">₹42,50,000</TableCell>
-                                                <TableCell><Badge className="bg-success">Verified</Badge></TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell className="font-bold">Bank Account</TableCell>
-                                                <TableCell><Badge variant="secondary">UK</Badge></TableCell>
-                                                <TableCell>HSBC London</TableCell>
-                                                <TableCell className="text-right font-mono">₹3,20,000</TableCell>
-                                                <TableCell><Badge className="bg-success">Verified</Badge></TableCell>
-                                            </TableRow>
+                                            {assets.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                                                        No foreign assets declared yet. Click "Add Declaration" to begin.
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                assets.map((asset) => (
+                                                    <TableRow key={asset.id}>
+                                                        <TableCell className="font-bold">{asset.asset_type}</TableCell>
+                                                        <TableCell><Badge variant="secondary">{asset.country_code}</Badge></TableCell>
+                                                        <TableCell>{asset.entity_name}</TableCell>
+                                                        <TableCell className="text-right font-mono">₹{(asset.peak_value_inr || 0).toLocaleString('en-IN')}</TableCell>
+                                                        <TableCell><Badge className="bg-success">Declared</Badge></TableCell>
+                                                    </TableRow>
+                                                ))
+                                            )}
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -156,17 +159,27 @@ export default function ForeignCompliance() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                <TableRow>
-                                                    <TableCell>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-bold">US Dividends</span>
-                                                            <span className="text-xs text-muted-foreground">Article 10 of Indo-US DTAA</span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>$5,400</TableCell>
-                                                    <TableCell>$810 (15%)</TableCell>
-                                                    <TableCell className="text-right font-bold text-accent">₹68,200</TableCell>
-                                                </TableRow>
+                                                {income.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
+                                                            No foreign income declared yet. Add income sources to claim DTAA relief.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    income.map((inc) => (
+                                                        <TableRow key={inc.id}>
+                                                            <TableCell>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold">{inc.income_type}</span>
+                                                                    <span className="text-xs text-muted-foreground">{inc.country_code} — {inc.dtaa_article || 'DTAA applicable'}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell>{inc.gross_income_fcy?.toLocaleString()}</TableCell>
+                                                            <TableCell>{inc.tax_paid_fcy?.toLocaleString()}</TableCell>
+                                                            <TableCell className="text-right font-bold text-accent">₹{((inc.gross_income_fcy || 0) * (inc.conversion_rate || 1)).toLocaleString('en-IN')}</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
                                             </TableBody>
                                         </Table>
                                     </CardContent>
@@ -182,10 +195,13 @@ export default function ForeignCompliance() {
                                     <CardContent className="space-y-4">
                                         <div className="p-3 bg-background rounded-lg border">
                                             <p className="text-xs font-bold text-muted-foreground uppercase">Form 67 Status</p>
-                                            <p className="text-sm font-medium mt-1">Ready for submission</p>
+                                            <p className="text-sm font-medium mt-1">{income.length > 0 ? 'Ready for review' : 'Add foreign income to generate'}</p>
                                         </div>
                                         <div className="text-sm text-muted-foreground">
-                                            Our AI has calculated tax credits for your US RSU sales. You saved <strong>₹1.2 Lakh</strong> in double taxation.
+                                            {income.length > 0
+                                                ? 'TaxMitra will calculate optimal DTAA relief for your foreign income sources.'
+                                                : 'Add foreign income to auto-calculate DTAA tax credits and generate Form 67.'
+                                            }
                                         </div>
                                         <Button className="w-full">Download Form 67 Draft</Button>
                                     </CardContent>

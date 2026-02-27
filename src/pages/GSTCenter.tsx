@@ -73,31 +73,11 @@ export default function GSTCenter() {
         if (!file) return;
 
         setUploading(true);
-        // Simulation of parsing and uploading for now
-        setTimeout(async () => {
-            const mockInvoice = {
-                user_id: user?.id,
-                invoice_number: `INV-${Math.floor(Math.random() * 10000)}`,
-                invoice_date: new Date().toISOString().split('T')[0],
-                vendor_name: "Mock Vendor Ltd",
-                vendor_gstin: "27AAACR12345A1Z5",
-                taxable_value: 10000,
-                total_value: 11800,
-                igst: 1800,
-                match_status: "matched",
-                confidence_score: 100
-            };
-
-            const { error } = await supabase.from("gst_invoices").insert(mockInvoice);
-
-            if (error) {
-                toast.error("Failed to upload invoice");
-            } else {
-                toast.success("Invoice uploaded successfully");
-                fetchInvoices();
-            }
+        // TODO: implement actual CSV/Excel parsing
+        setTimeout(() => {
+            toast.info("CSV/Excel parsing coming soon. Please add invoices manually for now.");
             setUploading(false);
-        }, 1500);
+        }, 1000);
     };
 
     return (
@@ -288,9 +268,15 @@ export default function GSTCenter() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-3">
-                                    <HistoryItem month="December 2025" type="GSTR-1" status="filed" />
-                                    <HistoryItem month="December 2025" type="GSTR-3B" status="filed" />
-                                    <HistoryItem month="November 2025" type="GSTR-1" status="filed" />
+                                    {invoices.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground italic text-center py-4">
+                                            Filing history will appear here once invoices are added.
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground italic text-center py-4">
+                                            Connect to GSP for real-time filing status.
+                                        </p>
+                                    )}
                                 </div>
                             </CardContent>
                         </Card>
