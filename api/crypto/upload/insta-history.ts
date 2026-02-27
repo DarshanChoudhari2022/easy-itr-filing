@@ -5,14 +5,17 @@
  *   Content-Type: multipart/form-data OR application/json with { csv: "..." }
  *   Auth: Bearer JWT
  *
- * CoinDCX Insta History CSV columns:
- *   Timestamp | Type | Currency | Amount | INR_Value | Remarks
+ * CoinDCX Insta History CSV columns (actual):
+ *   Order ID | Currency | Side | Total Quantity | Total Amount |
+ *   Fee | TDS Amount | Status | Created At | Updated At
  *
- * Types handled:
- *   buy / sell                → crypto_trades
- *   staking_interest / stake  → crypto_income_events (type: staking)
- *   reward / cashback         → crypto_income_events (type: reward)
- *   airdrop                   → crypto_income_events (type: airdrop)
+ * IMPORTANT:
+ *   - Side = "buy" or "sell" (not "type")
+ *   - Total Amount = INR value (this is value_inr)
+ *   - Total Quantity = crypto quantity
+ *   - Status must be "filled" to be counted
+ *   - TDS Amount is parsed and stored
+ *   - Order ID is used as external_id for idempotent upserts
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -81,17 +84,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const headers = headerCells.map(h => h.trim());
 
         const cols = {
-            timestamp: findCol(headers, ['timestamp', 'date', 'time', 'datetime', 'created_at']),
-            type: findCol(headers, ['type', 'transaction type', 'txn type', 'category', 'transaction_type']),
+            orderId: findCol(headers, ['order id', 'order_id', 'orderid']),
             currency: findCol(headers, ['currency', 'asset', 'coin', 'token', 'symbol']),
-            amount: findCol(headers, ['amount', 'quantity', 'qty']),
-            inrValue: findCol(headers, ['inr_value', 'inr value', 'value', 'inr amount', 'amount inr', 'inr_amount', 'total']),
+            side: findCol(headers, ['side', 'type', 'transaction type', 'txn type', 'category']),
+            quantity: findCol(headers, ['total quantity', 'total_quantity', 'amount', 'quantity', 'qty']),
+            totalAmount: findCol(headers, ['total amount', 'total_amount', 'inr_value', 'inr value', 'value', 'inr amount', 'amount inr']),
+            fee: findCol(headers, ['fee', 'fee amount', 'fee_amount']),
+            tds: findCol(headers, ['tds amount', 'tds_amount', 'tds']),
+            status: findCol(headers, ['status', 'order_status', 'state']),
+            timestamp: findCol(headers, ['created at', 'created_at', 'timestamp', 'date', 'time', 'datetime']),
             remarks: findCol(headers, ['remarks', 'note', 'description', 'memo']),
         };
 
-        const trades: any[] = [];
-        const income: any[] = [];
-        const errors: { row: number; issue: string }[] = [];
+        const VALID_STATUSES = new Set(['filled', 'completed', 'success']);
 
         for (let i = 1; i < lines.length; i++) {
             try {
@@ -99,30 +104,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const row: Record<string, string> = {};
                 headers.forEach((h, idx) => { row[h] = (cells[idx] ?? '').trim(); });
 
-                const rawType = cols.type ? (row[cols.type] || '').toLowerCase().trim() : '';
+                // Status filter: only count filled orders
+                if (cols.status) {
+                    const statusVal = (row[cols.status] || '').toLowerCase().trim();
+                    if (statusVal && !VALID_STATUSES.has(statusVal)) continue;
+                }
+
+                const rawSide = cols.side ? (row[cols.side] || '').toLowerCase().trim() : '';
                 const rawCurrency = cols.currency ? (row[cols.currency] || '').toUpperCase().trim() : '';
-                const rawAmount = cols.amount ? parseNum(row[cols.amount]) : 0;
-                const rawInrVal = cols.inrValue ? parseNum(row[cols.inrValue]) : 0;
+                const rawAmount = cols.quantity ? parseNum(row[cols.quantity]) : 0;
+                const rawInrVal = cols.totalAmount ? parseNum(row[cols.totalAmount]) : 0;
+                const rawFee = cols.fee ? parseNum(row[cols.fee]) : 0;
+                const rawTds = cols.tds ? parseNum(row[cols.tds]) : 0;
                 const rawDate = cols.timestamp ? (row[cols.timestamp] || '').trim() : '';
+                const rawOrderId = cols.orderId ? (row[cols.orderId] || '').trim() : '';
 
                 if (!rawDate || !rawCurrency) continue;
-                if (isNaN(rawAmount) || isNaN(rawInrVal)) {
-                    errors.push({ row: i + 1, issue: 'Non-numeric amount or INR value' });
+                if (isNaN(rawAmount) || rawAmount <= 0) continue;
+                if (isNaN(rawInrVal)) {
+                    errors.push({ row: i + 1, issue: 'Non-numeric INR value' });
                     continue;
                 }
 
                 const eventDate = safeParseTimestamp(rawDate);
                 if (!eventDate) { errors.push({ row: i + 1, issue: `Bad date: ${rawDate}` }); continue; }
                 const fy = getFinancialYear(eventDate);
-                const externalId = `insta-${rawDate}-${rawCurrency}-${rawAmount}-${rawType}`.replace(/\s+/g, '_');
 
-                const isTrade = TRADE_KEYWORDS.some(k => rawType.includes(k));
-                const isStaking = STAKING_KEYWORDS.some(k => rawType.includes(k));
-                const isReward = REWARD_KEYWORDS.some(k => rawType.includes(k));
-                const isAirdrop = AIRDROP_KEYWORDS.some(k => rawType.includes(k));
+                // Use Order ID for dedup (most reliable), fallback to composite key
+                const externalId = rawOrderId
+                    ? `insta-${rawOrderId}`
+                    : `insta-${rawDate}-${rawCurrency}-${rawAmount}-${rawSide}`.replace(/\s+/g, '_');
+
+                const isTrade = rawSide === 'buy' || rawSide === 'sell' ||
+                    TRADE_KEYWORDS.some(k => rawSide.includes(k));
+                const isStaking = STAKING_KEYWORDS.some(k => rawSide.includes(k));
+                const isReward = REWARD_KEYWORDS.some(k => rawSide.includes(k));
+                const isAirdrop = AIRDROP_KEYWORDS.some(k => rawSide.includes(k));
 
                 if (isTrade) {
-                    const side = rawType.includes('sell') ? 'sell' : 'buy';
+                    const side = rawSide.includes('sell') ? 'sell' : 'buy';
                     trades.push({
                         user_id: user.id,
                         type: side,
@@ -131,8 +151,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         quantity: rawAmount,
                         price_per_unit: rawAmount > 0 ? rawInrVal / rawAmount : 0,
                         value_inr: rawInrVal,
-                        fee_inr: 0,
-                        tds_inr: 0,
+                        fee_inr: isNaN(rawFee) ? 0 : rawFee,
+                        tds_inr: isNaN(rawTds) ? 0 : rawTds,
                         qty_remaining: side === 'buy' ? rawAmount : null,
                         trade_date: eventDate.toISOString(),
                         financial_year: fy,
@@ -154,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         external_id: externalId,
                     });
                 } else {
-                    errors.push({ row: i + 1, issue: `Unknown type "${rawType}" — skipped` });
+                    errors.push({ row: i + 1, issue: `Unknown type "${rawSide}" — skipped` });
                 }
             } catch (e) {
                 errors.push({ row: i + 1, issue: (e as Error).message });
