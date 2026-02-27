@@ -3,8 +3,10 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-// Production URL for email redirects — never use localhost
-const SITE_URL = import.meta.env.VITE_APP_URL || 'https://easy-itr-filing.vercel.app';
+// Production URL for email redirects — uses current origin if available, falls back to hardcoded Vercel URL
+const SITE_URL = typeof window !== 'undefined'
+  ? window.location.origin
+  : (import.meta.env.VITE_APP_URL || 'https://easy-itr-filing.vercel.app');
 
 interface AuthContextType {
   user: User | null;
