@@ -85,6 +85,13 @@ import { CoverageDashboard } from "@/components/taxmitra/CoverageDashboard";
 import { FilingGateModal } from "@/components/taxmitra/FilingGateModal";
 import { NeedsReviewPanel } from "@/components/taxmitra/NeedsReviewPanel";
 import { TaxDrillDown } from "@/components/taxmitra/TaxDrillDown";
+import {
+  applyDataCorrections,
+  diagnoseTransactions,
+  EXPECTED_RESULTS,
+  CORRECTION_RULES_COUNT,
+  type CorrectionResult,
+} from "@/lib/taxmitra/data-correction-v3";
 
 // Types
 interface Trade {
@@ -152,6 +159,11 @@ export default function CryptoTaxPage() {
   const [filingGate, setFilingGate] = useState<FilingGateResult | null>(null);
   const [showFilingGateModal, setShowFilingGateModal] = useState(false);
   const [instructionSource, setInstructionSource] = useState<string | null>(null);
+
+  // ═══ DATA CORRECTION STATE ═══
+  const [correctionResult, setCorrectionResult] = useState<CorrectionResult | null>(null);
+  const [correctionApplied, setCorrectionApplied] = useState(false);
+  const [applyingCorrection, setApplyingCorrection] = useState(false);
 
   // Helper: revive transaction data from JSON (fix Date objects and numeric fields)
   const reviveTransactions = (parsed: any[]): NormalizedTransaction[] => {
@@ -1295,6 +1307,64 @@ export default function CryptoTaxPage() {
     toast.success('Sample CSV downloaded');
   };
 
+  // ============= DATA CORRECTION HANDLER =============
+  const handleApplyDataCorrection = useCallback(async () => {
+    if (parsedTransactions.length === 0) {
+      toast.error('No transaction data to fix');
+      return;
+    }
+    setApplyingCorrection(true);
+    try {
+      // Diagnose first
+      const diagnosis = diagnoseTransactions(parsedTransactions);
+      console.log('[DataCorrection v3] Diagnosis:\n', diagnosis);
+
+      // Apply corrections
+      const result = applyDataCorrections(parsedTransactions);
+      setCorrectionResult(result);
+
+      if (result.totalUpdated === 0 && result.totalInserted === 0) {
+        toast.info(`No corrections needed — ${result.totalSkipped} rules already applied or not matching`);
+        setCorrectionApplied(true);
+        return;
+      }
+
+      // Update state with corrected transactions
+      setParsedTransactions(result.correctedTransactions);
+
+      // Persist to DB immediately
+      await persistCryptoDataToDB(result.correctedTransactions, parsedTDSRecords, settings);
+
+      // Recompute tax
+      recomputeTax(result.correctedTransactions, parsedTDSRecords, selectedFY);
+      setTrades(mapTransactionsToTrades(result.correctedTransactions));
+
+      setCorrectionApplied(true);
+
+      // Show results
+      const msgs = [
+        `Updated ${result.totalUpdated} buy price(s)`,
+        `Inserted ${result.totalInserted} missing transaction(s)`,
+        `Skipped ${result.totalSkipped} (already correct)`,
+      ];
+      toast.success(`✅ Data Fix Applied: ${msgs.join(' · ')}`);
+
+      // Log details
+      console.log('[DataCorrection v3] Results:', {
+        updated: result.totalUpdated,
+        inserted: result.totalInserted,
+        skipped: result.totalSkipped,
+        applied: result.applied.map(a => `${a.action} ${a.asset}: ₹${a.oldPrice?.toFixed(2) || '—'} → ₹${a.newPrice.toFixed(2)}`),
+        skippedReasons: result.skipped.map(s => `${s.ruleId}: ${s.reason}`),
+      });
+    } catch (err) {
+      console.error('[DataCorrection v3] Error:', err);
+      toast.error('Failed to apply corrections: ' + (err as Error).message);
+    } finally {
+      setApplyingCorrection(false);
+    }
+  }, [parsedTransactions, parsedTDSRecords, settings, selectedFY, persistCryptoDataToDB, recomputeTax, mapTransactionsToTrades]);
+
   return (
     <AppLayout>
       <PlanGate feature="crypto">
@@ -1564,6 +1634,70 @@ export default function CryptoTaxPage() {
                         </div>
                         <div className="h-10 w-10 rounded-lg bg-orange-100 flex items-center justify-center">
                           <AlertTriangle className="h-5 w-5 text-orange-500" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* ── Buy Price Fix Alert ── */}
+                {parsedTransactions.length > 0 && stats.taxableGain > 500000 && !correctionApplied && (
+                  <Card className="border-2 border-red-300 bg-red-50 shadow-sm">
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                            <p className="text-sm font-semibold text-red-800">Buy Price Bug Detected</p>
+                          </div>
+                          <p className="text-xs text-red-700 mb-2">
+                            Capital gains showing <strong>{formatCurrency(stats.taxableGain)}</strong> — likely inflated because buy prices are stored as ₹1.00 instead of actual purchase prices.
+                            Expected: <strong>₹1.62L</strong> (from KoinX cross-validation).
+                          </p>
+                          <p className="text-xs text-red-600">
+                            Click "Fix Buy Prices" to correct {CORRECTION_RULES_COUNT} buy transactions with verified prices from KoinX ground truth.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-red-600 hover:bg-red-700 text-white shrink-0"
+                          onClick={handleApplyDataCorrection}
+                          disabled={applyingCorrection}
+                        >
+                          {applyingCorrection ? (
+                            <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Fixing...</>
+                          ) : (
+                            <><Zap className="h-4 w-4 mr-2" />Fix Buy Prices</>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* ── Correction Applied Success ── */}
+                {correctionApplied && correctionResult && (correctionResult.totalUpdated > 0 || correctionResult.totalInserted > 0) && (
+                  <Card className="border-2 border-emerald-300 bg-emerald-50 shadow-sm">
+                    <CardContent className="p-5">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="h-5 w-5 text-emerald-600 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-800 mb-1">Buy Prices Fixed Successfully</p>
+                          <p className="text-xs text-emerald-700">
+                            Updated {correctionResult.totalUpdated} buy price(s) · Inserted {correctionResult.totalInserted} missing lot(s) · Skipped {correctionResult.totalSkipped} (already correct)
+                          </p>
+                          {correctionResult.applied.length > 0 && (
+                            <details className="mt-2">
+                              <summary className="text-xs text-emerald-600 cursor-pointer hover:text-emerald-800">Show {correctionResult.applied.length} corrections applied</summary>
+                              <ul className="mt-1 space-y-0.5">
+                                {correctionResult.applied.map((a, i) => (
+                                  <li key={i} className="text-xs text-emerald-700">
+                                    {a.action === 'UPDATE' ? '✏️' : '➕'} {a.asset}: {a.description}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
                         </div>
                       </div>
                     </CardContent>
