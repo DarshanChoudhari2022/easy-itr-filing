@@ -228,11 +228,85 @@ export async function computeCryptoTax(
     console.log(`[FIFO] Created ${lotsCreated} tax lots from ${buys.length} BUY transactions`);
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 3: Process SELL transactions with FIFO
+    // STEP 2.5: Consume prior-year SELL transactions to deplete lots
+    // ═══════════════════════════════════════════════════════════════════
+    // CRITICAL FIX: Without this, buys from FY2021-22 at ₹1/unit would
+    // incorrectly be matched against FY2024-25 sells, creating massive
+    // inflated gains. We must first "consume" all prior-year sells so 
+    // the FIFO queue is properly depleted.
+    console.log('[FIFO] Step 2.5: Consuming prior-year sells to deplete lots...');
+
+    const { data: priorSellTxns, error: priorSellErr } = await supabase
+        .from('crypto_transactions')
+        .select('id, asset, quantity, total_inr, fee_inr, tds_inr, timestamp, financial_year')
+        .eq('user_id', userId)
+        .eq('txn_type', 'SELL')
+        .neq('financial_year', financialYear)
+        .order('timestamp', { ascending: true });
+
+    if (priorSellErr) {
+        errors.push(`Failed to fetch prior-year sells: ${priorSellErr.message}`);
+    }
+
+    const priorSells: SellTransaction[] = (priorSellTxns || []).map(t => ({
+        ...t,
+        quantity: Number(t.quantity),
+        total_inr: Number(t.total_inr),
+        fee_inr: Number(t.fee_inr),
+        tds_inr: Number(t.tds_inr || 0),
+    }));
+
+    console.log(`[FIFO] Found ${priorSells.length} prior-year sells to consume`);
+
+    // Process prior-year sells: just deplete lots, no computation records
+    for (const sell of priorSells) {
+        let sellQtyRemaining = sell.quantity;
+
+        // Fetch available lots for this asset, FIFO order
+        const { data: availableLots, error: lotFetchErr } = await supabase
+            .from('crypto_tax_lots')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('asset', sell.asset)
+            .eq('is_exhausted', false)
+            .gt('remaining_qty', 0)
+            .order('purchase_date', { ascending: true });
+
+        if (lotFetchErr || !availableLots) continue;
+
+        const lots: TaxLot[] = availableLots.map(l => ({
+            ...l,
+            original_qty: Number(l.original_qty),
+            remaining_qty: Number(l.remaining_qty),
+            cost_per_unit: Number(l.cost_per_unit),
+        }));
+
+        for (const lot of lots) {
+            if (sellQtyRemaining <= 0.00000001) break;
+
+            const matchQty = Math.min(lot.remaining_qty, sellQtyRemaining);
+            const newRemaining = round10(lot.remaining_qty - matchQty);
+            const isExhausted = newRemaining <= 0.0000000001;
+
+            // Update lot in DB (just deplete, no computation record)
+            await supabase
+                .from('crypto_tax_lots')
+                .update({
+                    remaining_qty: isExhausted ? 0 : newRemaining,
+                    is_exhausted: isExhausted,
+                })
+                .eq('id', lot.id);
+
+            sellQtyRemaining = round10(sellQtyRemaining - matchQty);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 3: Process SELL transactions for target FY with FIFO
     // ═══════════════════════════════════════════════════════════════════
     console.log('[FIFO] Step 3: Processing SELL transactions with FIFO...');
 
-    // Fetch SELL transactions within the target FY date range
+    // Fetch SELL transactions within the target FY
     const { data: sellTxns, error: sellErr } = await supabase
         .from('crypto_transactions')
         .select('id, asset, quantity, total_inr, fee_inr, tds_inr, timestamp, financial_year')
@@ -250,7 +324,7 @@ export async function computeCryptoTax(
         quantity: Number(t.quantity),
         total_inr: Number(t.total_inr),
         fee_inr: Number(t.fee_inr),
-        tds_inr: Number(t.tds_inr),
+        tds_inr: Number(t.tds_inr || 0),
     }));
 
     let computationsCreated = 0;
@@ -408,7 +482,7 @@ export async function computeCryptoTax(
         }
     }
 
-    console.log(`[FIFO] Processed ${sells.length} sells → ${computationsCreated} computation records (${unknownLotsCount} unknown lots)`);
+    console.log(`[FIFO] Processed ${priorSells.length} prior-year + ${sells.length} target-year sells → ${computationsCreated} computation records (${unknownLotsCount} unknown lots)`);
 
     // ═══════════════════════════════════════════════════════════════════
     // STEP 4: Compute tax summary

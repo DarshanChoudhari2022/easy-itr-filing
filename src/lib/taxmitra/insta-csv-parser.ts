@@ -6,8 +6,9 @@
  * CoinDCX "Insta" = instant buy/sell (OTC-style trades) + staking/rewards.
  * These have a different CSV format from the Exchange order history.
  *
- * Insta History CSV columns:
- *   Timestamp | Type | Currency | Amount | INR_Value | Remarks
+ * CoinDCX Insta History CSV columns (actual):
+ *   Order ID | Currency | Side | Total Quantity | Total Amount |
+ *   Fee | TDS Amount | Status | Created At | Updated At
  *
  * Row types that can appear:
  *   "buy"              → BUY trade (→ crypto_transactions)
@@ -85,11 +86,13 @@ export interface InstaCSVParseResult {
 interface InstaColumnMap {
     id: number;
     date: number;
-    side: number;       // Type column: buy, sell, staking_interest, reward
+    side: number;       // Side column: buy, sell
     asset: number;      // Currency column
-    quantity: number;    // Amount column (crypto amount)
-    inr_amount: number; // INR_Value column
+    quantity: number;    // Total Quantity column (crypto amount)
+    inr_amount: number; // Total Amount column (INR value)
     fee: number;
+    tds: number;         // TDS Amount column
+    status: number;      // Status column: filled, cancelled, etc.
     remarks: number;
 }
 
@@ -103,13 +106,15 @@ interface InstaColumnMap {
  *      (NOT 'amount' — that's claimed by quantity)
  */
 const INSTA_COLUMN_ALIASES: Record<keyof InstaColumnMap, string[]> = {
-    id: ['id', 'transaction_id', 'txn_id', 'trade_id', 'order_id', 'ref'],
-    date: ['timestamp', 'created_at', 'date', 'time', 'datetime', 'trade_date'],
-    side: ['type', 'side', 'action', 'order_type', 'trade_type', 'buy/sell', 'direction'],
+    id: ['order_id', 'order id', 'id', 'transaction_id', 'txn_id', 'trade_id', 'ref'],
+    date: ['created_at', 'created at', 'timestamp', 'date', 'time', 'datetime', 'trade_date'],
+    side: ['side', 'type', 'action', 'order_type', 'trade_type', 'buy/sell', 'direction'],
     asset: ['currency', 'coin', 'asset', 'crypto', 'symbol', 'token', 'coin_name'],
-    quantity: ['quantity', 'crypto_amount', 'qty', 'amount', 'volume', 'size', 'units'],
-    inr_amount: ['inr_value', 'inr_amount', 'inr amount', 'total', 'total_inr', 'fiat_amount', 'inr', 'value', 'gross_amount'],
-    fee: ['fee', 'charges', 'commission', 'fee_amount', 'trading_fee', 'brokerage'],
+    quantity: ['total_quantity', 'total quantity', 'quantity', 'crypto_amount', 'qty', 'amount', 'volume', 'size', 'units'],
+    inr_amount: ['total_amount', 'total amount', 'inr_value', 'inr_amount', 'inr amount', 'total', 'total_inr', 'fiat_amount', 'inr', 'value', 'gross_amount'],
+    fee: ['fee', 'fee_amount', 'fee amount', 'charges', 'commission', 'trading_fee', 'brokerage'],
+    tds: ['tds_amount', 'tds amount', 'tds', 'tds_inr'],
+    status: ['status', 'order_status', 'state'],
     remarks: ['remarks', 'remark', 'notes', 'note', 'description', 'comment'],
 };
 
@@ -193,6 +198,14 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
                 rawData[h] = cells[idx] ?? '';
             });
 
+            // ── Status filter ──
+            if (colMap.status >= 0) {
+                const statusVal = (cells[colMap.status] ?? '').trim().toLowerCase();
+                if (statusVal && statusVal !== 'filled' && statusVal !== 'completed' && statusVal !== 'success') {
+                    continue; // Skip unfilled/cancelled orders
+                }
+            }
+
             // ── Date ──
             const dateRaw = colMap.date >= 0 ? (cells[colMap.date] ?? '').trim() : '';
             const timestamp = safeParseTimestamp(dateRaw);
@@ -227,6 +240,9 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
 
             // ── Fee ──
             const fee = colMap.fee >= 0 ? parseNum(cells[colMap.fee]) : 0;
+
+            // ── TDS ──
+            const tds = colMap.tds >= 0 ? parseNum(cells[colMap.tds]) : 0;
 
             // ── Remarks ──
             const remarks = colMap.remarks >= 0 ? (cells[colMap.remarks] ?? '').trim() : '';
@@ -275,7 +291,7 @@ export function parseInstaHistoryCSV(csvText: string): InstaCSVParseResult {
                     price_inr: Math.round(priceInr * 100) / 100,
                     total_inr: inrValue,
                     fee_inr: fee,
-                    tds_inr: 0, // TDS comes from TDS CSV
+                    tds_inr: tds,
                     timestamp: timestamp.toISOString(),
                     financial_year: fy,
                     pair: `${asset}INR`,
@@ -368,9 +384,11 @@ function detectInstaColumns(headers: string[]): InstaColumnMap {
     const inr_amount = find(INSTA_COLUMN_ALIASES.inr_amount);
     const id = find(INSTA_COLUMN_ALIASES.id);
     const fee = find(INSTA_COLUMN_ALIASES.fee);
+    const tds = find(INSTA_COLUMN_ALIASES.tds);
+    const status = find(INSTA_COLUMN_ALIASES.status);
     const remarks = find(INSTA_COLUMN_ALIASES.remarks);
 
-    return { id, date, side, asset, quantity, inr_amount, fee, remarks };
+    return { id, date, side, asset, quantity, inr_amount, fee, tds, status, remarks };
 }
 
 
