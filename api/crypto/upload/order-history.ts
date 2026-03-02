@@ -79,20 +79,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // ── 2. Extract CSV text ──
         let csvText: string;
-        if (req.body?.file) {
+        if (typeof req.body === 'string') {
+            // Raw string body
+            csvText = req.body;
+        } else if (req.body?.csv) {
+            // JSON body with { csv: "..." }
+            csvText = req.body.csv;
+        } else if (req.body?.file) {
+            // Multipart/form-data (if Vercel parses it)
             const fileData = req.body.file;
             if (Buffer.isBuffer(fileData)) csvText = fileData.toString('utf-8');
             else if (typeof fileData === 'string') csvText = fileData;
             else if (fileData?.data) csvText = Buffer.from(fileData.data).toString('utf-8');
-            else return res.status(400).json({ success: false, error: 'Could not read file from request' });
-        } else if (typeof req.body === 'string') {
-            csvText = req.body;
-        } else if (req.body?.csv) {
-            csvText = req.body.csv;
+            else return res.status(400).json({ success: false, error: 'Could not read file from request body' });
         } else {
             return res.status(400).json({
                 success: false,
-                error: 'No file found. Send as multipart/form-data with field "file", or JSON with field "csv".',
+                error: 'No CSV data found. Send JSON with { csv: "..." } or multipart with field "file".',
+                bodyType: typeof req.body,
+                bodyKeys: req.body ? Object.keys(req.body) : [],
             });
         }
 
@@ -344,10 +349,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
     } catch (err) {
         console.error('[Order History Upload] Unhandled error:', err);
+        const message = (err as Error).message || 'Unknown error';
         return res.status(500).json({
             success: false,
-            error: 'Internal server error',
-            message: (err as Error).message,
+            error: `Internal server error: ${message}`,
+            message,
         });
     }
 }

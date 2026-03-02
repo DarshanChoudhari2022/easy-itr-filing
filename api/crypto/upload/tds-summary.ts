@@ -46,18 +46,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // ── 2. Extract CSV text ──
         let csvText: string;
-        if (req.body?.file) {
+        if (typeof req.body === 'string') {
+            csvText = req.body;
+        } else if (req.body?.csv) {
+            csvText = req.body.csv;
+        } else if (req.body?.file) {
             const fileData = req.body.file;
             if (Buffer.isBuffer(fileData)) csvText = fileData.toString('utf-8');
             else if (typeof fileData === 'string') csvText = fileData;
             else if (fileData?.data) csvText = Buffer.from(fileData.data).toString('utf-8');
-            else return res.status(400).json({ success: false, error: 'Could not read file' });
-        } else if (typeof req.body === 'string') {
-            csvText = req.body;
-        } else if (req.body?.csv) {
-            csvText = req.body.csv;
+            else return res.status(400).json({ success: false, error: 'Could not read file from request body' });
         } else {
-            return res.status(400).json({ success: false, error: 'No file found.' });
+            return res.status(400).json({ success: false, error: 'No CSV data found. Send JSON with { csv: "..." }.' });
         }
 
         // ── 3. Parse CSV ──
@@ -194,10 +194,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
     } catch (err) {
         console.error('[TDS Upload] Unhandled error:', err);
+        const message = (err as Error).message || 'Unknown error';
         return res.status(500).json({
             success: false,
-            error: 'Internal server error',
-            message: (err as Error).message,
+            error: `Internal server error: ${message}`,
+            message,
         });
     }
 }

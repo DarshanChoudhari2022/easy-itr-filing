@@ -32,7 +32,7 @@ async function apiFetch<T>(
     const data = await res.json();
 
     if (!res.ok && !data.success) {
-        throw new Error(data.error || data.message || `API error: ${res.status}`);
+        throw new Error(data.message || data.error || `API error: ${res.status}`);
     }
 
     return data as T;
@@ -236,31 +236,28 @@ export async function computeTax(financialYear: string): Promise<ComputeTaxRespo
 
 /** Upload Order History CSV */
 export async function uploadOrderHistory(file: File): Promise<UploadResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
+    const csvText = await file.text();
     return apiFetch<UploadResponse>('upload/order-history', {
         method: 'POST',
-        body: formData,
+        body: JSON.stringify({ csv: csvText }),
     });
 }
 
 /** Upload Insta History CSV */
 export async function uploadInstaHistory(file: File): Promise<UploadResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
+    const csvText = await file.text();
     return apiFetch<UploadResponse>('upload/insta-history', {
         method: 'POST',
-        body: formData,
+        body: JSON.stringify({ csv: csvText }),
     });
 }
 
 /** Upload TDS Certificate CSV */
 export async function uploadTDS(file: File): Promise<UploadResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
+    const csvText = await file.text();
     return apiFetch<UploadResponse>('upload/tds-summary', {
         method: 'POST',
-        body: formData,
+        body: JSON.stringify({ csv: csvText }),
     });
 }
 
