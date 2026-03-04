@@ -49,6 +49,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
 
+        // User-scoped client for RLS compliance
+        const dbClient = supabaseServiceKey
+            ? supabase
+            : createClient(supabaseUrl, supabaseAnonKey, {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+            });
+
         // ── Validate body ──
         const { financial_year } = req.body || {};
         if (!financial_year || !/^FY\d{4}-\d{2}$/.test(financial_year)) {
@@ -71,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // STEP 1: Load ALL buy lots for this user (ALL years)
         // A 2021 ADA buy is needed to price a 2024 ADA sell.
         // ═══════════════════════════════════════════════════════════════
-        const { data: allBuys, error: e1 } = await supabase
+        const { data: allBuys, error: e1 } = await dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, price_per_unit, value_inr, fee_inr, trade_date, financial_year')
             .eq('user_id', userId)
@@ -110,7 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ═══════════════════════════════════════════════════════════════
         // STEP 2: Load sell events for the requested FY only
         // ═══════════════════════════════════════════════════════════════
-        const { data: sells, error: e2 } = await supabase
+        const { data: sells, error: e2 } = await dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, price_per_unit, value_inr, fee_inr, tds_inr, trade_date')
             .eq('user_id', userId)
@@ -125,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // A 2023 ACA sell must consume the 2023 ACA buy, otherwise
         // the 2024 ACA sell will incorrectly match against the 2023 buy.
         // ═══════════════════════════════════════════════════════════════
-        const { data: priorSells, error: e3 } = await supabase
+        const { data: priorSells, error: e3 } = await dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, trade_date')
             .eq('user_id', userId)
@@ -153,7 +160,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const emptySummary = buildSummary(userId, financial_year, assessmentYear, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
             // Check for income events
-            const { data: incomeRows } = await supabase
+            const { data: incomeRows } = await dbClient
                 .from('crypto_income_events')
                 .select('income_type, value_inr')
                 .eq('user_id', userId)
@@ -175,7 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     stakingIncome, rewardsIncome, 0
                 );
 
-                await upsertSummary(supabase, summary);
+                await upsertSummary(dbClient, summary);
                 return res.status(200).json({ success: true, summary, unmatched_sells: [], data_quality: 'clean' });
             }
 
@@ -278,7 +285,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ═══════════════════════════════════════════════════════════════
         // STEP 4: Fetch other income for this FY
         // ═══════════════════════════════════════════════════════════════
-        const { data: incomeRows } = await supabase
+        const { data: incomeRows } = await dbClient
             .from('crypto_income_events')
             .select('income_type, value_inr')
             .eq('user_id', userId)
@@ -303,14 +310,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ═══════════════════════════════════════════════════════════════
 
         // Clear old tax lots for this user + FY
-        await supabase.from('crypto_tax_lots').delete().match({ user_id: userId, financial_year });
+        await dbClient.from('crypto_tax_lots').delete().match({ user_id: userId, financial_year });
 
         // Insert new tax lots in batches
         if (taxLots.length > 0) {
             const BATCH = 500;
             for (let i = 0; i < taxLots.length; i += BATCH) {
                 const batch = taxLots.slice(i, i + BATCH);
-                const { error: lotErr } = await supabase.from('crypto_tax_lots').insert(batch);
+                const { error: lotErr } = await dbClient.from('crypto_tax_lots').insert(batch);
                 if (lotErr) {
                     console.error('[Compute Tax] Tax lot insert error:', lotErr);
                 }
@@ -341,7 +348,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             computed_at: new Date().toISOString(),
         };
 
-        await upsertSummary(supabase, summary);
+        await upsertSummary(dbClient, summary);
 
         const elapsed = Date.now() - t0;
         console.log(`[Compute Tax] Done in ${elapsed}ms. ${taxLots.length} lots, tax ₹${round2(totalTaxLiability)}`);

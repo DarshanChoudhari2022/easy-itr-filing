@@ -44,6 +44,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
 
+        // User-scoped client for RLS compliance
+        const dbClient = supabaseServiceKey
+            ? supabase
+            : createClient(supabaseUrl, supabaseAnonKey, {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+            });
+
         // ── 2. Extract CSV text ──
         let csvText: string;
         if (typeof req.body === 'string') {
@@ -89,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const errors: { row: number; issue: string }[] = [];
 
         // Load all user sell trades for matching
-        const { data: allSells } = await supabase
+        const { data: allSells } = await dbClient
             .from('crypto_trades')
             .select('id, asset, trade_date, value_inr, tds_inr')
             .eq('user_id', user.id)
@@ -123,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         (s.asset === rawAsset)
                     );
                     if (trade) {
-                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', trade.id);
+                        await dbClient.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', trade.id);
                         usedTradeIds.add(trade.id);
                         matched++;
                         didMatch = true;
@@ -148,7 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     });
 
                     if (match) {
-                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
+                        await dbClient.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
                         usedTradeIds.add(match.id);
                         matched++;
                         didMatch = true;
@@ -165,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     });
 
                     if (match) {
-                        await supabase.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
+                        await dbClient.from('crypto_trades').update({ tds_inr: tdsAmount }).eq('id', match.id);
                         usedTradeIds.add(match.id);
                         matched++;
                         didMatch = true;

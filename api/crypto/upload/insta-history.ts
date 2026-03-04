@@ -58,6 +58,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
 
+        // User-scoped client for RLS compliance
+        const dbClient = supabaseServiceKey
+            ? supabase
+            : createClient(supabaseUrl, supabaseAnonKey, {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+            });
+
         // ── 2. Extract CSV text ──
         let csvText: string;
         if (typeof req.body === 'string') {
@@ -188,10 +195,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ── 4. Upsert ──
         const results = await Promise.all([
             trades.length > 0
-                ? supabase.from('crypto_trades').upsert(trades, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
+                ? dbClient.from('crypto_trades').upsert(trades, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
                 : { error: null },
             income.length > 0
-                ? supabase.from('crypto_income_events').upsert(income, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
+                ? dbClient.from('crypto_income_events').upsert(income, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
                 : { error: null },
         ]);
 

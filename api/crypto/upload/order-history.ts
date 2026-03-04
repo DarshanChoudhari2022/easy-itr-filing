@@ -70,12 +70,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
         const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+        // Use service role key if available (bypasses RLS), otherwise use anon key + user JWT
         const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey);
 
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
+
+        // If no service role key, create a user-scoped client that respects RLS
+        const dbClient = supabaseServiceKey
+            ? supabase
+            : createClient(supabaseUrl, supabaseAnonKey, {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+            });
 
         // ── 2. Extract CSV text ──
         let csvText: string;
@@ -316,7 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
             const batch = toInsert.slice(i, i + BATCH_SIZE);
-            const { data: inserted, error: dbError } = await supabase
+            const { data: inserted, error: dbError } = await dbClient
                 .from('crypto_trades')
                 .upsert(batch, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
                 .select('id');

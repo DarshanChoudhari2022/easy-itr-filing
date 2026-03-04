@@ -47,7 +47,14 @@ export async function authenticate(
         return null;
     }
 
-    return { userId: user.id, supabase };
+    // Return user-scoped client for RLS compliance
+    const dbClient = supabaseServiceKey
+        ? supabase
+        : createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: `Bearer ${token}` } },
+        });
+
+    return { userId: user.id, supabase: dbClient };
 }
 
 /**

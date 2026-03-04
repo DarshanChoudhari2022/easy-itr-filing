@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import {
   type TransactionsResponse, type DataQualityResponse, type UploadResponse,
 } from "@/lib/taxmitra/api-client";
 import { formatINR, formatINRFull, TAX_RULES } from "@/lib/taxmitra/constants";
+import { getLocalAvailableYears, getLocalOverview, getLocalAssetPnL, getLocalDataQuality } from "@/lib/taxmitra/local-crypto-data";
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -43,8 +45,10 @@ import { formatINR, formatINRFull, TAX_RULES } from "@/lib/taxmitra/constants";
 const CryptoTaxPage: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
-  const [fy, setFy] = useState("");
-  const [years, setYears] = useState<string[]>([]);
+  // Default FY years - always available even if API fails
+  const defaultYears = ['FY2024-25', 'FY2025-26'];
+  const [fy, setFy] = useState("FY2024-25");
+  const [years, setYears] = useState<string[]>(defaultYears);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<TaxSummary | null>(null);
   const [quality, setQuality] = useState<DataQualityResponse | null>(null);
@@ -60,9 +64,12 @@ const CryptoTaxPage: React.FC = () => {
   const loadYears = async () => {
     try {
       const yrs = await fetchAvailableYears();
-      setYears(yrs);
-      if (yrs.length > 0 && !fy) setFy(yrs[0]);
-    } catch (e) { console.error(e); }
+      if (yrs.length > 0) {
+        const merged = [...new Set([...yrs, ...defaultYears])].sort();
+        setYears(merged);
+        if (!fy) setFy(yrs[0]);
+      }
+    } catch (e) { console.error('loadYears failed, using defaults:', e); }
     finally { setLoading(false); }
   };
 
@@ -101,7 +108,7 @@ const CryptoTaxPage: React.FC = () => {
       const r = await computeTax(fy);
       if (r.success) {
         setSummary(r.summary);
-        toast.success("Tax computed!", { description: `${r.summary.num_fifo_lots} FIFO lots.` });
+        toast.success("Tax computed!", { description: `${r.summary.num_fifo_lots} FIFO lots processed.` });
         setAssetPnl(null); setScheduleVDA(null);
         setQuality(await checkDataQuality(fy));
       }
@@ -119,7 +126,7 @@ const CryptoTaxPage: React.FC = () => {
     } catch (e) { toast.error((e as Error).message); }
   };
 
-  if (!user) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (!user) return <AppLayout><div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AppLayout>;
 
   // Derive FY label
   const fyLabel = fy ? `${fy.replace('FY', 'FY ')}` : 'No FY';
@@ -129,112 +136,112 @@ const CryptoTaxPage: React.FC = () => {
   })() : '';
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-white">
-      {/* ── Top Header ── */}
-      <header className="border-b border-white/10 bg-[#0d1221]/90 backdrop-blur-lg sticky top-0 z-50">
-        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
-                <Coins className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-white">Crypto Tax Calculator</h1>
-                <p className="text-[10px] text-slate-500">Section 115BBH • 30% Tax Rate</p>
+    <AppLayout>
+      <div className="min-h-screen bg-[#0a0e1a] text-white">
+        {/* ── Top Header ── */}
+        <header className="border-b border-white/10 bg-[#0d1221]/90 backdrop-blur-lg sticky top-0 z-50">
+          <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+                  <Coins className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white">Crypto Tax Calculator</h1>
+                  <p className="text-[10px] text-slate-500">Section 115BBH • 30% Tax Rate</p>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* FY Selector */}
-            {years.length > 0 && (
+            <div className="flex items-center gap-3">
+              {/* FY Selector - always visible */}
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
-                <Select value={fy} onValueChange={setFy}>
-                  <SelectTrigger className="w-[130px] bg-transparent border-0 text-white text-sm p-0 h-auto focus:ring-0">
-                    <SelectValue />
+                <Select value={fy} onValueChange={(v) => { setFy(v); }}>
+                  <SelectTrigger className="w-[140px] bg-transparent border-0 text-white text-sm p-0 h-auto focus:ring-0">
+                    <SelectValue placeholder="Select FY" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1a1f35] border-white/10">
-                    {years.map(y => <SelectItem key={y} value={y} className="text-white">{y}</SelectItem>)}
+                  <SelectContent className="bg-[#1a1f35] border-white/10 z-[100]">
+                    {years.map(y => <SelectItem key={y} value={y} className="text-white hover:bg-white/10">{y}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-            )}
-            <Button onClick={handleCompute} disabled={computing || !fy} size="sm"
-              className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-sm h-8">
-              {computing ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Calculating...</>
-                : <><RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh</>}
-            </Button>
+              <Button onClick={handleCompute} disabled={computing || !fy} size="sm"
+                className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-sm h-8">
+                {computing ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Calculating...</>
+                  : <><RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh</>}
+              </Button>
+            </div>
           </div>
+        </header>
+
+        {/* ── Sub-header with FY date range ── */}
+        {fy && (
+          <div className="border-b border-white/5 bg-[#0d1221]/50">
+            <div className="max-w-[1400px] mx-auto px-6 py-1.5 flex items-center gap-4 text-xs text-slate-500">
+              <span>{fyDateRange}</span>
+              {summary && <span>• {summary.num_sell_events || 0} sell trades</span>}
+              {quality && <span>• Data quality: {quality.data_quality_score}%</span>}
+            </div>
+          </div>
+        )}
+
+        {/* ── Tabs ── */}
+        <div className="max-w-[1400px] mx-auto px-6 py-4">
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
+            <div className="flex items-center justify-between mb-5">
+              <TabsList className="bg-white/5 border border-white/10 h-9">
+                <TabsTrigger value="overview" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
+                </TabsTrigger>
+                <TabsTrigger value="data-coverage" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <Database className="h-3.5 w-3.5 mr-1.5" />Data Coverage
+                </TabsTrigger>
+                <TabsTrigger value="transactions" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Transactions
+                </TabsTrigger>
+                <TabsTrigger value="drilldown" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <TrendingUp className="h-3.5 w-3.5 mr-1.5" />Tax Drill-Down
+                </TabsTrigger>
+                <TabsTrigger value="import" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />Import Data
+                </TabsTrigger>
+                <TabsTrigger value="reports" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <FileText className="h-3.5 w-3.5 mr-1.5" />Reports
+                </TabsTrigger>
+                <TabsTrigger value="settings" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
+                  <SettingsIcon className="h-3.5 w-3.5 mr-1.5" />Settings
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="overview">
+              <OverviewTab fy={fy} fyLabel={fyLabel} summary={summary} quality={quality} loading={loading} onCompute={handleCompute} computing={computing} onGoImport={() => setActiveTab("import")} />
+            </TabsContent>
+            <TabsContent value="data-coverage">
+              <DataCoverageTab fy={fy} quality={quality} summary={summary} />
+            </TabsContent>
+            <TabsContent value="transactions">
+              <TransactionsTab fy={fy} data={transactions} page={txPage} typeFilter={txType}
+                onPageChange={p => { setTxPage(p); loadTransactions(p, txType); }}
+                onTypeChange={t => { setTxType(t); setTxPage(1); loadTransactions(1, t); }}
+                onRefresh={() => loadTransactions(txPage, txType)} />
+            </TabsContent>
+            <TabsContent value="drilldown">
+              <DrillDownTab fy={fy} data={assetPnl} onRefresh={loadAssetPnl} />
+            </TabsContent>
+            <TabsContent value="import">
+              <ImportTab onComplete={() => { loadYears(); loadAll(); }} />
+            </TabsContent>
+            <TabsContent value="reports">
+              <ReportsTab fy={fy} summary={summary} scheduleVDA={scheduleVDA} onLoadVDA={loadScheduleVDA} />
+            </TabsContent>
+            <TabsContent value="settings">
+              <SettingsTab onDelete={handleDelete} />
+            </TabsContent>
+          </Tabs>
         </div>
-      </header>
-
-      {/* ── Sub-header with FY date range ── */}
-      {fy && (
-        <div className="border-b border-white/5 bg-[#0d1221]/50">
-          <div className="max-w-[1400px] mx-auto px-6 py-1.5 flex items-center gap-4 text-xs text-slate-500">
-            <span>{fyDateRange}</span>
-            {summary && <span>• {summary.num_sell_events || 0} sell trades</span>}
-            {quality && <span>• Data quality: {quality.data_quality_score}%</span>}
-          </div>
-        </div>
-      )}
-
-      {/* ── Tabs ── */}
-      <div className="max-w-[1400px] mx-auto px-6 py-4">
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <div className="flex items-center justify-between mb-5">
-            <TabsList className="bg-white/5 border border-white/10 h-9">
-              <TabsTrigger value="overview" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
-              </TabsTrigger>
-              <TabsTrigger value="data-coverage" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <Database className="h-3.5 w-3.5 mr-1.5" />Data Coverage
-              </TabsTrigger>
-              <TabsTrigger value="transactions" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Transactions
-              </TabsTrigger>
-              <TabsTrigger value="drilldown" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <TrendingUp className="h-3.5 w-3.5 mr-1.5" />Tax Drill-Down
-              </TabsTrigger>
-              <TabsTrigger value="import" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <Upload className="h-3.5 w-3.5 mr-1.5" />Import Data
-              </TabsTrigger>
-              <TabsTrigger value="reports" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <FileText className="h-3.5 w-3.5 mr-1.5" />Reports
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
-                <SettingsIcon className="h-3.5 w-3.5 mr-1.5" />Settings
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="overview">
-            <OverviewTab fy={fy} fyLabel={fyLabel} summary={summary} quality={quality} loading={loading} onCompute={handleCompute} computing={computing} onGoImport={() => setActiveTab("import")} />
-          </TabsContent>
-          <TabsContent value="data-coverage">
-            <DataCoverageTab fy={fy} quality={quality} summary={summary} />
-          </TabsContent>
-          <TabsContent value="transactions">
-            <TransactionsTab fy={fy} data={transactions} page={txPage} typeFilter={txType}
-              onPageChange={p => { setTxPage(p); loadTransactions(p, txType); }}
-              onTypeChange={t => { setTxType(t); setTxPage(1); loadTransactions(1, t); }}
-              onRefresh={() => loadTransactions(txPage, txType)} />
-          </TabsContent>
-          <TabsContent value="drilldown">
-            <DrillDownTab fy={fy} data={assetPnl} onRefresh={loadAssetPnl} />
-          </TabsContent>
-          <TabsContent value="import">
-            <ImportTab onComplete={() => { loadYears(); loadAll(); }} />
-          </TabsContent>
-          <TabsContent value="reports">
-            <ReportsTab fy={fy} summary={summary} scheduleVDA={scheduleVDA} onLoadVDA={loadScheduleVDA} />
-          </TabsContent>
-          <TabsContent value="settings">
-            <SettingsTab onDelete={handleDelete} />
-          </TabsContent>
-        </Tabs>
       </div>
-    </div>
+    </AppLayout>
   );
 };
 
@@ -255,8 +262,8 @@ const OverviewTab: React.FC<{
         <p className="text-slate-400 text-sm mb-6 max-w-md mx-auto">Import your CoinDCX CSV files and click Refresh to compute your crypto tax.</p>
         <div className="flex gap-3 justify-center">
           <Button onClick={onGoImport} className="bg-indigo-600 hover:bg-indigo-500 text-sm"><Upload className="h-4 w-4 mr-2" />Import</Button>
-          <Button variant="outline" onClick={onCompute} disabled={computing} className="border-white/20 text-white hover:bg-white/10 text-sm">
-            <Calculator className="h-4 w-4 mr-2" />Calculate
+          <Button onClick={onCompute} disabled={computing} className="bg-violet-600 hover:bg-violet-500 text-white text-sm">
+            {computing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Calculating...</> : <><Calculator className="h-4 w-4 mr-2" />Calculate</>}
           </Button>
         </div>
       </CardContent>
@@ -775,8 +782,8 @@ const StatCard: React.FC<{ label: string; value: string; sub: string; color?: st
 
 const TypeBadge: React.FC<{ type: string }> = ({ type }) => (
   <Badge className={`text-[10px] ${type === 'buy' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-      type === 'sell' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
-        'bg-purple-500/20 text-purple-400 border-purple-500/30'
+    type === 'sell' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+      'bg-purple-500/20 text-purple-400 border-purple-500/30'
     }`}>{type.toUpperCase()}</Badge>
 );
 
