@@ -251,9 +251,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             // Track unmatched quantity
             if (qtyLeft > 1e-4) {
-                // Unmatched sold qty — cost basis is ₹0
                 const sellFrac = qtyLeft / sellQtyFull;
                 const proceedsInr = sellFrac * (sellValFull - sellFeeFull);
+
+                // For stablecoins (USDC, USDT, BUSD, DAI), the buy price ≈ sell price
+                // since they always trade ~$1. This matches KoinX behavior.
+                const STABLECOINS = ['USDC', 'USDT', 'BUSD', 'DAI'];
+                const isStablecoin = STABLECOINS.includes(sell.asset);
+                const estimatedCost = isStablecoin ? proceedsInr : 0;
+                const gainInr = proceedsInr - estimatedCost;
+                const taxableGainInr = Math.max(gainInr, 0);
 
                 taxLots.push({
                     user_id: userId,
@@ -264,20 +271,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     qty_matched: parseFloat(qtyLeft.toFixed(10)),
                     buy_date: null,
                     sell_date: sell.trade_date,
-                    cost_inr: 0,
+                    cost_inr: round2(estimatedCost),
                     proceeds_inr: round2(proceedsInr),
-                    gain_inr: round2(proceedsInr),
-                    taxable_gain_inr: round2(Math.max(proceedsInr, 0)),
+                    gain_inr: round2(gainInr),
+                    taxable_gain_inr: round2(taxableGainInr),
                 });
 
                 totSale += proceedsInr;
-                totTaxable += Math.max(proceedsInr, 0);
+                totCost += estimatedCost;
+                totTaxable += taxableGainInr;
 
                 unmatchedSells.push({
                     asset: sell.asset,
                     sell_date: sell.trade_date,
                     unmatched_qty: parseFloat(qtyLeft.toFixed(6)),
-                    note: `No buy lot found for ${qtyLeft.toFixed(6)} ${sell.asset}. Upload All-Time Order History CSV to fix.`,
+                    note: isStablecoin
+                        ? `Stablecoin ${sell.asset}: cost estimated at sell price (≈$1). Gain ≈ ₹0.`
+                        : `No buy lot found for ${qtyLeft.toFixed(6)} ${sell.asset}. Upload All-Time Order History CSV to fix.`,
                 });
             }
         }
