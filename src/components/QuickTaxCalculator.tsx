@@ -17,7 +17,7 @@ import {
     Sparkles, ArrowRight, HelpCircle, Wallet, Building2,
     PiggyBank, Bitcoin, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { calculateTax, compareRegimes, RegimeComparison } from '@/lib/tax-calculation';
+import { calculateTax, legacyCompareRegimes as compareRegimes } from '@/lib/taxEngine';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface QuickTaxCalculatorProps {

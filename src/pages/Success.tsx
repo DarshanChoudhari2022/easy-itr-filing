@@ -15,7 +15,7 @@ import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateTax, TaxResult } from "@/lib/tax-calculation";
+import { calculateTax, type LegacyTaxResult as TaxResult } from "@/lib/taxEngine";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 

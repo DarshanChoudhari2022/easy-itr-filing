@@ -15,7 +15,7 @@ import {
     ChevronRight, IndianRupee, Calculator, Crown, AlertTriangle,
     PiggyBank, Banknote, Shield, Info
 } from 'lucide-react';
-import { calculateTax, compareRegimes, TaxResult, RegimeComparison } from '@/lib/tax-calculation';
+import { calculateTax, legacyCompareRegimes as compareRegimes, type LegacyTaxResult as TaxResult } from '@/lib/taxEngine';
 
 interface RegimeComparisonProps {
     salary?: number;
@@ -120,8 +120,8 @@ export function RegimeComparisonWidget({
                 {/* Old Regime Card */}
                 <Card
                     className={`relative overflow-hidden transition-all cursor-pointer ${winningRegime === 'old'
-                            ? 'border-emerald-500 shadow-lg shadow-emerald-500/10'
-                            : 'border-slate-200 hover:border-slate-300'
+                        ? 'border-emerald-500 shadow-lg shadow-emerald-500/10'
+                        : 'border-slate-200 hover:border-slate-300'
                         } ${selectedRegime === 'old' ? 'ring-2 ring-emerald-500' : ''}`}
                     onClick={() => handleSelect('old')}
                 >
@@ -187,8 +187,8 @@ export function RegimeComparisonWidget({
                 {/* New Regime Card */}
                 <Card
                     className={`relative overflow-hidden transition-all cursor-pointer ${winningRegime === 'new'
-                            ? 'border-emerald-500 shadow-lg shadow-emerald-500/10'
-                            : 'border-slate-200 hover:border-slate-300'
+                        ? 'border-emerald-500 shadow-lg shadow-emerald-500/10'
+                        : 'border-slate-200 hover:border-slate-300'
                         } ${selectedRegime === 'new' ? 'ring-2 ring-emerald-500' : ''}`}
                     onClick={() => handleSelect('new')}
                 >

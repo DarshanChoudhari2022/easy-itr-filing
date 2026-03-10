@@ -423,10 +423,18 @@ function buildSummary(
 }
 
 async function upsertSummary(supabase: SupabaseClient, summary: any) {
+    // Delete existing summary for this FY to avoid unique constraint issues
+    await supabase
+        .from('crypto_tax_summary')
+        .delete()
+        .match({ user_id: summary.user_id, financial_year: summary.financial_year });
+
     const { error } = await supabase
         .from('crypto_tax_summary')
-        .upsert(summary, { onConflict: 'user_id,financial_year' });
+        .insert(summary);
+
     if (error) {
-        console.error('[Compute Tax] Summary upsert error:', error);
+        console.error('[Compute Tax] Summary insert error:', error);
+        throw new Error(`Failed to save computed tax: ${error.message}`);
     }
 }

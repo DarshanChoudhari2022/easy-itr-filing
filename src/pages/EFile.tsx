@@ -10,8 +10,7 @@ import { Loader2, FileText, CheckCircle2, Download, ExternalLink, AlertCircle, R
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { FolderLock, ShieldCheck, Zap, DownloadCloud, FileJson, PieChart } from "lucide-react";
-import { calculateTax, TaxResult } from "@/lib/tax-calculation";
-import { AssessmentYear, DEFAULT_AY } from "@/lib/tax-config";
+import { calculateTax, type LegacyTaxResult as TaxResult, type AssessmentYear, DEFAULT_AY } from "@/lib/taxEngine";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TaxSummary {

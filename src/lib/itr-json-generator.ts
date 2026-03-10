@@ -5,7 +5,7 @@
  */
 
 import { detectITRForm, ITRFormType } from './itr-form-detector';
-import { YEAR_CONFIGS, AssessmentYear } from './tax-config';
+import { computeTax as computeTaxUnified, type TaxInput, type TaxResult, type AssessmentYear } from './taxEngine';
 
 export interface ITRPersonalInfo {
     pan: string;
@@ -435,65 +435,32 @@ function generateITR4Json(data: ITRFilingData): object {
 /**
  * Compute tax based on regime and income
  */
-function computeTax(taxableIncome: number, regime: 'OLD' | 'NEW', assessmentYear: string): object {
+function computeTax(taxableIncome: number, regime: 'OLD' | 'NEW', assessmentYear: string, extraInput?: Partial<TaxInput>): object {
     const ay = (assessmentYear || '2026-27') as AssessmentYear;
-    const config = YEAR_CONFIGS[ay] || YEAR_CONFIGS['2026-27'];
+    const taxRegime = regime === 'OLD' ? 'old' : 'new';
 
-    let tax = 0;
-    const slabs: { from: number; to: number; rate: number; tax: number }[] = [];
-    const activeSlabs = regime === 'NEW' ? config.newSlabs : config.oldSlabs;
+    // Build a TaxInput from all available data
+    const input: TaxInput = {
+        assessmentYear: ay,
+        regime: taxRegime,
+        salary: taxableIncome > 0 ? { gross: taxableIncome } : undefined,
+        ...extraInput,
+    };
 
-    let remaining = taxableIncome;
-    for (const slab of activeSlabs) {
-        if (remaining <= 0) break;
-        const taxable = slab.max === Infinity ? remaining : Math.min(remaining, slab.max - slab.min);
-        const slabTax = taxable * (slab.rate / 100);
-        tax += slabTax;
-        if (taxable > 0) {
-            slabs.push({
-                from: slab.min,
-                to: slab.max === Infinity ? slab.min + taxable : Math.min(slab.max, slab.min + taxable),
-                rate: slab.rate,
-                tax: Math.round(slabTax)
-            });
-        }
-        remaining -= taxable;
-    }
-
-    // 87A Rebate using config
-    const rebateConfig = config.rebate87A;
-    let rebate = 0;
-    if (regime === 'NEW' && taxableIncome <= rebateConfig.newRegimeLimit) {
-        rebate = Math.min(tax, rebateConfig.newRegimeAmount);
-    } else if (regime === 'OLD' && taxableIncome <= rebateConfig.oldRegimeLimit) {
-        rebate = Math.min(tax, rebateConfig.oldRegimeAmount);
-    }
-    const taxAfterRebate = Math.max(0, tax - rebate);
-
-    // Surcharge using config
-    let surcharge = 0;
-    for (const surchargeSlab of config.surcharge.slabs) {
-        if (taxableIncome > surchargeSlab.min && taxableIncome <= surchargeSlab.max) {
-            let rate = surchargeSlab.rate;
-            if (regime === 'NEW' && rate > config.surcharge.maxRateNewRegime) {
-                rate = config.surcharge.maxRateNewRegime;
-            }
-            surcharge = taxAfterRebate * (rate / 100);
-            break;
-        }
-    }
-
-    // Cess
-    const cess = (taxAfterRebate + surcharge) * (config.cessRate / 100);
+    const result = computeTaxUnified(input);
 
     return {
-        "TaxOnIncome": Math.round(tax),
-        "Rebate87A": Math.round(rebate),
-        "TaxAfterRebate": Math.round(taxAfterRebate),
-        "Surcharge": Math.round(surcharge),
-        "HealthEducationCess": Math.round(cess),
-        "TotalTaxLiability": Math.round(taxAfterRebate + surcharge + cess),
-        "Slabs": slabs
+        "TaxOnIncome": result.slabTax + result.stcg111A.tax + result.ltcg112A.tax + result.ltcgOther.tax + result.cryptoVDA.tax,
+        "Rebate87A": result.rebate87A,
+        "TaxAfterRebate": result.taxAfterRebate,
+        "Surcharge": result.surcharge,
+        "HealthEducationCess": result.cess,
+        "TotalTaxLiability": result.totalTaxLiability,
+        "Slabs": result.slabs.map(s => ({
+            from: s.range,
+            rate: s.rate,
+            tax: s.tax
+        }))
     };
 }
 
@@ -694,11 +661,18 @@ export function mapSessionToITRData(session: FilingSession, formType: ITRFormTyp
             section80G: session.deductions.section80G,
             section80TTA: session.deductions.section80TTA,
             section80GG: session.deductions.section80GG,
-            // default other deductions to 0
-            section80CCC: 0, section80CCD1: 0, section80CCD2: 0,
-            section80DD: 0, section80DDB: 0, section80EE: 0,
-            section80EEA: 0, section80EEB: 0, section80GGA: 0,
-            section80GGC: 0, section80TTB: 0, section80U: 0,
+            section80CCC: session.deductions.section80CCC,
+            section80CCD1: session.deductions.section80CCD1,
+            section80CCD2: session.deductions.section80CCD2,
+            section80DD: session.deductions.section80DD,
+            section80DDB: session.deductions.section80DDB,
+            section80EE: session.deductions.section80EE,
+            section80EEA: session.deductions.section80EEA,
+            section80EEB: session.deductions.section80EEB,
+            section80GGA: session.deductions.section80GGA,
+            section80GGC: session.deductions.section80GGC,
+            section80TTB: session.deductions.section80TTB,
+            section80U: session.deductions.section80U,
         },
         taxesPaid: {
             tdsSalary: session.salary.tdsSalary,

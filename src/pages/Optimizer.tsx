@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, BarChart3, TrendingUp, Check, ArrowRight, RefreshCw, Sparkles, Calculator } from "lucide-react";
 import { toast } from "sonner";
-import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
+import { type AssessmentYear, DEFAULT_AY, YEAR_CONFIGS, getConfig, calculateTax } from "@/lib/taxEngine";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { calculateTax as calculateTaxEngine, TaxData } from "@/lib/tax-calculation";
 import { getIncomeSources, getDeductions, getCryptoTrades } from "@/lib/supabase-data-service";
 
 interface TaxSummary {
@@ -24,26 +23,6 @@ interface TaxSummary {
   suggested_regime: "old" | "new" | null;
   calculated_at: string | null;
 }
-
-// 2026-27 Tax Slabs
-const OLD_REGIME_SLABS = [
-  { min: 0, max: 250000, rate: 0 },
-  { min: 250000, max: 500000, rate: 5 },
-  { min: 500000, max: 1000000, rate: 20 },
-  { min: 1000000, max: Infinity, rate: 30 },
-];
-
-const NEW_REGIME_SLABS = [
-  { min: 0, max: 300000, rate: 0 },
-  { min: 300000, max: 700000, rate: 5 },
-  { min: 700000, max: 1000000, rate: 10 },
-  { min: 1000000, max: 1200000, rate: 15 },
-  { min: 1200000, max: 1500000, rate: 20 },
-  { min: 1500000, max: Infinity, rate: 30 },
-];
-
-// Standard deduction (New Regime)
-const STANDARD_DEDUCTION_NEW = 75000;
 
 export default function Optimizer() {
   const { user } = useAuth();
@@ -76,8 +55,6 @@ export default function Optimizer() {
     }
   };
 
-  // We will use the calculateTaxEngine from lib/tax-calculation instead of a local one
-
   const recalculateTax = async () => {
     setCalculating(true);
     try {
@@ -88,13 +65,13 @@ export default function Optimizer() {
       // 2. Fetch crypto trades for TDS calculation
       const trades = await getCryptoTrades(assessmentYear);
 
-      // 3. Build comprehensive TaxData for the engine
-      const taxData: TaxData = {
+      // 3. Build TaxData for the unified engine
+      const taxData = {
         salary: incomeData.salary_gross || 0,
         houseProperty: incomeData.net_house_property_income || 0,
         otherSources: {
           savingsInterest: incomeData.savings_interest || 0,
-          fdInterest: incomeData.fd_interest || 0, // Assuming mapped
+          fdInterest: incomeData.fd_interest || 0,
           dividends: incomeData.dividend_income || 0,
           misc: incomeData.other_income || 0
         },
@@ -114,24 +91,19 @@ export default function Optimizer() {
           lta: deductionsData.lta_exemption || 0,
           nps80CCD: (deductionsData.section_80ccd_1 || 0) + (deductionsData.section_80ccd_1b || 0)
         },
-        assessmentYear: assessmentYear,
-        regime: 'new', // Default
-        tdsPaid: (incomeData.salary_tds || 0) + ((trades || []) as any[]).reduce((sum, s) => sum + (s.tds_paid || 0), 0)
+        assessmentYear: assessmentYear as any,
+        tdsPaid: (incomeData.salary_tds || 0) + ((trades || []) as any[]).reduce((sum: number, s: any) => sum + (s.tds_paid || 0), 0)
       };
 
-      // 4. Calculate results for both regimes
-      const resultOld = calculateTaxEngine({ ...taxData, regime: "old" });
-      const resultNew = calculateTaxEngine({ ...taxData, regime: "new" });
+      // 4. Calculate results for both regimes using unified engine
+      const resultOld = calculateTax({ ...taxData, regime: 'old' });
+      const resultNew = calculateTax({ ...taxData, regime: 'new' });
 
       // Determine suggested regime
-      const suggestedRegime = resultOld.finalTax <= resultNew.finalTax ? "old" : "new";
+      const suggestedRegime = resultOld.finalTax <= resultNew.finalTax ? 'old' : 'new';
 
       // 5. Build summary object for display
-      const totalIncome = (taxData.salary || 0) + (taxData.houseProperty || 0) +
-        (taxData.otherSources?.savingsInterest || 0) +
-        (taxData.otherSources?.dividends || 0) +
-        (taxData.capitalGains?.longTermEquity || 0);
-
+      const totalIncome = resultOld.grossTotalIncome;
       const totalDeductions = resultOld.totalDeductions;
 
       // Upsert tax summary
@@ -359,7 +331,7 @@ export default function Optimizer() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Standard Deduction</span>
-                      <span className="text-accent">- {formatCurrency(STANDARD_DEDUCTION_NEW)}</span>
+                      <span className="text-accent">- {formatCurrency(getConfig(assessmentYear as any).standardDeductionNew)}</span>
                     </div>
                     <div className="border-t pt-2 flex justify-between font-medium">
                       <span>Taxable Income</span>
@@ -370,18 +342,19 @@ export default function Optimizer() {
                   <div className="text-center p-4 rounded-lg bg-primary/5">
                     <p className="text-sm text-muted-foreground mb-1">Total Tax</p>
                     <p className="text-4xl font-bold">{formatCurrency(taxSummary.tax_new_regime)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Including 4% cess</p>
+                    <p className="text-xs text-muted-foreground mt-1">Including surcharge + 4% cess</p>
                   </div>
 
                   <div className="space-y-1 text-sm">
-                    <p className="font-medium">Tax Slabs (New Regime 2026):</p>
+                    <p className="font-medium">Tax Slabs (New Regime AY 2026-27):</p>
                     <div className="grid grid-cols-2 gap-x-4 text-muted-foreground">
-                      <span>Up to ₹3L</span><span>0%</span>
-                      <span>₹3L - ₹7L</span><span>5%</span>
-                      <span>₹7L - ₹10L</span><span>10%</span>
-                      <span>₹10L - ₹12L</span><span>15%</span>
-                      <span>₹12L - ₹15L</span><span>20%</span>
-                      <span>Above ₹15L</span><span>30%</span>
+                      <span>Up to ₹4L</span><span>0%</span>
+                      <span>₹4L - ₹8L</span><span>5%</span>
+                      <span>₹8L - ₹12L</span><span>10%</span>
+                      <span>₹12L - ₹16L</span><span>15%</span>
+                      <span>₹16L - ₹20L</span><span>20%</span>
+                      <span>₹20L - ₹24L</span><span>25%</span>
+                      <span>Above ₹24L</span><span>30%</span>
                     </div>
                   </div>
                 </CardContent>

@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { askTaxGuru, UserTaxContext } from "@/lib/ai-service";
 import { toast } from "sonner";
-import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
+import { type AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/taxEngine";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useFilingSession } from "@/hooks/useFilingSession";
 

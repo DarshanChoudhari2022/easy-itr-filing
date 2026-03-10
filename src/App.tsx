@@ -26,6 +26,7 @@ import IncomeOptimizer from "./pages/IncomeOptimizer";
 import ProfessionalFirm from "./pages/ProfessionalFirm";
 import NotFound from "./pages/NotFound";
 import OnboardingWizard from "./components/OnboardingWizard";
+import SmartWizard from "./pages/SmartWizard";
 import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
@@ -77,6 +78,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
+            <Route path="/start" element={<ProtectedRoute><SmartWizard /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/guided" element={<ProtectedRoute><GuidedFiling /></ProtectedRoute>} />
             <Route path="/gst" element={<ProtectedRoute><GSTCenter /></ProtectedRoute>} />
