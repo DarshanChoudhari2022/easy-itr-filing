@@ -199,7 +199,11 @@ export default function GuidedFiling() {
                             {step < STEPS.length - 1 ? (
                                 <Button onClick={handleNext}>Next<ChevronRight className="h-4 w-4 ml-1" /></Button>
                             ) : (
-                                <Button onClick={() => toast.success('Review complete!')} className="bg-emerald-600 hover:bg-emerald-500"><CheckCircle className="h-4 w-4 mr-1" />Complete</Button>
+                                <Button onClick={() => {
+                                    forceSave();
+                                    updateSession(s => ({ ...s, status: 'review' as const }));
+                                    toast.success('Review complete! Scroll down to generate your ITR JSON.');
+                                }} className="bg-emerald-600 hover:bg-emerald-500"><CheckCircle className="h-4 w-4 mr-1" />Complete</Button>
                             )}
                         </div>
                     </div>
@@ -404,21 +408,7 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-base flex items-center gap-2"><Landmark className="h-4 w-4" />Interest & Dividends</CardTitle>
                             <Button variant="outline" size="sm" onClick={() => {
-                                const id = toast.loading('Connecting to Income Tax Portal (AIS)...');
-                                setTimeout(() => {
-                                    // Simulated fetch of actual AIS parameters for the user
-                                    updateSession(s => ({
-                                        ...s,
-                                        otherSources: {
-                                            ...s.otherSources,
-                                            savingsInterest: 0,
-                                            fdInterest: 0,
-                                            dividendIncome: 0,
-                                            tdsInterest: 0
-                                        }
-                                    }));
-                                    toast.success('No Interest or Dividend data found in your AIS!', { id });
-                                }, 1500);
+                                toast.info('AIS integration coming soon! Enter values manually for now.', { duration: 3000 });
                             }} className="h-8 gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
                                 <Download className="h-3.5 w-3.5" />
                                 Auto-fill from AIS
@@ -438,10 +428,29 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
             {session.capitalGains.enabled && (
                 <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4" />Capital Gains</CardTitle></CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {numField('capitalGains', 'stcgEquity', 'STCG on Equity (₹)', '20% tax rate (Section 111A)')}
-                        {numField('capitalGains', 'ltcgEquity', 'LTCG on Equity (₹)', '12.5% above ₹1.25L exemption (Section 112A)')}
-                        {numField('capitalGains', 'stcgOther', 'STCG Other (₹)', 'Taxed at slab rate')}
-                        {numField('capitalGains', 'ltcgOther', 'LTCG Other (₹)', '12.5% flat rate (no indexation)')}
+                        {(['stcgEquity', 'ltcgEquity', 'stcgOther', 'ltcgOther'] as const).map(field => {
+                            const labels: Record<string, [string, string]> = {
+                                stcgEquity: ['STCG on Equity (₹)', '20% tax rate (Section 111A)'],
+                                ltcgEquity: ['LTCG on Equity (₹)', '12.5% above ₹1.25L exemption (Section 112A)'],
+                                stcgOther: ['STCG Other (₹)', 'Taxed at slab rate'],
+                                ltcgOther: ['LTCG Other (₹)', '12.5% flat rate (no indexation)'],
+                            };
+                            return (
+                                <div key={field}>
+                                    <Label>{labels[field][0]}</Label>
+                                    <Input type="number" value={session.capitalGains[field] || 0}
+                                        onChange={e => {
+                                            const val = parseFloat(e.target.value) || 0;
+                                            updateSession(s => {
+                                                const cg = { ...s.capitalGains, [field]: val };
+                                                cg.totalCapitalGains = (cg.stcgEquity || 0) + (cg.ltcgEquity || 0) + (cg.stcgOther || 0) + (cg.ltcgOther || 0) + (cg.ltcgProperty || 0);
+                                                return { ...s, capitalGains: cg };
+                                            });
+                                        }} />
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">{labels[field][1]}</p>
+                                </div>
+                            );
+                        })}
                         {numField('capitalGains', 'tdsCapitalGains', 'TDS on Capital Gains (₹)', 'From broker / Form 26AS')}
                     </CardContent>
                 </Card>
