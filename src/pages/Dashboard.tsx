@@ -33,6 +33,7 @@ import { askTaxGuru, UserTaxContext } from "@/lib/ai-service";
 import { toast } from "sonner";
 import { AssessmentYear, DEFAULT_AY, YEAR_CONFIGS } from "@/lib/tax-config";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useFilingSession } from "@/hooks/useFilingSession";
 
 interface Profile {
   full_name?: string;
@@ -47,6 +48,7 @@ export default function Dashboard() {
   const [showTasks, setShowTasks] = useState(true);
   const [filingState, setFilingState] = useState<any>(null);
   const [assessmentYear, setAssessmentYear] = useState<AssessmentYear>(DEFAULT_AY);
+  const { session: filingSession, progress: filingProgress, itrForm, incomeTypes } = useFilingSession('FY2025-26');
 
   // AI State
   const [question, setQuestion] = useState("");
@@ -255,6 +257,38 @@ export default function Dashboard() {
               <Button asChild size="lg" className="bg-white text-indigo-900 hover:bg-indigo-50 px-10 h-16 rounded-2xl font-black shadow-2xl">
                 <Link to="/guided">START SIMPLE FILING <ArrowRight className="ml-2 h-5 w-5" /></Link>
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ITR Filing Progress — From Filing Session */}
+        {filingSession && (
+          <Card className="border-indigo-200 bg-gradient-to-r from-indigo-50/50 to-violet-50/50 shadow-sm">
+            <CardContent className="py-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                    <FileText className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">ITR Filing — {filingSession.assessmentYear}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {itrForm.form !== 'auto' ? `${itrForm.form} • ` : ''}{filingSession.regime !== 'undecided' ? `${filingSession.regime === 'old' ? 'Old' : 'New'} Regime • ` : ''}{filingProgress}% complete
+                    </p>
+                  </div>
+                </div>
+                <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-500">
+                  <Link to="/guided">{filingProgress > 0 ? 'Continue Filing' : 'Start Filing'} <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                </Button>
+              </div>
+              <Progress value={filingProgress} className="h-2 mb-2" />
+              {incomeTypes.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap mt-2">
+                  {incomeTypes.map((t: string) => (
+                    <Badge key={t} variant="outline" className="text-[10px] border-indigo-200 text-indigo-700 bg-white">{t}</Badge>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
