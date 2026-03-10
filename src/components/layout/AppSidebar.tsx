@@ -2,29 +2,15 @@ import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Home,
-  Wallet,
   Bitcoin,
-  Receipt,
-  BarChart3,
-  FileText,
-  Users,
-  Building2,
-  Briefcase,
   Settings,
   LogOut,
-  ChevronLeft,
-  Menu,
-  Activity,
-  FolderLock,
   Sparkles,
-  Globe,
-  TrendingUp,
-  CreditCard,
   Calculator,
+  HelpCircle,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Sidebar,
@@ -37,29 +23,18 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 
+// ── Simplified navigation: only 5 core items ──
+// Users need: File ITR, Dashboard, Crypto, Regime Optimizer, Settings
+// Everything else was either a stub or confusing for newbies
+
 const mainNavItems = [
-  { title: "Home Dashboard", url: "/dashboard", icon: Home },
-  { title: "Easy Filing Wizard", url: "/guided", icon: Sparkles },
-  { title: "Best Tax Regime", url: "/optimizer", icon: Calculator },
-  { title: "Tax Statement (AIS)", url: "/ais", icon: BarChart3 },
-  { title: "Family & Groups", url: "/family", icon: Users },
-  { title: "My Documents", url: "/vault", icon: FolderLock },
-];
-
-const taxNavItems = [
-  { title: "Business & GST", url: "/gst", icon: Building2 },
-  { title: "Income Tax Info", url: "/income", icon: Wallet },
-  { title: "Crypto & Coins", url: "/crypto", icon: Bitcoin },
-  { title: "Foreign Assets", url: "/foreign", icon: Globe },
-];
-
-const professionalNavItems = [
-  { title: "Firm Hub", url: "/firm", icon: Briefcase },
-  { title: "Audit Repository", url: "/audit", icon: Activity },
+  { title: "File Your ITR", url: "/guided", icon: Sparkles, description: "Step-by-step guided filing" },
+  { title: "Dashboard", url: "/dashboard", icon: Home, description: "Overview & status" },
+  { title: "Crypto Tax", url: "/crypto", icon: Bitcoin, description: "Calculate crypto gains" },
+  { title: "Best Regime", url: "/optimizer", icon: Calculator, description: "Old vs New comparison" },
 ];
 
 export function AppSidebar() {
@@ -69,9 +44,8 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
 
   // Derive Assessment Year dynamically from current date
-  // FY runs Apr-Mar. AY = FY + 1. e.g. FY2025-26 → AY 2026-27
   const now = new Date();
-  const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1; // Apr=3 (0-indexed)
+  const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
   const currentAY = `AY ${fyStart + 1}-${String(fyStart + 2).slice(-2)}`;
 
   const isActive = (path: string) => location.pathname === path;
@@ -110,7 +84,12 @@ export function AppSidebar() {
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
                     >
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm">{item.title}</span>
+                        {!collapsed && (
+                          <span className="text-[10px] text-sidebar-foreground/40 leading-tight">{item.description}</span>
+                        )}
+                      </div>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -119,61 +98,19 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50">
-            {!collapsed && "Compliance Suite"}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {taxNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <NavLink
-                      to={item.url}
-                      className="flex items-center gap-3"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50">
-            {!collapsed && "Enterprise (Law/CA)"}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {professionalNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <NavLink
-                      to={item.url}
-                      className="flex items-center gap-3"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Help section */}
+        {!collapsed && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <div className="mx-2 mt-2 p-3 rounded-lg bg-gradient-to-br from-indigo-500/10 to-teal-500/10 border border-indigo-500/20">
+                <p className="text-[11px] font-medium text-sidebar-foreground/80 mb-1">💡 New to ITR filing?</p>
+                <p className="text-[10px] text-sidebar-foreground/50 leading-relaxed">
+                  Click "File Your ITR" above. We'll guide you step-by-step with where to get every value.
+                </p>
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">

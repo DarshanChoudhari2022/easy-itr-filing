@@ -742,17 +742,22 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
             {!isRefund && netPayable > 0 && (
                 <Card className="border-amber-500/30 bg-amber-500/5">
                     <CardContent className="py-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Calculator className="h-5 w-5 text-amber-500" />
-                                <div>
-                                    <p className="text-sm font-semibold">Self-Assessment Tax Due: ₹{netPayable.toLocaleString('en-IN')}</p>
-                                    <p className="text-xs text-muted-foreground">Pay via Challan 280 before filing your ITR</p>
+                        <div className="flex items-start gap-3">
+                            <Calculator className="h-5 w-5 text-amber-500 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-sm font-semibold">Self-Assessment Tax Due: ₹{netPayable.toLocaleString('en-IN')}</p>
+                                <p className="text-xs text-muted-foreground mb-2">You must pay this BEFORE filing your ITR:</p>
+                                <div className="text-[11px] text-muted-foreground space-y-0.5 mb-3">
+                                    <p>1. Go to NSDL e-Payment (onlineservices.tin.egov-nsdl.com)</p>
+                                    <p>2. Select Challan ITNS 280 → Tax Type (0021) → Payment (300) Self Assessment</p>
+                                    <p>3. Enter PAN: {session.personalInfo.pan || 'YOUR_PAN'}, AY: {session.assessmentYear}</p>
+                                    <p>4. Pay via Net Banking / UPI / Debit Card</p>
+                                    <p>5. <strong>Note BSR Code, Date & Serial</strong> — needed for ITR filing</p>
                                 </div>
+                                <Button variant="outline" size="sm" onClick={handleDownloadChallan}>
+                                    <Download className="h-3.5 w-3.5 mr-1" />Download Challan 280
+                                </Button>
                             </div>
-                            <Button variant="outline" size="sm" onClick={handleDownloadChallan}>
-                                <Download className="h-3.5 w-3.5 mr-1" />Challan 280
-                            </Button>
                         </div>
                     </CardContent>
                 </Card>
@@ -772,7 +777,10 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
 
             {/* Bank Details */}
             <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Bank Account for Refund</CardTitle></CardHeader>
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Bank Account for Refund</CardTitle>
+                    <p className="text-xs text-muted-foreground">📍 Use the bank linked to your PAN. Check your passbook for account number & IFSC.</p>
+                </CardHeader>
                 <CardContent className="space-y-3">
                     {session.bankDetails.length === 0 ? (
                         <div className="text-center py-4 text-muted-foreground">
@@ -796,6 +804,32 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                 </CardContent>
             </Card>
 
+            {/* Pre-Filing Verification Checklist */}
+            <Card className="border-emerald-500/30">
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base"><CheckCircle className="h-5 w-5 text-emerald-500" />Pre-Filing Verification Checklist</CardTitle>
+                    <p className="text-xs text-muted-foreground">Verify each item before going to the Income Tax portal</p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                    {[
+                        { check: !!session.personalInfo.pan && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(session.personalInfo.pan), label: 'PAN is valid', tip: 'Verify PAN matches your PAN card exactly' },
+                        { check: !!session.personalInfo.firstName && !!session.personalInfo.dateOfBirth && !!session.personalInfo.fatherName, label: 'Personal info complete', tip: 'Name, DOB, gender, father\'s name must match PAN card' },
+                        { check: session.regime === 'old' || session.regime === 'new', label: 'Tax regime selected', tip: 'Old or New regime chosen in Step 5' },
+                        { check: session.bankDetails.length > 0, label: 'Bank account added', tip: 'At least 1 bank account with correct IFSC required' },
+                        { check: totalTDS > 0 || grossIncome < 300000, label: 'TDS details entered', tip: '📍 Cross-check with Form 26AS on incometax.gov.in' },
+                        { check: validation.errors.length === 0, label: 'No validation errors', tip: validation.errors.length > 0 ? `${validation.errors.length} errors found above` : 'All checks passed!' },
+                    ].map((item, i) => (
+                        <div key={i} className={`flex items-start gap-3 p-2.5 rounded-lg ${item.check ? 'bg-emerald-500/5' : 'bg-red-500/5'}`}>
+                            {item.check ? <CheckCircle className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />}
+                            <div>
+                                <p className={`text-sm font-medium ${item.check ? 'text-emerald-400' : 'text-red-400'}`}>{item.label}</p>
+                                <p className="text-[11px] text-muted-foreground">{item.tip}</p>
+                            </div>
+                        </div>
+                    ))}
+                </CardContent>
+            </Card>
+
             {/* Action Buttons */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Button variant="outline" size="lg" onClick={handleDownloadStatement}>
@@ -814,11 +848,57 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                         }
                         downloadITRJson(itrData);
                         updateSession(s => ({ ...s, jsonGeneratedAt: new Date().toISOString(), status: 'json_generated' as const }));
-                        toast.success(`Generated ${itrForm.form} JSON successfully! 🎉`);
+                        toast.success(`Generated ${itrForm.form} data file! 🎉`);
                     }}>
-                    <Download className="h-5 w-5 mr-2" />Generate ITR JSON
+                    <Download className="h-5 w-5 mr-2" />Download ITR Data (JSON)
                 </Button>
             </div>
+
+            {/* How to File on Portal */}
+            <Card className="border-indigo-500/30">
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">📋 How to File on the Income Tax Portal</CardTitle>
+                    <p className="text-xs text-muted-foreground">Follow these exact steps after downloading your data above</p>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-3">
+                        {[
+                            { n: 1, t: 'Open the Income Tax Portal', d: 'Go to incometax.gov.in → Login with PAN as User ID and your password' },
+                            { n: 2, t: 'Navigate to e-File', d: 'Click e-File → Income Tax Returns → File Income Tax Return' },
+                            { n: 3, t: 'Select AY & Form', d: `Select Assessment Year ${session.assessmentYear}, ITR Form: ${itrForm.form}, Filing Type: Original u/s 139(1)` },
+                            { n: 4, t: 'Choose "Online" Mode', d: 'Select "Prepare and Submit Online". Keep your Tax Computation Statement open side-by-side as reference.' },
+                            { n: 5, t: 'Enter Values Section by Section', d: 'The portal shows: Personal Info → Income → Deductions → Tax Paid. Enter each value from your downloaded Tax Computation Statement.' },
+                            { n: 6, t: 'Validate & Preview', d: 'Click "Validate" on each section (✓ = OK). Preview the complete return. Compare totals with your TaxMitra statement.' },
+                            { n: 7, t: 'Submit & E-Verify', d: 'Click "Submit" → Choose Aadhaar OTP for e-Verification (fastest, 2 mins). You MUST e-verify within 30 days or filing becomes invalid!' },
+                        ].map((s) => (
+                            <div key={s.n} className="flex gap-3 items-start">
+                                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">{s.n}</div>
+                                <div>
+                                    <p className="text-sm font-semibold">{s.t}</p>
+                                    <p className="text-xs text-muted-foreground">{s.d}</p>
+                                </div>
+                            </div>
+                        ))}
+                        <a href="https://www.incometax.gov.in" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:underline mt-2">
+                            <ArrowRight className="h-3 w-3" />Open incometax.gov.in
+                        </a>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Important Notes */}
+            <Card className="border-amber-500/20 bg-amber-500/5">
+                <CardContent className="py-4">
+                    <p className="text-xs text-amber-400 font-semibold mb-2">⚠️ Important Notes</p>
+                    <div className="text-[11px] text-muted-foreground space-y-1.5">
+                        <p>• The downloaded JSON is for <strong>reference & offline utility use</strong>. Use "Prepare Online" mode on the IT portal and enter values from your Tax Computation Statement.</p>
+                        <p>• <strong>Always verify TDS</strong>: Login to incometax.gov.in → e-File → View Form 26AS. TDS claimed must match 26AS exactly, or you’ll get a notice.</p>
+                        <p>• <strong>Due date</strong>: ITR for FY2025-26 is due by <strong>July 31, 2026</strong>. Late filing = penalty ₹1,000-₹5,000 (u/s 234F) + interest 1%/month on unpaid tax (u/s 234A).</p>
+                        <p>• <strong>Crypto TDS</strong>: If you claimed §194S TDS, verify it in Form 26AS Part A2. If missing, contact your exchange.</p>
+                        <p>• <strong>Keep all documents</strong>: Save Form 16, 26AS, AIS, exchange CSVs, and your Tax Computation Statement for at least 6 years.</p>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

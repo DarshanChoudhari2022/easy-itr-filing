@@ -472,9 +472,10 @@ const OverviewTab: React.FC<{
         </Card>
 
         {/* Tax Liability */}
-        <Card className="bg-gradient-to-br from-purple-600/30 to-violet-600/20 border-purple-500/30">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-white flex items-center gap-2"><Calculator className="h-4 w-4 text-purple-400" />Tax Liability</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
+        <Card className="bg-white/5 border-white/10 relative overflow-hidden">
+          <div className="absolute -top-4 -right-4 w-24 h-24 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+          <CardHeader className="pb-2 relative z-10"><CardTitle className="text-sm font-semibold text-white flex items-center gap-2"><Calculator className="h-4 w-4 text-indigo-400" />Tax Liability</CardTitle></CardHeader>
+          <CardContent className="space-y-2 relative z-10">
             <div className="flex justify-between"><span className="text-slate-400 text-xs">Gross Tax (30%)</span><span className="text-white text-sm">{formatINRFull(s.gross_tax)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400 text-xs">Cess (4%)</span><span className="text-white text-sm">{formatINRFull(s.cess)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400 text-xs">Total Tax</span><span className="text-white font-semibold text-sm">{formatINRFull(s.total_tax_liability)}</span></div>

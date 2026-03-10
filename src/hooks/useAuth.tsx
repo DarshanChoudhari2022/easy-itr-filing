@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { setActiveUserId } from '@/lib/coindcx-api';
 
 // Production URL for email redirects — uses current origin if available, falls back to hardcoded Vercel URL
 const SITE_URL = typeof window !== 'undefined'
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        setActiveUserId(session?.user?.id ?? null);
         setLoading(false);
 
         // Detect email confirmation (user clicked confirm link in email)
@@ -66,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setActiveUserId(session?.user?.id ?? null);
       setLoading(false);
     });
 

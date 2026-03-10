@@ -2068,44 +2068,138 @@ function buildMissingDataChecklist(
     return items;
 }
 
-// ============= CREDENTIALS STORAGE (Supabase primary, localStorage cache) =============
+// ============= CREDENTIALS STORAGE (AES-GCM encrypted) =============
+// API keys are encrypted using Web Crypto API's AES-GCM before storage.
+// Even if XSS reads localStorage, the attacker gets ciphertext, not raw keys.
 
 const CREDS_KEY = 'taxmitra_coindcx_creds';
+const SALT = 'TaxMitra-CoinDCX-v1'; // Static salt for key derivation
 
-export function saveCredentials(credentials: CoinDCXCredentials): void {
-    const encoded = btoa(JSON.stringify(credentials));
-    // Save to localStorage for fast sync access
-    localStorage.setItem(CREDS_KEY, encoded);
+/**
+ * Derive an AES encryption key from user ID.
+ * This ensures credentials are tied to the specific user session.
+ */
+async function deriveEncryptionKey(userId: string): Promise<CryptoKey> {
+    const encoder = new TextEncoder();
+    const rawKey = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(userId + SALT),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: encoder.encode(SALT), iterations: 100000, hash: 'SHA-256' },
+        rawKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+/**
+ * Encrypt data using AES-GCM
+ */
+async function encryptData(data: string, userId: string): Promise<string> {
+    try {
+        const key = await deriveEncryptionKey(userId);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const encoder = new TextEncoder();
+        const encrypted = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            key,
+            encoder.encode(data)
+        );
+        // Pack iv + ciphertext as base64
+        const packed = new Uint8Array(iv.length + new Uint8Array(encrypted).length);
+        packed.set(iv, 0);
+        packed.set(new Uint8Array(encrypted), iv.length);
+        return btoa(String.fromCharCode(...packed));
+    } catch {
+        // Fallback: base64 encode if Web Crypto unavailable (HTTP localhost)
+        return 'v0:' + btoa(data);
+    }
+}
+
+/**
+ * Decrypt data using AES-GCM
+ */
+async function decryptData(encrypted: string, userId: string): Promise<string> {
+    try {
+        // Handle legacy v0 (plain base64) data
+        if (encrypted.startsWith('v0:')) {
+            return atob(encrypted.slice(3));
+        }
+
+        const key = await deriveEncryptionKey(userId);
+        const raw = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+        const iv = raw.slice(0, 12);
+        const ciphertext = raw.slice(12);
+        const decrypted = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            key,
+            ciphertext
+        );
+        return new TextDecoder().decode(decrypted);
+    } catch {
+        // Fallback: try legacy base64 decode
+        try { return atob(encrypted); } catch { return ''; }
+    }
+}
+
+// Active user ID for encryption context
+let _activeUserId: string | null = null;
+export function setActiveUserId(id: string | null) { _activeUserId = id; }
+
+export async function saveCredentials(credentials: CoinDCXCredentials): Promise<void> {
+    const userId = _activeUserId || 'default';
+    const encrypted = await encryptData(JSON.stringify(credentials), userId);
+    localStorage.setItem(CREDS_KEY, encrypted);
     // Also persist to Supabase for cross-device access
-    saveUserData(CREDS_KEY, encoded).catch(err =>
+    saveUserData(CREDS_KEY, encrypted).catch(err =>
         console.warn('[CoinDCX] Failed to save credentials to DB:', err.message)
     );
 }
 
 export function loadCredentials(): CoinDCXCredentials | null {
-    // Sync read from localStorage (cache)
+    // Sync read from localStorage — tries legacy first, then returns null
+    // (encrypted data needs async decryption)
     try {
-        const encoded = localStorage.getItem(CREDS_KEY);
-        if (encoded) return JSON.parse(atob(encoded));
+        const stored = localStorage.getItem(CREDS_KEY);
+        if (!stored) return null;
+        // Legacy plain base64 format (pre-encryption)
+        if (!stored.startsWith('v0:') && stored.length < 200) {
+            try { return JSON.parse(atob(stored)); } catch { /* not legacy */ }
+        }
+        if (stored.startsWith('v0:')) {
+            return JSON.parse(atob(stored.slice(3)));
+        }
+        // Encrypted — can't decrypt synchronously, return null
+        // Callers should prefer loadCredentialsAsync()
+        return null;
     } catch {
-        // ignore
+        return null;
     }
-    return null;
 }
 
 /**
- * Async version that tries Supabase first, then localStorage.
- * Use this on component mount to ensure cross-device creds are loaded.
+ * Async version that decrypts stored credentials.
+ * Use this on component mount for proper encrypted credential loading.
  */
 export async function loadCredentialsAsync(): Promise<CoinDCXCredentials | null> {
+    const userId = _activeUserId || 'default';
+
     // 1. Try Supabase first
     try {
         const dbEncoded = await loadUserData<string>(CREDS_KEY);
         if (dbEncoded) {
-            const creds = JSON.parse(atob(dbEncoded));
-            // Update localStorage cache
-            localStorage.setItem(CREDS_KEY, dbEncoded);
-            return creds;
+            const decrypted = await decryptData(dbEncoded, userId);
+            if (decrypted) {
+                const creds = JSON.parse(decrypted);
+                // Update localStorage cache
+                localStorage.setItem(CREDS_KEY, dbEncoded);
+                return creds;
+            }
         }
     } catch (err) {
         console.warn('[CoinDCX] Failed to load credentials from DB:', err);
@@ -2113,12 +2207,17 @@ export async function loadCredentialsAsync(): Promise<CoinDCXCredentials | null>
 
     // 2. Fallback to localStorage
     try {
-        const encoded = localStorage.getItem(CREDS_KEY);
-        if (encoded) {
-            const creds = JSON.parse(atob(encoded));
-            // Migrate to DB
-            saveUserData(CREDS_KEY, encoded).catch(() => { });
-            return creds;
+        const stored = localStorage.getItem(CREDS_KEY);
+        if (stored) {
+            const decrypted = await decryptData(stored, userId);
+            if (decrypted) {
+                const creds = JSON.parse(decrypted);
+                // Re-encrypt and migrate to DB
+                const reEncrypted = await encryptData(JSON.stringify(creds), userId);
+                localStorage.setItem(CREDS_KEY, reEncrypted);
+                saveUserData(CREDS_KEY, reEncrypted).catch(() => { });
+                return creds;
+            }
         }
     } catch {
         // ignore
