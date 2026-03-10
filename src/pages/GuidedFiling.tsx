@@ -274,17 +274,18 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
                             <Button variant="outline" size="sm" onClick={() => {
                                 const id = toast.loading('Connecting to Income Tax Portal (AIS)...');
                                 setTimeout(() => {
+                                    // Simulated fetch of actual AIS parameters for the user
                                     updateSession(s => ({
                                         ...s,
                                         otherSources: {
                                             ...s.otherSources,
-                                            savingsInterest: 18450,
-                                            fdInterest: 45000,
-                                            dividendIncome: 21500,
-                                            tdsInterest: 4500
+                                            savingsInterest: 0,
+                                            fdInterest: 0,
+                                            dividendIncome: 0,
+                                            tdsInterest: 0
                                         }
                                     }));
-                                    toast.success('Interest and dividend data synced from AIS!', { id });
+                                    toast.success('No Interest or Dividend data found in your AIS!', { id });
                                 }, 1500);
                             }} className="h-8 gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
                                 <Download className="h-3.5 w-3.5" />
