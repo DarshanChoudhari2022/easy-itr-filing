@@ -37,6 +37,8 @@ import {
 } from "@/lib/taxmitra/api-client";
 import { formatINR, formatINRFull, TAX_RULES } from "@/lib/taxmitra/constants";
 import { getLocalAvailableYears, getLocalOverview, getLocalAssetPnL, getLocalDataQuality } from "@/lib/taxmitra/local-crypto-data";
+import { syncCryptoToFiling } from "@/lib/crypto-itr-bridge";
+import { useNavigate } from "react-router-dom";
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -237,7 +239,7 @@ const CryptoTaxPage: React.FC = () => {
             </div>
 
             <TabsContent value="overview">
-              <OverviewTab fy={fy} fyLabel={fyLabel} summary={summary} quality={quality} loading={loading} onCompute={handleCompute} computing={computing} onGoImport={() => setActiveTab("import")} />
+              <OverviewTab fy={fy} fyLabel={fyLabel} summary={summary} quality={quality} loading={loading} onCompute={handleCompute} computing={computing} onGoImport={() => setActiveTab("import")} userId={user?.id || ''} />
             </TabsContent>
             <TabsContent value="data-coverage">
               <DataCoverageTab fy={fy} quality={quality} summary={summary} />
@@ -272,8 +274,30 @@ const CryptoTaxPage: React.FC = () => {
 // ═══════════════════════════════════════════════════════════════
 const OverviewTab: React.FC<{
   fy: string; fyLabel: string; summary: TaxSummary | null; quality: DataQualityResponse | null;
-  loading: boolean; computing: boolean; onCompute: () => void; onGoImport: () => void;
-}> = ({ fy, fyLabel, summary, quality, loading, computing, onCompute, onGoImport }) => {
+  loading: boolean; computing: boolean; onCompute: () => void; onGoImport: () => void; userId: string;
+}> = ({ fy, fyLabel, summary, quality, loading, computing, onCompute, onGoImport, userId }) => {
+  const navigate = useNavigate();
+  const [syncing, setSyncing] = React.useState(false);
+  const [synced, setSynced] = React.useState(false);
+
+  const handleSendToITR = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncCryptoToFiling(userId, fy);
+      if (result.success) {
+        setSynced(true);
+        toast.success('Crypto data sent to ITR!', { description: result.message });
+        // Navigate to filing wizard after a short delay
+        setTimeout(() => navigate('/guided'), 1500);
+      } else {
+        toast.error('Sync failed', { description: result.message });
+      }
+    } catch (e) {
+      toast.error('Failed to sync', { description: (e as Error).message });
+    } finally {
+      setSyncing(false);
+    }
+  };
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div>;
 
   if (!summary) return (
@@ -401,6 +425,39 @@ const OverviewTab: React.FC<{
           </Badge>
         </div>
       )}
+
+      {/* ─── SEND TO ITR ─── */}
+      <div className="bg-gradient-to-r from-indigo-600/20 to-violet-600/20 border border-indigo-500/30 rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+              <ArrowUpRight className="h-5 w-5 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold">Ready to File Your ITR?</h3>
+              <p className="text-slate-400 text-xs mt-0.5">
+                Send your crypto data (Schedule VDA, gains, TDS) to the ITR filing wizard.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={handleSendToITR}
+            disabled={syncing || synced}
+            className={synced
+              ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white'
+            }
+          >
+            {syncing ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Syncing...</>
+            ) : synced ? (
+              <><CheckCircle className="h-4 w-4 mr-2" />Sent to ITR!</>
+            ) : (
+              <><ArrowUpRight className="h-4 w-4 mr-2" />Send to ITR →</>
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
