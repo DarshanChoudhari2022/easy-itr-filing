@@ -76,7 +76,15 @@ const CryptoTaxPage: React.FC = () => {
   // Reload ALL tab data when FY changes
   useEffect(() => {
     if (!fy || !user) return;
-    setAssetPnl(null); setScheduleVDA(null); setTransactions(null);
+    // CRITICAL: Clear all pre-computed data states immediately when FY changes
+    // to prevent "Data Carryover" bugs where old year's data stays on screen.
+    setSummary(null);
+    setQuality(null);
+    setAssetPnl(null);
+    setScheduleVDA(null);
+    setTransactions(null);
+    setTxPage(1);
+
     loadAll();
   }, [fy, user]);
 
@@ -86,7 +94,11 @@ const CryptoTaxPage: React.FC = () => {
       const [ov, q] = await Promise.all([fetchOverview(fy), checkDataQuality(fy)]);
       setSummary(ov.not_computed ? null : ov);
       setQuality(q);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error('[loadAll] API error:', e);
+      setSummary(null);
+      setQuality(null);
+    }
     finally { setLoading(false); }
   };
 
@@ -156,12 +168,22 @@ const CryptoTaxPage: React.FC = () => {
               {/* FY Selector - always visible */}
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
-                <Select value={fy} onValueChange={(v) => { setFy(v); }}>
-                  <SelectTrigger className="w-[140px] bg-transparent border-0 text-white text-sm p-0 h-auto focus:ring-0">
-                    <SelectValue placeholder="Select FY" />
+                <Select value={fy} onValueChange={(v) => { console.log('FY changed to:', v); setFy(v); }}>
+                  <SelectTrigger className="w-[140px] bg-white/5 border-white/10 text-white text-sm h-9 focus:ring-1 focus:ring-indigo-500/50">
+                    <SelectValue>
+                      {fy ? (fy.replace('FY', 'FY ')) : 'Select FY'}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1a1f35] border-white/10 z-[100]">
-                    {years.map(y => <SelectItem key={y} value={y} className="text-white hover:bg-white/10">{y}</SelectItem>)}
+                  <SelectContent className="bg-[#1a1f35] border-white/10 z-[100] shadow-2xl">
+                    {years.length > 0 ? (
+                      years.map(y => (
+                        <SelectItem key={y} value={y} className="text-white focus:bg-white/10 focus:text-white cursor-pointer py-2">
+                          {y.replace('FY', 'FY ')}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>No FY available</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
