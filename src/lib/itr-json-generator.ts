@@ -624,3 +624,116 @@ export function validateITRData(data: ITRFilingData): { valid: boolean; errors: 
 
     return { valid: errors.length === 0, errors, warnings };
 }
+
+import type { FilingSession } from './filing-session';
+
+/**
+ * Maps the central FilingSession state to the ITRFilingData structure required by the JSON generator
+ */
+export function mapSessionToITRData(session: FilingSession, formType: ITRFormType): ITRFilingData {
+    return {
+        formType,
+        assessmentYear: session.assessmentYear,
+        filingType: 'ORIGINAL',
+        regime: session.regime === 'old' ? 'OLD' : 'NEW',
+        personalInfo: {
+            pan: session.personalInfo.pan || '',
+            firstName: session.personalInfo.firstName || '',
+            lastName: session.personalInfo.lastName || '',
+            dateOfBirth: session.personalInfo.dateOfBirth || '',
+            gender: session.personalInfo.gender as any || 'M',
+            fatherName: session.personalInfo.fatherName || '',
+            flatNo: session.personalInfo.flatNo || '',
+            city: session.personalInfo.city || '',
+            state: session.personalInfo.state || '',
+            pincode: session.personalInfo.pincode || '',
+            country: 'India',
+            mobile: session.personalInfo.mobile || '',
+            email: session.personalInfo.email || '',
+            residentStatus: session.personalInfo.residentStatus as any || 'RES',
+            filingStatus: 'INDIVIDUAL',
+        },
+        income: {
+            salaryGross: session.salary.grossSalary,
+            salaryExemptAllowances: session.salary.exemptAllowances,
+            salaryNetTaxable: Math.max(0, session.salary.grossSalary - session.salary.exemptAllowances - session.salary.standardDeduction - session.salary.professionalTax),
+            standardDeduction: session.salary.standardDeduction,
+            professionalTax: session.salary.professionalTax,
+
+            savingsInterest: session.otherSources.savingsInterest,
+            fdInterest: session.otherSources.fdInterest,
+            dividendIncome: session.otherSources.dividendIncome,
+            otherIncome: session.otherSources.otherIncome,
+
+            stcgEquity: session.capitalGains.stcgEquity,
+            ltcgEquity: session.capitalGains.ltcgEquity,
+            stcgOther: session.capitalGains.stcgOther,
+            ltcgWithIndexation: session.capitalGains.ltcgOther,
+
+            vdaGains: session.cryptoVDA.taxableGains,
+            vdaTDSPaid: session.cryptoVDA.tdsCredit,
+
+            businessGross: session.business.grossReceipts,
+            businessNet: session.business.netProfit,
+            businessExpenses: session.business.grossReceipts - session.business.netProfit,
+            isPresumptive: session.business.section !== 'regular',
+            presumptiveSection: session.business.section as any,
+            turnover: session.business.grossReceipts,
+
+            netHousePropertyIncome: session.houseProperty.netIncome,
+            annualLetableValue: session.houseProperty.annualRent,
+            municipalTaxes: session.houseProperty.municipalTax,
+            interestOnLoan: session.houseProperty.homeLoanInterest,
+            housePropertyType: session.houseProperty.annualRent > 0 ? 'LOP' : 'SOP',
+        },
+        deductions: {
+            section80C: session.deductions.section80C,
+            section80D: session.deductions.section80D,
+            section80CCD1B: session.deductions.section80CCD1B,
+            section80E: session.deductions.section80E,
+            section80G: session.deductions.section80G,
+            section80TTA: session.deductions.section80TTA,
+            section80GG: session.deductions.section80GG,
+            // default other deductions to 0
+            section80CCC: 0, section80CCD1: 0, section80CCD2: 0,
+            section80DD: 0, section80DDB: 0, section80EE: 0,
+            section80EEA: 0, section80EEB: 0, section80GGA: 0,
+            section80GGC: 0, section80TTB: 0, section80U: 0,
+        },
+        taxesPaid: {
+            tdsSalary: session.salary.tdsSalary,
+            tdsInterest: session.otherSources.tdsInterest,
+            tdsDividend: 0,
+            tdsRent: 0,
+            tdsProfessional: session.business.tdsPayments,
+            tdsProperty: 0,
+            tdsOther: session.cryptoVDA.tdsCredit,
+            tcs: 0,
+            advanceTax: session.taxesPaid.advanceTax,
+            selfAssessmentTax: session.taxesPaid.selfAssessmentTax,
+        },
+        bankDetails: [
+            session.bankDetails.find(b => b.isRefundAccount) || session.bankDetails[0] || {
+                accountNumber: '000000000',
+                ifsc: 'SBIN0000000',
+                bankName: 'Unknown Bank',
+                accountType: 'SB',
+                isRefundAccount: true
+            }
+        ],
+        hasVDAIncome: session.cryptoVDA.enabled && session.cryptoVDA.taxableGains > 0,
+        scheduleVDA: (session.cryptoVDA.scheduleVDA || []).map((entry: any) => ({
+            tokenName: entry.asset,
+            dateOfTransfer: new Date(entry.dateOfTransfer || new Date()).toISOString().split('T')[0],
+            saleConsideration: entry.saleConsideration,
+            costOfAcquisition: entry.costOfAcquisition,
+            income: entry.taxableIncome,
+            tdsDeducted: entry.saleConsideration * 0.01 // approximate if specific TDS not stored
+        })),
+        verification: {
+            place: session.personalInfo.city || 'Delhi',
+            date: new Date().toISOString().split('T')[0],
+            capacity: 'SELF'
+        }
+    };
+}

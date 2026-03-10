@@ -19,7 +19,7 @@ import {
     Shield, Calculator, FileText, Wallet, Check, XCircle, Info,
 } from 'lucide-react';
 import { autoDetectITRForm, type FilingSession, computeGrossTotalIncome, computeTotalTDS } from '@/lib/filing-session';
-import { downloadITRJson, validateITRData, type ITRFilingData } from '@/lib/itr-json-generator';
+import { downloadITRJson, validateITRData, mapSessionToITRData, type ITRFilingData } from '@/lib/itr-json-generator';
 import { INDIAN_STATES } from '@/lib/validators';
 import { generateChallan280, downloadChallanHTML } from '@/lib/challan-generator';
 import { downloadComputationStatement, generateComputationReport } from '@/lib/tax-reports';
@@ -494,7 +494,16 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                     <FileText className="h-5 w-5 mr-2" />Tax Computation Statement
                 </Button>
                 <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500"
-                    onClick={() => toast.success('ITR JSON generation coming soon!')}>
+                    onClick={() => {
+                        const itrData = mapSessionToITRData(session, itrForm.form as any);
+                        const val = validateITRData(itrData);
+                        if (!val.valid) {
+                            toast.error("Please fix errors before generating JSON");
+                            return;
+                        }
+                        downloadITRJson(itrData);
+                        toast.success(`Generated ${itrForm.form} JSON successfully!`);
+                    }}>
                     <Download className="h-5 w-5 mr-2" />Generate ITR JSON
                 </Button>
             </div>
