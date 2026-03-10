@@ -18,9 +18,11 @@ import {
     Landmark, PiggyBank, Globe, Leaf, CheckCircle, AlertTriangle, ArrowRight, Download,
     Shield, Calculator, FileText, Wallet, Check, XCircle, Info,
 } from 'lucide-react';
-import { autoDetectITRForm, type FilingSession } from '@/lib/filing-session';
+import { autoDetectITRForm, type FilingSession, computeGrossTotalIncome, computeTotalTDS } from '@/lib/filing-session';
 import { downloadITRJson, validateITRData, type ITRFilingData } from '@/lib/itr-json-generator';
 import { INDIAN_STATES } from '@/lib/validators';
+import { generateChallan280, downloadChallanHTML } from '@/lib/challan-generator';
+import { downloadComputationStatement, generateComputationReport } from '@/lib/tax-reports';
 
 const STEPS = [
     { id: 'personal', label: 'Personal Info', icon: User },
@@ -68,7 +70,7 @@ export default function GuidedFiling() {
                     {STEPS.map((s, i) => (
                         <button key={s.id} onClick={() => setStep(i)}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${i === step ? 'bg-primary text-primary-foreground shadow-md' :
-                                    i < step ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                                i < step ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
                                 }`}>
                             <s.icon className="h-3.5 w-3.5" />
                             {s.label}
@@ -134,7 +136,7 @@ function PersonalInfoStep({ session, updateSession }: { session: FilingSession; 
                     <div><Label>City *</Label><Input value={p.city || ''} onChange={e => u('city', e.target.value)} /></div>
                     <div><Label>State *</Label>
                         <Select value={p.state || ''} onValueChange={v => u('state', v)}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                            <SelectContent>{INDIAN_STATES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                            <SelectContent>{INDIAN_STATES.map(s => <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
                 </div>
@@ -416,19 +418,64 @@ function RegimeStep({ session, updateSession, grossIncome, totalTDS }: { session
 
 // ═══════════ STEP 6: Review ═══════════
 function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, totalTDS }: any) {
+    const report = generateComputationReport(session);
+    const netPayable = report.netPayable;
+    const isRefund = netPayable < 0;
+
+    const handleDownloadChallan = () => {
+        const p = session.personalInfo;
+        const data = generateChallan280({
+            pan: p.pan || '', name: `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+            address: p.flatNo || '', city: p.city || '', state: p.state || '',
+            pincode: p.pincode || '', mobile: p.mobile || '', email: p.email || '',
+            assessmentYear: session.assessmentYear,
+            taxPayable: report.taxOnIncome, surcharge: report.surcharge, cess: report.cess,
+            tdsPaid: totalTDS, advanceTaxPaid: session.taxesPaid.advanceTax,
+        });
+        downloadChallanHTML(data);
+        toast.success('Challan 280 downloaded!');
+    };
+
+    const handleDownloadStatement = () => {
+        downloadComputationStatement(session);
+        toast.success('Tax Computation Statement downloaded!');
+    };
+
     return (
         <div className="space-y-4">
             <Card><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />Filing Summary</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                         <Stat label="ITR Form" value={itrForm.form} />
                         <Stat label="Regime" value={session.regime === 'old' ? 'Old Regime' : session.regime === 'new' ? 'New Regime' : 'Not Selected'} />
                         <Stat label="Gross Income" value={`₹${grossIncome.toLocaleString('en-IN')}`} />
-                        <Stat label="Total TDS" value={`₹${totalTDS.toLocaleString('en-IN')}`} />
-                        <Stat label="Deductions" value={`₹${session.deductions.totalDeductions.toLocaleString('en-IN')}`} />
+                        <Stat label="Total Deductions" value={`₹${session.deductions.totalDeductions.toLocaleString('en-IN')}`} />
+                        <Stat label="Total TDS Paid" value={`₹${totalTDS.toLocaleString('en-IN')}`} />
+                        <Stat label={isRefund ? '🟢 Refund Due' : '🔴 Tax Payable'} value={`₹${Math.abs(netPayable).toLocaleString('en-IN')}`} />
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Tax Due → Challan */}
+            {!isRefund && netPayable > 0 && (
+                <Card className="border-amber-500/30 bg-amber-500/5">
+                    <CardContent className="py-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Calculator className="h-5 w-5 text-amber-500" />
+                                <div>
+                                    <p className="text-sm font-semibold">Self-Assessment Tax Due: ₹{netPayable.toLocaleString('en-IN')}</p>
+                                    <p className="text-xs text-muted-foreground">Pay via Challan 280 before filing your ITR</p>
+                                </div>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={handleDownloadChallan}>
+                                <Download className="h-3.5 w-3.5 mr-1" />Challan 280
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Validation */}
             {validation.errors.length > 0 && (
                 <Card className="border-red-500/30"><CardContent className="py-3 space-y-1">
@@ -440,10 +487,17 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                     {validation.warnings.map((w: string, i: number) => <div key={i} className="flex items-start gap-2 text-sm text-amber-500"><AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />{w}</div>)}
                 </CardContent></Card>
             )}
-            <Button size="lg" className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500"
-                onClick={() => toast.success('ITR JSON will be generated here!')}>
-                <Download className="h-5 w-5 mr-2" />Generate ITR JSON
-            </Button>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Button variant="outline" size="lg" onClick={handleDownloadStatement}>
+                    <FileText className="h-5 w-5 mr-2" />Tax Computation Statement
+                </Button>
+                <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500"
+                    onClick={() => toast.success('ITR JSON generation coming soon!')}>
+                    <Download className="h-5 w-5 mr-2" />Generate ITR JSON
+                </Button>
+            </div>
         </div>
     );
 }
