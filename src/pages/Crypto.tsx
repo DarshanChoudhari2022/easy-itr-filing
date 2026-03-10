@@ -276,7 +276,7 @@ const CryptoTaxPage: React.FC = () => {
               <ImportTab onComplete={() => { loadYears(); loadAll(); }} />
             </TabsContent>
             <TabsContent value="reports">
-              <ReportsTab fy={fy} summary={summary} scheduleVDA={scheduleVDA} onLoadVDA={loadScheduleVDA} />
+              <ReportsTab fy={fy} summary={summary} assetPnl={assetPnl} scheduleVDA={scheduleVDA} onLoadVDA={loadScheduleVDA} />
             </TabsContent>
             <TabsContent value="settings">
               <SettingsTab onDelete={handleDelete} />
@@ -799,12 +799,20 @@ const ImportTab: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// REPORTS TAB
+// REPORTS TAB — Comprehensive Tax Report (KoinX-style)
 // ═══════════════════════════════════════════════════════════════
 const ReportsTab: React.FC<{
-  fy: string; summary: TaxSummary | null; scheduleVDA: ScheduleVDAResponse | null; onLoadVDA: () => void;
-}> = ({ fy, summary, scheduleVDA, onLoadVDA }) => {
+  fy: string; summary: TaxSummary | null; assetPnl: AssetPnLResponse | null;
+  scheduleVDA: ScheduleVDAResponse | null; onLoadVDA: () => void;
+}> = ({ fy, summary, assetPnl, scheduleVDA, onLoadVDA }) => {
   useEffect(() => { if (!scheduleVDA) onLoadVDA(); }, []);
+  const [showFullReport, setShowFullReport] = useState(false);
+
+  // Use local data as fallback
+  const s = summary || getLocalOverview(fy);
+  const pnl = assetPnl || getLocalAssetPnL(fy);
+  const ay = s?.assessment_year || '';
+  const fyShort = fy.replace('FY', '');
 
   const downloadCSV = (name: string, headers: string[], rows: any[][]) => {
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
@@ -823,83 +831,283 @@ const ReportsTab: React.FC<{
     );
   };
 
-  const downloadTaxSummary = () => {
-    if (!summary) return;
-    downloadCSV('Tax_Summary',
-      ['Metric', 'Value'],
-      [
-        ['Financial Year', summary.financial_year], ['Assessment Year', summary.assessment_year],
-        ['Sell Events', summary.num_sell_events], ['Sale Consideration', summary.sale_consideration],
-        ['Cost of Acquisition', summary.cost_of_acquisition], ['Taxable Capital Gains', summary.taxable_capital_gains],
-        ['Gross Losses', summary.gross_losses], ['Other Income', summary.total_other_income],
-        ['TDS Credit', summary.tds_credit], ['Total Taxable', summary.total_taxable],
-        ['Gross Tax (30%)', summary.gross_tax], ['Cess (4%)', summary.cess],
-        ['Total Tax Liability', summary.total_tax_liability], ['Net Tax Payable', summary.net_tax_payable],
-        ['Refund Eligible', summary.refund_eligible],
-      ]
-    );
+  const downloadCompleteReport = () => {
+    if (!s || !pnl) return;
+    const lines: string[] = [];
+    lines.push('TaxMitra — Crypto Complete Tax Report');
+    lines.push(`Financial Year: ${fy} | Assessment Year: ${ay}`);
+    lines.push(`Generated: ${new Date().toLocaleString('en-IN')}`);
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('SECTION 1: TAX SUMMARY');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push(`Total Sell Events:,${s.num_sell_events}`);
+    lines.push(`Total FIFO Lots:,${s.num_fifo_lots}`);
+    lines.push(`Sale Consideration (A):,${s.sale_consideration}`);
+    lines.push(`Cost of Acquisition (B):,${s.cost_of_acquisition}`);
+    lines.push(`Taxable Capital Gains:,${s.taxable_capital_gains}`);
+    lines.push(`Gross Losses (Non-Deductible):,${s.gross_losses}`);
+    lines.push(`Staking Income:,${s.staking_income}`);
+    lines.push(`Rewards Income:,${s.rewards_income}`);
+    lines.push(`Total Other Income:,${s.total_other_income}`);
+    lines.push(`Total Taxable Income:,${s.total_taxable}`);
+    lines.push('');
+    lines.push('── Tax Computation ──');
+    lines.push(`Gross Tax @30% (§115BBH):,${s.gross_tax}`);
+    lines.push(`Health & Education Cess @4%:,${s.cess}`);
+    lines.push(`Total Tax Liability:,${s.total_tax_liability}`);
+    lines.push(`TDS Credit (§194S):,${s.tds_credit}`);
+    lines.push(`Net Tax Payable:,${s.net_tax_payable}`);
+    lines.push(`Refund Eligible:,${s.refund_eligible}`);
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('SECTION 2: ASSET-WISE PROFIT & LOSS');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push('Asset,Sale (INR),Cost (INR),Profit (INR),Loss (INR),Net Taxable (INR),FIFO Lots');
+    for (const a of pnl.assets) {
+      lines.push(`${a.asset},${a.sale},${a.cost},${a.profit},${a.loss},${a.net_taxable},${a.num_lots}`);
+    }
+    lines.push(`TOTAL,${pnl.totals.sale},${pnl.totals.cost},${pnl.totals.profit},${pnl.totals.loss},${pnl.totals.net_taxable},`);
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('SECTION 3: SCHEDULE VDA (For ITR Filing)');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    if (scheduleVDA?.rows.length) {
+      lines.push('Sl No,Asset,Description,Date of Acquisition,Date of Transfer,Head of Income,Cost of Acquisition,Sale Consideration,Income from Transfer,Taxable Income');
+      for (const r of scheduleVDA.rows) {
+        lines.push(`${r.sl_no},${r.asset},${r.description},${r.date_of_acquisition},${r.date_of_transfer},${r.head_of_income},${r.cost_of_acquisition},${r.sale_consideration},${r.income_from_transfer},${r.taxable_income}`);
+      }
+    } else {
+      lines.push('Schedule VDA data not loaded. Please compute tax first.');
+    }
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('SECTION 4: TDS SUMMARY');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push(`Exchange: CoinDCX`);
+    lines.push(`Section: 194S (1% TDS on crypto transactions)`);
+    lines.push(`Total TDS Deducted: ${s.tds_credit}`);
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('SECTION 5: APPLICABLE TAX RULES');
+    lines.push('═══════════════════════════════════════════════════════');
+    lines.push('');
+    lines.push('Section 115BBH — Flat 30% tax on income from Virtual Digital Assets');
+    lines.push('Rule 1: Losses on one VDA CANNOT offset gains from another VDA');
+    lines.push('Rule 2: Losses CANNOT be carried forward to future assessment years');
+    lines.push('Rule 3: Only cost of acquisition is deductible (no other expenses)');
+    lines.push('Section 194S — 1% TDS on crypto sale consideration above ₹50,000');
+    lines.push('Calculation Method: First-In First-Out (FIFO)');
+    lines.push('');
+    lines.push('── Disclaimer ──');
+    lines.push('This report is generated for informational purposes. Please consult a CA for final ITR filing.');
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `TaxMitra_Crypto_Complete_Tax_Report_${fy}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Complete Tax Report downloaded!');
   };
+
+  if (!s) return (
+    <Card className="bg-white/5 border-white/10"><CardContent className="py-12 text-center">
+      <FileText className="h-10 w-10 text-slate-600 mx-auto mb-2" />
+      <p className="text-slate-400 text-sm">No data available for {fy}. Compute tax first.</p>
+    </CardContent></Card>
+  );
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold text-white">Reports — {fy}</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="bg-white/5 border-white/10 hover:bg-white/[0.07] transition cursor-pointer" onClick={downloadScheduleVDA}>
-          <CardContent className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center"><FileText className="h-6 w-6 text-violet-400" /></div>
-            <div className="flex-1">
-              <h3 className="text-white font-semibold text-sm">Schedule VDA (CSV)</h3>
-              <p className="text-slate-400 text-xs mt-0.5">ITR-ready FIFO lot data</p>
-            </div>
-            <Download className="h-5 w-5 text-slate-500" />
+      {/* Report Header */}
+      <div className="bg-gradient-to-r from-violet-600/90 to-indigo-600/90 rounded-xl p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-white font-bold text-xl">Crypto Complete Tax Report</h2>
+            <p className="text-white/70 text-sm mt-1">Financial Year {fyShort} • {ay}</p>
+            <p className="text-white/50 text-xs mt-1">Section 115BBH • FIFO Method • {s.num_sell_events} Sell Events • {s.num_fifo_lots} FIFO Lots</p>
+          </div>
+          <Button onClick={downloadCompleteReport} className="bg-white/20 hover:bg-white/30 text-white border-0">
+            <Download className="h-4 w-4 mr-2" />Download Full Report
+          </Button>
+        </div>
+      </div>
+
+      {/* Quick Downloads */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="bg-white/5 border-white/10 hover:bg-white/[0.07] transition cursor-pointer" onClick={downloadCompleteReport}>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center"><FileText className="h-5 w-5 text-indigo-400" /></div>
+            <div className="flex-1"><h3 className="text-white font-semibold text-xs">Complete Report</h3><p className="text-slate-500 text-[10px]">All sections in one file</p></div>
+            <Download className="h-4 w-4 text-slate-500" />
           </CardContent>
         </Card>
-        <Card className="bg-white/5 border-white/10 hover:bg-white/[0.07] transition cursor-pointer" onClick={downloadTaxSummary}>
-          <CardContent className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center"><BarChart3 className="h-6 w-6 text-emerald-400" /></div>
-            <div className="flex-1">
-              <h3 className="text-white font-semibold text-sm">Tax Summary (CSV)</h3>
-              <p className="text-slate-400 text-xs mt-0.5">Complete tax computation breakdown</p>
-            </div>
-            <Download className="h-5 w-5 text-slate-500" />
+        <Card className="bg-white/5 border-white/10 hover:bg-white/[0.07] transition cursor-pointer" onClick={downloadScheduleVDA}>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center"><FileText className="h-5 w-5 text-violet-400" /></div>
+            <div className="flex-1"><h3 className="text-white font-semibold text-xs">Schedule VDA</h3><p className="text-slate-500 text-[10px]">ITR-ready FIFO data</p></div>
+            <Download className="h-4 w-4 text-slate-500" />
+          </CardContent>
+        </Card>
+        <Card className="bg-white/5 border-white/10 hover:bg-white/[0.07] transition cursor-pointer" onClick={() => setShowFullReport(!showFullReport)}>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center"><BarChart3 className="h-5 w-5 text-emerald-400" /></div>
+            <div className="flex-1"><h3 className="text-white font-semibold text-xs">{showFullReport ? 'Hide' : 'View'} Full Report</h3><p className="text-slate-500 text-[10px]">In-page detailed report</p></div>
+            {showFullReport ? <ChevronLeft className="h-4 w-4 text-slate-500 rotate-90" /> : <ChevronRight className="h-4 w-4 text-slate-500 -rotate-90" />}
           </CardContent>
         </Card>
       </div>
 
-      {/* Schedule VDA preview */}
-      {scheduleVDA && scheduleVDA.rows.length > 0 && (
-        <Card className="bg-white/5 border-white/10">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-white">Schedule VDA Preview ({scheduleVDA.total_rows} entries)</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader><TableRow className="border-white/10">
-                <TableHead className="text-slate-500 text-[11px]">#</TableHead>
-                <TableHead className="text-slate-500 text-[11px]">Asset</TableHead>
-                <TableHead className="text-slate-500 text-[11px]">Buy</TableHead>
-                <TableHead className="text-slate-500 text-[11px]">Sell</TableHead>
-                <TableHead className="text-slate-500 text-[11px] text-right">Cost</TableHead>
-                <TableHead className="text-slate-500 text-[11px] text-right">Sale</TableHead>
-                <TableHead className="text-slate-500 text-[11px] text-right">Taxable</TableHead>
-              </TableRow></TableHeader>
-              <TableBody>
-                {scheduleVDA.rows.slice(0, 10).map(r => (
-                  <TableRow key={r.sl_no} className="border-white/5">
-                    <TableCell className="text-slate-500 text-[11px]">{r.sl_no}</TableCell>
-                    <TableCell className="text-white text-[11px]">{r.asset}</TableCell>
-                    <TableCell className="text-slate-400 text-[11px]">{r.date_of_acquisition}</TableCell>
-                    <TableCell className="text-slate-300 text-[11px]">{r.date_of_transfer}</TableCell>
-                    <TableCell className="text-right text-slate-300 text-[11px]">{formatINR(r.cost_of_acquisition)}</TableCell>
-                    <TableCell className="text-right text-blue-300 text-[11px]">{formatINR(r.sale_consideration)}</TableCell>
-                    <TableCell className="text-right text-white font-semibold text-[11px]">{formatINR(r.taxable_income)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {scheduleVDA.rows.length > 10 && <p className="text-slate-500 text-xs text-center py-2">Showing 10 of {scheduleVDA.total_rows} — download CSV for full data</p>}
-          </CardContent>
-        </Card>
+      {/* ═══ FULL IN-PAGE REPORT ═══ */}
+      {showFullReport && (
+        <div className="space-y-4 border border-white/10 rounded-xl p-5 bg-[#0d1221]">
+
+          {/* Section 1: Tax Summary */}
+          <div>
+            <h3 className="text-indigo-400 font-bold text-sm flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded bg-indigo-500/20 flex items-center justify-center text-xs">1</span>Tax Summary</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white/5 rounded-lg p-3"><span className="text-slate-500 text-[10px] block">Sale Consideration</span><span className="text-white font-bold text-sm">{formatINRFull(s.sale_consideration)}</span></div>
+              <div className="bg-white/5 rounded-lg p-3"><span className="text-slate-500 text-[10px] block">Cost of Acquisition</span><span className="text-white font-bold text-sm">{formatINRFull(s.cost_of_acquisition)}</span></div>
+              <div className="bg-white/5 rounded-lg p-3"><span className="text-slate-500 text-[10px] block">Taxable Capital Gains</span><span className="text-emerald-400 font-bold text-sm">{formatINRFull(s.taxable_capital_gains)}</span></div>
+              <div className="bg-white/5 rounded-lg p-3"><span className="text-slate-500 text-[10px] block">Gross Losses</span><span className="text-red-400 font-bold text-sm">{formatINRFull(s.gross_losses)}</span></div>
+            </div>
+            <Card className="bg-white/5 border-white/10 mt-3">
+              <CardContent className="p-4">
+                <h4 className="text-white text-xs font-semibold mb-2">Tax Computation — §115BBH</h4>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between"><span className="text-slate-400">Total Taxable Income</span><span className="text-white font-semibold">{formatINRFull(s.total_taxable)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Tax @30%</span><span className="text-white">{formatINRFull(s.gross_tax)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Health & Education Cess @4%</span><span className="text-white">{formatINRFull(s.cess)}</span></div>
+                  <div className="flex justify-between border-t border-white/10 pt-1.5"><span className="text-white font-semibold">Total Tax Liability</span><span className="text-white font-bold">{formatINRFull(s.total_tax_liability)}</span></div>
+                  <div className="flex justify-between"><span className="text-cyan-400">Less: TDS Credit (§194S)</span><span className="text-cyan-400">-{formatINRFull(s.tds_credit)}</span></div>
+                  <div className="flex justify-between border-t border-white/10 pt-1.5"><span className="text-white font-bold">Net Tax Payable</span><span className="text-emerald-400 font-bold text-base">{formatINRFull(s.net_tax_payable)}</span></div>
+                  {s.refund_eligible > 0 && <div className="flex justify-between"><span className="text-emerald-400">Refund Eligible</span><span className="text-emerald-400 font-semibold">{formatINRFull(s.refund_eligible)}</span></div>}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Section 2: Asset-wise P&L */}
+          {pnl && pnl.assets.length > 0 && (
+            <div>
+              <h3 className="text-indigo-400 font-bold text-sm flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded bg-indigo-500/20 flex items-center justify-center text-xs">2</span>Asset-wise Profit & Loss</h3>
+              <Card className="bg-white/5 border-white/10 overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow className="border-white/10">
+                    <TableHead className="text-slate-500 text-[10px]">Asset</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Sale (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Cost (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Profit (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Loss (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Taxable (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Lots</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {pnl.assets.map(a => (
+                      <TableRow key={a.asset} className="border-white/5">
+                        <TableCell className="text-white font-medium text-[11px]">{a.asset}</TableCell>
+                        <TableCell className="text-right text-blue-300 text-[11px]">{formatINRFull(a.sale)}</TableCell>
+                        <TableCell className="text-right text-slate-300 text-[11px]">{formatINRFull(a.cost)}</TableCell>
+                        <TableCell className="text-right text-emerald-400 text-[11px]">{a.profit > 0 ? formatINRFull(a.profit) : '—'}</TableCell>
+                        <TableCell className="text-right text-red-400 text-[11px]">{a.loss > 0 ? formatINRFull(a.loss) : '—'}</TableCell>
+                        <TableCell className="text-right text-white font-semibold text-[11px]">{formatINRFull(a.net_taxable)}</TableCell>
+                        <TableCell className="text-right text-slate-400 text-[11px]">{a.num_lots}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2 border-indigo-500/30 bg-indigo-500/5">
+                      <TableCell className="font-bold text-white text-[11px]">TOTAL</TableCell>
+                      <TableCell className="text-right font-bold text-blue-300 text-[11px]">{formatINRFull(pnl.totals.sale)}</TableCell>
+                      <TableCell className="text-right font-bold text-slate-300 text-[11px]">{formatINRFull(pnl.totals.cost)}</TableCell>
+                      <TableCell className="text-right font-bold text-emerald-400 text-[11px]">{formatINRFull(pnl.totals.profit)}</TableCell>
+                      <TableCell className="text-right font-bold text-red-400 text-[11px]">{formatINRFull(pnl.totals.loss)}</TableCell>
+                      <TableCell className="text-right font-bold text-white text-[11px]">{formatINRFull(pnl.totals.net_taxable)}</TableCell>
+                      <TableCell className="text-right text-slate-400 text-[11px]"></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </Card>
+            </div>
+          )}
+
+          {/* Section 3: Schedule VDA */}
+          {scheduleVDA && scheduleVDA.rows.length > 0 && (
+            <div>
+              <h3 className="text-indigo-400 font-bold text-sm flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded bg-indigo-500/20 flex items-center justify-center text-xs">3</span>Schedule VDA — FIFO Lot Details ({scheduleVDA.total_rows} entries)</h3>
+              <Card className="bg-white/5 border-white/10 overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow className="border-white/10">
+                    <TableHead className="text-slate-500 text-[10px]">#</TableHead>
+                    <TableHead className="text-slate-500 text-[10px]">Asset</TableHead>
+                    <TableHead className="text-slate-500 text-[10px]">Acquired</TableHead>
+                    <TableHead className="text-slate-500 text-[10px]">Transferred</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Cost (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Sale (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Gain/Loss (₹)</TableHead>
+                    <TableHead className="text-slate-500 text-[10px] text-right">Taxable (₹)</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {scheduleVDA.rows.map(r => {
+                      const gain = r.sale_consideration - r.cost_of_acquisition;
+                      return (
+                        <TableRow key={r.sl_no} className="border-white/5">
+                          <TableCell className="text-slate-500 text-[10px]">{r.sl_no}</TableCell>
+                          <TableCell className="text-white text-[10px] font-medium">{r.asset}</TableCell>
+                          <TableCell className="text-slate-400 text-[10px]">{r.date_of_acquisition}</TableCell>
+                          <TableCell className="text-slate-300 text-[10px]">{r.date_of_transfer}</TableCell>
+                          <TableCell className="text-right text-slate-300 text-[10px]">{formatINRFull(r.cost_of_acquisition)}</TableCell>
+                          <TableCell className="text-right text-blue-300 text-[10px]">{formatINRFull(r.sale_consideration)}</TableCell>
+                          <TableCell className={`text-right text-[10px] font-semibold ${gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{gain >= 0 ? '+' : ''}{formatINRFull(gain)}</TableCell>
+                          <TableCell className="text-right text-white font-semibold text-[10px]">{formatINRFull(r.taxable_income)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Card>
+            </div>
+          )}
+
+          {/* Section 4: TDS Summary */}
+          <div>
+            <h3 className="text-indigo-400 font-bold text-sm flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded bg-indigo-500/20 flex items-center justify-center text-xs">4</span>TDS Summary — Section 194S</h3>
+            <Card className="bg-white/5 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded bg-blue-500/20 flex items-center justify-center"><Coins className="h-4 w-4 text-blue-400" /></div>
+                  <div><span className="text-white text-sm font-semibold">CoinDCX</span><span className="text-slate-500 text-xs ml-2">via CSV Import</span></div>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between"><span className="text-slate-400">TDS Section</span><span className="text-white">194S (1% on sale consideration)</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Total TDS Deducted</span><span className="text-cyan-400 font-bold">{formatINRFull(s.tds_credit)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Financial Year</span><span className="text-white">{fy}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Section 5: Tax Rules */}
+          <div>
+            <h3 className="text-indigo-400 font-bold text-sm flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded bg-indigo-500/20 flex items-center justify-center text-xs">5</span>Applicable Tax Rules</h3>
+            <Card className="bg-white/5 border-white/10">
+              <CardContent className="p-4 space-y-2 text-xs">
+                <div className="flex gap-2"><AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">§115BBH:</strong> Flat 30% tax on income from Virtual Digital Assets (VDA)</span></div>
+                <div className="flex gap-2"><AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">No Loss Offset:</strong> Losses from one VDA cannot be set off against gains from another VDA</span></div>
+                <div className="flex gap-2"><AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">No Carry Forward:</strong> VDA losses cannot be carried forward to future assessment years</span></div>
+                <div className="flex gap-2"><Shield className="h-3.5 w-3.5 text-cyan-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">§194S:</strong> 1% TDS on crypto sale consideration above ₹50,000</span></div>
+                <div className="flex gap-2"><Calculator className="h-3.5 w-3.5 text-indigo-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">FIFO:</strong> First-In First-Out method used for cost basis calculation</span></div>
+                <div className="flex gap-2"><Coins className="h-3.5 w-3.5 text-purple-400 mt-0.5 shrink-0" /><span className="text-slate-300"><strong className="text-white">Cess:</strong> 4% Health & Education Cess on tax amount</span></div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <p className="text-slate-600 text-[10px] text-center italic">This report is generated by TaxMitra for informational purposes. Consult a qualified CA for final ITR filing.</p>
+        </div>
       )}
     </div>
   );
