@@ -97,16 +97,35 @@ const CryptoTaxPage: React.FC = () => {
       setSummary(ov.not_computed ? null : ov);
       setQuality(q);
     } catch (e) {
-      console.error('[loadAll] API error:', e);
-      setSummary(null);
-      setQuality(null);
+      console.error('[loadAll] API error, trying local data:', e);
+      // Fallback to local pre-computed data
+      const localOv = getLocalOverview(fy);
+      setSummary(localOv);
+      setQuality(getLocalDataQuality(fy));
     }
     finally { setLoading(false); }
   };
 
-  const loadAssetPnl = async () => { try { setAssetPnl(await fetchAssetPnL(fy)); } catch (e) { console.error(e); } };
+  const loadAssetPnl = async () => {
+    try {
+      const data = await fetchAssetPnL(fy);
+      if (data && data.assets && data.assets.length > 0) { setAssetPnl(data); return; }
+    } catch (e) { console.error('[loadAssetPnl] API error:', e); }
+    // Fallback to local data
+    const local = getLocalAssetPnL(fy);
+    setAssetPnl(local || { success: true, financial_year: fy, assets: [], totals: { sale: 0, cost: 0, profit: 0, loss: 0, net_taxable: 0 } });
+  };
   const loadScheduleVDA = async () => { try { setScheduleVDA(await fetchScheduleVDA(fy)); } catch (e) { console.error(e); } };
-  const loadTransactions = async (p = 1, t = "all") => { try { setTransactions(await fetchTransactions(fy, t, p, 50)); } catch (e) { console.error(e); } };
+  const loadTransactions = async (p = 1, t = "all") => {
+    try {
+      const data = await fetchTransactions(fy, t, p, 50);
+      setTransactions(data);
+    } catch (e) {
+      console.error('[loadTransactions] API error:', e);
+      // Set empty response so UI doesn't show infinite spinner
+      setTransactions({ success: true, financial_year: fy, transactions: [], total: 0, page: p, limit: 50, total_pages: 0 });
+    }
+  };
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -270,7 +289,7 @@ const CryptoTaxPage: React.FC = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// OVERVIEW TAB — KoinX style
+// OVERVIEW TAB — Premium Dashboard + Guided Setup Flow
 // ═══════════════════════════════════════════════════════════════
 const OverviewTab: React.FC<{
   fy: string; fyLabel: string; summary: TaxSummary | null; quality: DataQualityResponse | null;
@@ -279,6 +298,28 @@ const OverviewTab: React.FC<{
   const navigate = useNavigate();
   const [syncing, setSyncing] = React.useState(false);
   const [synced, setSynced] = React.useState(false);
+  // Guided flow upload states
+  const [uploadStatus, setUploadStatus] = React.useState<Record<string, { state: string; result: UploadResponse | null }>>({
+    order: { state: 'idle', result: null }, insta: { state: 'idle', result: null }, tds: { state: 'idle', result: null },
+  });
+  const orderRef = React.useRef<HTMLInputElement>(null);
+  const instaRef = React.useRef<HTMLInputElement>(null);
+  const tdsRef = React.useRef<HTMLInputElement>(null);
+  // Try local data fallback when API returns nothing
+  const displaySummary = summary || getLocalOverview(fy);
+  const displayQuality = quality || getLocalDataQuality(fy);
+
+  const guidedUpload = async (key: string, fn: (f: File) => Promise<UploadResponse>, file: File) => {
+    setUploadStatus(s => ({ ...s, [key]: { state: 'uploading', result: null } }));
+    try {
+      const r = await fn(file);
+      setUploadStatus(s => ({ ...s, [key]: { state: r.success ? 'done' : 'error', result: r } }));
+      if (r.success) toast.success(r.message);
+      else toast.error(r.message || r.errors?.[0]?.issue);
+    } catch (e) {
+      setUploadStatus(s => ({ ...s, [key]: { state: 'error', result: { success: false, errors: [{ row: 0, issue: (e as Error).message }], message: (e as Error).message } as UploadResponse } }));
+    }
+  };
 
   const handleSendToITR = async () => {
     setSyncing(true);
@@ -287,174 +328,212 @@ const OverviewTab: React.FC<{
       if (result.success) {
         setSynced(true);
         toast.success('Crypto data sent to ITR!', { description: result.message });
-        // Navigate to filing wizard after a short delay
         setTimeout(() => navigate('/guided'), 1500);
-      } else {
-        toast.error('Sync failed', { description: result.message });
-      }
-    } catch (e) {
-      toast.error('Failed to sync', { description: (e as Error).message });
-    } finally {
-      setSyncing(false);
-    }
+      } else { toast.error('Sync failed', { description: result.message }); }
+    } catch (e) { toast.error('Failed to sync', { description: (e as Error).message }); }
+    finally { setSyncing(false); }
   };
+
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div>;
 
-  if (!summary) return (
-    <Card className="bg-white/5 border-white/10">
-      <CardContent className="py-16 text-center">
-        <Upload className="h-14 w-14 text-slate-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-white mb-2">No Tax Data for {fyLabel}</h3>
-        <p className="text-slate-400 text-sm mb-6 max-w-md mx-auto">Import your CoinDCX CSV files and click Refresh to compute your crypto tax.</p>
-        <div className="flex gap-3 justify-center">
-          <Button onClick={onGoImport} className="bg-indigo-600 hover:bg-indigo-500 text-sm"><Upload className="h-4 w-4 mr-2" />Import</Button>
-          <Button onClick={onCompute} disabled={computing} className="bg-violet-600 hover:bg-violet-500 text-white text-sm">
-            {computing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Calculating...</> : <><Calculator className="h-4 w-4 mr-2" />Calculate</>}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+  // ─── NO COMPUTED DATA: Show Guided Setup Flow ───
+  if (!displaySummary) return (
+    <div className="space-y-5">
+      <Card className="bg-gradient-to-br from-indigo-600/20 to-violet-600/10 border-indigo-500/30">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center"><Coins className="h-5 w-5 text-indigo-400" /></div>
+            <div>
+              <h2 className="text-white font-bold text-lg">Setup Crypto Tax — {fyLabel}</h2>
+              <p className="text-slate-400 text-sm">Complete these steps to calculate your crypto tax</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {/* Step 1: Order History */}
+            <div className={`rounded-lg p-4 border ${uploadStatus.order.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.order.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                    {uploadStatus.order.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '1'}
+                  </div>
+                  <div>
+                    <h4 className="text-white text-sm font-semibold">Order History CSV (All Time)</h4>
+                    <p className="text-slate-500 text-xs">CoinDCX → Profile → Reports → Order History → All Time</p>
+                  </div>
+                </div>
+                <input ref={orderRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('order', uploadOrderHistory, f); e.target.value = ''; }} className="hidden" />
+                <Button onClick={() => orderRef.current?.click()} disabled={uploadStatus.order.state === 'uploading'} size="sm"
+                  className={uploadStatus.order.state === 'done' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500'}>
+                  {uploadStatus.order.state === 'uploading' ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Uploading...</> : uploadStatus.order.state === 'done' ? <><CheckCircle className="h-3.5 w-3.5 mr-1" />Done</> : <><Upload className="h-3.5 w-3.5 mr-1" />Upload</>}
+                </Button>
+              </div>
+            </div>
+            {/* Step 2: Insta History */}
+            <div className={`rounded-lg p-4 border ${uploadStatus.insta.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.insta.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                    {uploadStatus.insta.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '2'}
+                  </div>
+                  <div>
+                    <h4 className="text-white text-sm font-semibold">Insta History CSV (All Time)</h4>
+                    <p className="text-slate-500 text-xs">CoinDCX → Reports → Insta/Instant History → All Time</p>
+                  </div>
+                </div>
+                <input ref={instaRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('insta', uploadInstaHistory, f); e.target.value = ''; }} className="hidden" />
+                <Button onClick={() => instaRef.current?.click()} disabled={uploadStatus.insta.state === 'uploading'} size="sm"
+                  className={uploadStatus.insta.state === 'done' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500'}>
+                  {uploadStatus.insta.state === 'uploading' ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Uploading...</> : uploadStatus.insta.state === 'done' ? <><CheckCircle className="h-3.5 w-3.5 mr-1" />Done</> : <><Upload className="h-3.5 w-3.5 mr-1" />Upload</>}
+                </Button>
+              </div>
+            </div>
+            {/* Step 3: TDS for selected FY */}
+            <div className={`rounded-lg p-4 border ${uploadStatus.tds.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.tds.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                    {uploadStatus.tds.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '3'}
+                  </div>
+                  <div>
+                    <h4 className="text-white text-sm font-semibold">TDS Certificate for {fyLabel}</h4>
+                    <p className="text-amber-400/80 text-xs">CoinDCX → Reports → TDS Certificate → Select {fyLabel} → Export</p>
+                  </div>
+                </div>
+                <input ref={tdsRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('tds', uploadTDS, f); e.target.value = ''; }} className="hidden" />
+                <Button onClick={() => tdsRef.current?.click()} disabled={uploadStatus.tds.state === 'uploading'} size="sm"
+                  className={uploadStatus.tds.state === 'done' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-amber-600 hover:bg-amber-500'}>
+                  {uploadStatus.tds.state === 'uploading' ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Uploading...</> : uploadStatus.tds.state === 'done' ? <><CheckCircle className="h-3.5 w-3.5 mr-1" />Done</> : <><Upload className="h-3.5 w-3.5 mr-1" />Upload TDS</>}
+                </Button>
+              </div>
+            </div>
+          </div>
+          {/* Calculate button at bottom */}
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <Button onClick={onCompute} disabled={computing} size="lg" className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white h-12 text-base font-semibold">
+              {computing ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />Computing Tax...</> : <><Calculator className="h-5 w-5 mr-2" />Calculate Crypto Tax for {fyLabel}</>}
+            </Button>
+            <p className="text-slate-500 text-xs text-center mt-2">FIFO method • Section 115BBH • 30% + 4% Cess</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 
-  const s = summary;
+  // ─── HAS DATA: Premium Dashboard ───
+  const s = displaySummary;
   const ay = s.assessment_year || '';
 
   return (
     <div className="space-y-5">
-      {/* Crypto Tax Reports banner */}
-      <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl p-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center"><FileText className="h-5 w-5 text-white" /></div>
-          <div>
-            <h2 className="text-white font-bold text-lg">Crypto Tax Reports — {ay}</h2>
-            <p className="text-white/70 text-sm">Comprehensive report with Schedule VDA, Asset P&L</p>
-          </div>
-        </div>
-        <Badge className="bg-white/20 text-white border-0">{s.num_sell_events} trades</Badge>
-      </div>
-
-      {/* Data quality warnings */}
-      {quality && quality.warnings.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-          <h3 className="text-amber-400 font-semibold text-sm flex items-center gap-2 mb-2">
-            <AlertTriangle className="h-4 w-4" />Data Gaps Detected
-          </h3>
-          <p className="text-slate-300 text-xs leading-relaxed">
-            {quality.warnings.map(w => w.message).join('. ')}
-            {' — '}Resolve issues in the <strong>Data Coverage</strong> tab first.
-          </p>
-        </div>
-      )}
-
-      {/* Capital Gains Summary section (KoinX style) */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-          <h3 className="text-white font-semibold">Capital Gains Summary — {fy.replace('FY', '')}</h3>
-          <span className="text-slate-500 text-xs ml-2">This is exactly what goes into your ITR under Schedule VDA</span>
-        </div>
-
-        {/* 5 metric cards in a row — matching screenshots */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <StatCard label="Transfers" value={String(s.num_sell_events)} sub={`${s.num_fifo_lots} FIFO lots`} />
-          <StatCard label="Sale Consideration" value={formatINR(s.sale_consideration)} sub="Total sell proceeds" color="blue" />
-          <StatCard label="Cost of Acquisition" value={formatINR(s.cost_of_acquisition)} sub="FIFO cost basis" color="teal" />
-          <StatCard label="Taxable Gains" value={formatINR(s.taxable_capital_gains)} sub="§115BBH gains" color="green" />
-          <StatCard label="Losses (Ignored)" value={formatINR(s.gross_losses)} sub="Cannot offset" color="red" />
-        </div>
-      </div>
-
-      {/* Row 2: 3 cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatCard label="Capital Gain Trades" value={String(s.num_sell_events)} sub={`${s.num_fifo_lots || 0} FIFO lots`} icon={<TrendingUp className="h-5 w-5 text-indigo-400" />} />
-        <StatCard label="Other Income" value={formatINR(s.total_other_income)} sub="Rewards/Staking" icon={<Coins className="h-5 w-5 text-amber-400" />} />
-        <StatCard label="TDS Credit" value={formatINR(s.tds_credit)} sub="Section 194S deducted" icon={<Shield className="h-5 w-5 text-cyan-400" />} />
-      </div>
-
-      {/* Non-Deductible Losses */}
-      {s.gross_losses > 0 && (
-        <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-orange-400 font-semibold text-sm">Non-Deductible Losses</p>
-            <p className="text-orange-300 text-2xl font-bold mt-1">{formatINR(s.gross_losses)}</p>
-            <p className="text-orange-400/60 text-xs mt-1">Cannot be set off against gains (§115BBH)</p>
-          </div>
-          <AlertTriangle className="h-8 w-8 text-orange-400/40" />
-        </div>
-      )}
-
-      {/* Tax Liability Banner — purple gradient like screenshot */}
-      <div className="bg-gradient-to-r from-purple-600/90 to-violet-600/90 rounded-xl p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-white/70 text-sm">Estimated Tax Liability ({fy.replace('FY', '')})</p>
-            <p className="text-white text-3xl font-bold mt-1">{formatINR(s.total_tax_liability)}</p>
-            <p className="text-white/60 text-xs mt-2">
-              Capital Gains: {formatINR(s.taxable_capital_gains)} + Other Income: {formatINR(s.total_other_income)} @ 30% + 4% cess
-            </p>
-            <p className="text-white/40 text-xs mt-1">
-              Gross Tax: {formatINRFull(s.gross_tax)} + Cess: {formatINRFull(s.cess)} = {formatINRFull(s.total_tax_liability)}
-            </p>
-          </div>
-          <div className="text-right space-y-2">
-            <div>
-              <span className="text-white/60 text-xs">TDS Credit: </span>
-              <Badge className="bg-white/20 text-white border-0">{formatINR(s.tds_credit)}</Badge>
+      {/* Row 1: Three equal cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* TDS Summary */}
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-white flex items-center gap-2"><Shield className="h-4 w-4 text-cyan-400" />TDS Summary</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-blue-500/20 flex items-center justify-center"><Coins className="h-3 w-3 text-blue-400" /></div>
+                <span className="text-slate-400 text-xs">CoinDCX</span>
+              </div>
+              <div className="text-right">
+                <span className="text-cyan-400 font-semibold text-sm">{formatINRFull(s.tds_credit)}</span>
+              </div>
             </div>
-            <div>
-              <span className="text-white/60 text-xs">Net Payable: </span>
-              <span className="text-white text-xl font-bold">{formatINR(s.net_tax_payable)}</span>
+            <div className="border-t border-white/10 pt-2 flex justify-between">
+              <span className="text-slate-400 text-xs font-semibold">Total TDS</span>
+              <span className="text-white font-bold text-sm">{formatINRFull(s.tds_credit)}</span>
             </div>
-            {s.refund_eligible > 0 && (
-              <div><span className="text-emerald-300 text-xs">Refund Eligible: {formatINR(s.refund_eligible)}</span></div>
-            )}
-            <p className="text-white/40 text-xs">Gross Tax: {formatINRFull(s.total_tax_liability)}</p>
-          </div>
-        </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 text-xs">Total Sale Value</span>
+              <span className="text-slate-300 text-xs">{formatINRFull(s.sale_consideration)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Crypto Tax Summary */}
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-white flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-400" />Crypto Tax Summary</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <Progress value={100} className="h-1.5 mb-3" />
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" /><span className="text-slate-400 text-xs">Capital Gains</span></div>
+              <span className="text-white font-semibold text-sm">{formatINRFull(s.taxable_capital_gains)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-gray-500" /><span className="text-slate-400 text-xs">Other Gains</span></div>
+              <span className="text-white font-semibold text-sm">{formatINRFull(s.total_other_income)}</span>
+            </div>
+            <div className="border-t border-white/10 pt-2 flex justify-between">
+              <span className="text-slate-300 text-xs font-semibold">Total Taxable Gains</span>
+              <span className="text-emerald-400 font-bold text-sm">{formatINRFull(s.total_taxable)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tax Liability */}
+        <Card className="bg-gradient-to-br from-purple-600/30 to-violet-600/20 border-purple-500/30">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-white flex items-center gap-2"><Calculator className="h-4 w-4 text-purple-400" />Tax Liability</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Gross Tax (30%)</span><span className="text-white text-sm">{formatINRFull(s.gross_tax)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Cess (4%)</span><span className="text-white text-sm">{formatINRFull(s.cess)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Total Tax</span><span className="text-white font-semibold text-sm">{formatINRFull(s.total_tax_liability)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-400 text-xs">TDS Credit</span><span className="text-cyan-400 text-sm">-{formatINRFull(s.tds_credit)}</span></div>
+            <div className="border-t border-white/10 pt-2 flex justify-between">
+              <span className="text-white text-xs font-bold">Net Payable</span>
+              <span className="text-white font-bold text-lg">{formatINRFull(s.net_tax_payable)}</span>
+            </div>
+            {s.refund_eligible > 0 && <div className="text-emerald-400 text-xs text-right">Refund: {formatINRFull(s.refund_eligible)}</div>}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Data Coverage Score */}
-      {quality && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-            <span className="text-white font-semibold text-sm">Data Coverage Score</span>
-          </div>
-          <Badge className={`text-sm px-3 py-1 ${quality.data_quality_score >= 80 ? 'bg-emerald-500/20 text-emerald-400' : quality.data_quality_score >= 50 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
-            {quality.data_quality_score}%
-          </Badge>
-        </div>
-      )}
+      {/* Row 2: Account Settings + Integrations + Trade Types */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-white">Account Settings</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Country</span><span className="text-white text-xs">India</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Base Currency</span><span className="text-white text-xs">INR</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Calculation Method</span><span className="text-white text-xs">First-In First-Out (FIFO)</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Tax Rate</span><span className="text-white text-xs">30% + 4% Cess</span></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-white">Integrations</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center gap-1.5 bg-white/5 rounded-lg px-5 py-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center"><Coins className="h-5 w-5 text-blue-400" /></div>
+                <span className="text-white text-xs font-medium">CoinDCX</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-white">Summary</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Sell Events</span><span className="text-white text-xs font-semibold">{s.num_sell_events}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">FIFO Lots</span><span className="text-white text-xs font-semibold">{s.num_fifo_lots}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400 text-xs">Gross Losses</span><span className="text-red-400 text-xs font-semibold">{formatINR(s.gross_losses)}</span></div>
+            {displayQuality && <div className="flex justify-between"><span className="text-slate-400 text-xs">Data Score</span><span className={`text-xs font-semibold ${displayQuality.data_quality_score >= 80 ? 'text-emerald-400' : 'text-amber-400'}`}>{displayQuality.data_quality_score}%</span></div>}
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* ─── SEND TO ITR ─── */}
+      {/* Send to ITR */}
       <div className="bg-gradient-to-r from-indigo-600/20 to-violet-600/20 border border-indigo-500/30 rounded-xl p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
-              <ArrowUpRight className="h-5 w-5 text-indigo-400" />
-            </div>
+            <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center"><ArrowUpRight className="h-5 w-5 text-indigo-400" /></div>
             <div>
               <h3 className="text-white font-semibold">Ready to File Your ITR?</h3>
-              <p className="text-slate-400 text-xs mt-0.5">
-                Send your crypto data (Schedule VDA, gains, TDS) to the ITR filing wizard.
-              </p>
+              <p className="text-slate-400 text-xs mt-0.5">Send your crypto data (Schedule VDA, gains, TDS) to the ITR filing wizard.</p>
             </div>
           </div>
-          <Button
-            onClick={handleSendToITR}
-            disabled={syncing || synced}
-            className={synced
-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white'
-            }
-          >
-            {syncing ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Syncing...</>
-            ) : synced ? (
-              <><CheckCircle className="h-4 w-4 mr-2" />Sent to ITR!</>
-            ) : (
-              <><ArrowUpRight className="h-4 w-4 mr-2" />Send to ITR →</>
-            )}
+          <Button onClick={handleSendToITR} disabled={syncing || synced}
+            className={synced ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white'}>
+            {syncing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Syncing...</> : synced ? <><CheckCircle className="h-4 w-4 mr-2" />Sent to ITR!</> : <><ArrowUpRight className="h-4 w-4 mr-2" />Send to ITR →</>}
           </Button>
         </div>
       </div>
@@ -549,7 +628,22 @@ const TransactionsTab: React.FC<{
   fy: string; data: TransactionsResponse | null; page: number; typeFilter: string;
   onPageChange: (p: number) => void; onTypeChange: (t: string) => void; onRefresh: () => void;
 }> = ({ fy, data, page, typeFilter, onPageChange, onTypeChange, onRefresh }) => {
-  if (!data) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>;
+  const [loading, setLoading] = useState(!data);
+  useEffect(() => { if (data) setLoading(false); }, [data]);
+  // Timeout: if data hasn't loaded in 8s, show empty state
+  useEffect(() => {
+    if (!data) {
+      const t = setTimeout(() => setLoading(false), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [data]);
+
+  if (loading && !data) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>;
+
+  const txList = data?.transactions || [];
+  const total = data?.total || 0;
+  const totalPages = data?.total_pages || 0;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -562,11 +656,11 @@ const TransactionsTab: React.FC<{
             </SelectContent>
           </Select>
           <Button variant="outline" onClick={onRefresh} size="sm" className="text-slate-400 border-white/10 h-8 text-xs"><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <span className="text-xs text-slate-500">{data.total} records</span>
+          <span className="text-xs text-slate-500">{total} records</span>
         </div>
       </div>
-      {data.transactions.length === 0 ? (
-        <Card className="bg-white/5 border-white/10"><CardContent className="py-12 text-center"><FileSpreadsheet className="h-10 w-10 text-slate-600 mx-auto mb-2" /><p className="text-slate-400 text-sm">No transactions for {fy}.</p></CardContent></Card>
+      {txList.length === 0 ? (
+        <Card className="bg-white/5 border-white/10"><CardContent className="py-12 text-center"><FileSpreadsheet className="h-10 w-10 text-slate-600 mx-auto mb-2" /><p className="text-slate-400 text-sm">No transactions for {fy}.</p><p className="text-slate-500 text-xs mt-1">Import data and click Refresh to compute.</p></CardContent></Card>
       ) : (
         <>
           <Card className="bg-white/5 border-white/10 overflow-x-auto">
@@ -582,7 +676,7 @@ const TransactionsTab: React.FC<{
                 <TableHead className="text-slate-500 text-xs text-right">TDS</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {data.transactions.map(tx => (
+                {txList.map(tx => (
                   <TableRow key={tx.id} className="border-white/5 hover:bg-white/5">
                     <TableCell className="text-slate-300 text-xs whitespace-nowrap">{new Date(tx.trade_date).toLocaleDateString('en-IN')}</TableCell>
                     <TableCell><TypeBadge type={tx.type} /></TableCell>
@@ -597,11 +691,11 @@ const TransactionsTab: React.FC<{
               </TableBody>
             </Table>
           </Card>
-          {data.total_pages > 1 && (
+          {totalPages > 1 && (
             <div className="flex items-center justify-center gap-4">
               <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1} className="border-white/10 text-slate-400 h-7"><ChevronLeft className="h-3.5 w-3.5" /></Button>
-              <span className="text-xs text-slate-500">Page {page}/{data.total_pages}</span>
-              <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= data.total_pages} className="border-white/10 text-slate-400 h-7"><ChevronRight className="h-3.5 w-3.5" /></Button>
+              <span className="text-xs text-slate-500">Page {page}/{totalPages}</span>
+              <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="border-white/10 text-slate-400 h-7"><ChevronRight className="h-3.5 w-3.5" /></Button>
             </div>
           )}
         </>
@@ -614,8 +708,17 @@ const TransactionsTab: React.FC<{
 // TAX DRILL-DOWN TAB
 // ═══════════════════════════════════════════════════════════════
 const DrillDownTab: React.FC<{ fy: string; data: AssetPnLResponse | null; onRefresh: () => void; }> = ({ fy, data, onRefresh }) => {
-  if (!data) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>;
-  if (!data.assets?.length) return <Card className="bg-white/5 border-white/10"><CardContent className="py-12 text-center"><p className="text-slate-400 text-sm">No data for {fy}. Run Calculate Tax first.</p></CardContent></Card>;
+  const [loading, setLoading] = useState(!data);
+  useEffect(() => { if (data) setLoading(false); }, [data]);
+  useEffect(() => {
+    if (!data) {
+      const t = setTimeout(() => setLoading(false), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [data]);
+
+  if (loading && !data) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div>;
+  if (!data?.assets?.length) return <Card className="bg-white/5 border-white/10"><CardContent className="py-12 text-center"><TrendingUp className="h-10 w-10 text-slate-600 mx-auto mb-2" /><p className="text-slate-400 text-sm">No drill-down data for {fy}.</p><p className="text-slate-500 text-xs mt-1">Import data and click Refresh to compute tax first.</p><Button onClick={onRefresh} className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-sm" size="sm"><RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh</Button></CardContent></Card>;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
