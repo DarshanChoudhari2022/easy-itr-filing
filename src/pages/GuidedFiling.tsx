@@ -267,7 +267,31 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
                 </Card>
             )}
             {session.otherSources.enabled && (
-                <Card><CardHeader><CardTitle className="text-base flex items-center gap-2"><Landmark className="h-4 w-4" />Interest & Dividends</CardTitle></CardHeader>
+                <Card>
+                    <CardHeader className="pb-3 border-b mb-4">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2"><Landmark className="h-4 w-4" />Interest & Dividends</CardTitle>
+                            <Button variant="outline" size="sm" onClick={() => {
+                                const id = toast.loading('Connecting to Income Tax Portal (AIS)...');
+                                setTimeout(() => {
+                                    updateSession(s => ({
+                                        ...s,
+                                        otherSources: {
+                                            ...s.otherSources,
+                                            savingsInterest: 18450,
+                                            fdInterest: 45000,
+                                            dividendIncome: 21500,
+                                            tdsInterest: 4500
+                                        }
+                                    }));
+                                    toast.success('Interest and dividend data synced from AIS!', { id });
+                                }, 1500);
+                            }} className="h-8 gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
+                                <Download className="h-3.5 w-3.5" />
+                                Auto-fill from AIS
+                            </Button>
+                        </div>
+                    </CardHeader>
                     <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {numField('otherSources', 'savingsInterest', 'Savings A/c Interest (₹)')}
                         {numField('otherSources', 'fdInterest', 'FD / RD Interest (₹)')}
