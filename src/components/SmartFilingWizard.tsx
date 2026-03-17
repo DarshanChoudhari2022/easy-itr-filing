@@ -806,7 +806,7 @@ export function SmartFilingWizard() {
 
     // ============= RENDER =============
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-6 w-full px-1 sm:px-2 md:px-0">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
                 <div>
