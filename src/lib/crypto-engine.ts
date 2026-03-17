@@ -1,5 +1,5 @@
 /**
- * TaxMitra Crypto Engine - Production Ready
+ * EasyITR Crypto Engine - Production Ready
  * Full compliance engine for Section 115BBH (Indian Income Tax)
  * 
  * Features:
@@ -1076,3 +1076,4 @@ export const DEFAULT_TAX_SETTINGS: TaxSettings = {
     country: 'India',
     assessmentYear: '2026-27'
 };
+

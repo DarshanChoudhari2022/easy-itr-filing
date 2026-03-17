@@ -1,5 +1,5 @@
 /**
- * TaxMitra Comprehensive Crypto Tax Report Generator
+ * EasyITR Comprehensive Crypto Tax Report Generator
  * Generates a detailed multi-page PDF for tax filing
  * 
  * Sections:
@@ -160,7 +160,7 @@ export function generateComprehensiveReport(data: ComprehensiveReportData): void
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text('TaxMitra — Precision-Engineered Crypto Tax Compliance', pageWidth / 2, 34, { align: 'center' });
+    doc.text('EasyITR — Precision-Engineered Crypto Tax Compliance', pageWidth / 2, 34, { align: 'center' });
 
     doc.setFontSize(9);
     doc.text(`Report ID: ${Math.random().toString(36).substring(2, 10).toUpperCase()}`, pageWidth / 2, 44, { align: 'center' });
@@ -777,7 +777,7 @@ export function generateComprehensiveReport(data: ComprehensiveReportData): void
 
         doc.setFontSize(7);
         doc.setTextColor(...brandGray);
-        doc.text('www.taxmitra.app', 10, h - 6);
+        doc.text('www.easyitr.app', 10, h - 6);
         doc.text(`Page ${i} of ${totalPages}`, w - 10, h - 6, { align: 'right' });
     }
 
@@ -794,10 +794,10 @@ export function generateComprehensiveReport(data: ComprehensiveReportData): void
     doc.text('DISCLAIMER:', 20, discY + 7);
     doc.setFont('helvetica', 'normal');
     doc.text('This report is for informational purposes only. Consult a Chartered Accountant before filing.', 20, discY + 13);
-    doc.text('Tax calculations are based on available data. TaxMitra is not liable for any discrepancies.', 20, discY + 18);
+    doc.text('Tax calculations are based on available data. EasyITR is not liable for any discrepancies.', 20, discY + 18);
 
     // ============ SAVE ============
-    const filename = `TaxMitra_CryptoReport_${data.financialYear.replace('-', '_')}_${data.user.pan}.pdf`;
+    const filename = `EasyITR_CryptoReport_${data.financialYear.replace('-', '_')}_${data.user.pan}.pdf`;
     doc.save(filename);
 }
 
@@ -956,10 +956,11 @@ export function buildComprehensiveReportData(
             purchaseValue: lot.costOfAcquisition ?? (lot.buyPricePerUnit ?? lot.buyPrice ?? 0) * (lot.matchedQuantity ?? lot.quantity ?? 0),
             saleValue: lot.saleConsideration ?? (lot.sellPricePerUnit ?? lot.sellPrice ?? 0) * (lot.matchedQuantity ?? lot.quantity ?? 0),
             gainOrLoss: lot.gainLoss ?? 0,
-            source: 'taxmitra_engine',
+            source: 'easyitr_engine',
             remarks: (lot.holdingDays ?? lot.holdingPeriod ?? 0) < 365 ? 'short-term' : 'long-term'
         })),
         scheduleVDA,
     };
 }
+
 

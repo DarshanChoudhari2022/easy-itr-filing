@@ -868,7 +868,7 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                             { n: 3, t: 'Select AY & Form', d: `Select Assessment Year ${session.assessmentYear}, ITR Form: ${itrForm.form}, Filing Type: Original u/s 139(1)` },
                             { n: 4, t: 'Choose "Online" Mode', d: 'Select "Prepare and Submit Online". Keep your Tax Computation Statement open side-by-side as reference.' },
                             { n: 5, t: 'Enter Values Section by Section', d: 'The portal shows: Personal Info → Income → Deductions → Tax Paid. Enter each value from your downloaded Tax Computation Statement.' },
-                            { n: 6, t: 'Validate & Preview', d: 'Click "Validate" on each section (✓ = OK). Preview the complete return. Compare totals with your TaxMitra statement.' },
+                            { n: 6, t: 'Validate & Preview', d: 'Click "Validate" on each section (✓ = OK). Preview the complete return. Compare totals with your EasyITR statement.' },
                             { n: 7, t: 'Submit & E-Verify', d: 'Click "Submit" → Choose Aadhaar OTP for e-Verification (fastest, 2 mins). You MUST e-verify within 30 days or filing becomes invalid!' },
                         ].map((s) => (
                             <div key={s.n} className="flex gap-3 items-start">
@@ -1421,3 +1421,4 @@ function StepReviewConfirm({ step, session, grossIncome, totalTDS, onEdit, onCon
         </div>
     );
 }
+

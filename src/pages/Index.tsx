@@ -1,5 +1,5 @@
 /**
- * TaxMitra Landing Page
+ * EasyITR Landing Page
  * Professional, Clean Design with Premium Typography
  */
 
@@ -57,7 +57,7 @@ export default function Index() {
               <div className="h-9 w-9 bg-indigo-600 rounded-lg flex items-center justify-center">
                 <ShieldCheck className="text-white h-5 w-5" />
               </div>
-              <span className="text-xl font-bold text-gray-900">TaxMitra</span>
+              <span className="text-xl font-bold text-gray-900">EasyITR</span>
             </Link>
 
             {/* Desktop Nav */}
@@ -529,7 +529,7 @@ export default function Index() {
             Ready to File Your ITR?
           </h2>
           <p className="text-lg text-indigo-100 mb-8 max-w-2xl mx-auto">
-            Join taxpayers who trust TaxMitra for accurate, hassle-free tax filing.
+            Join taxpayers who trust EasyITR for accurate, hassle-free tax filing.
             Start your filing today and save both time and money.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -568,7 +568,7 @@ export default function Index() {
                 <div className="h-9 w-9 bg-indigo-600 rounded-lg flex items-center justify-center">
                   <ShieldCheck className="text-white h-5 w-5" />
                 </div>
-                <span className="text-xl font-bold">TaxMitra</span>
+                <span className="text-xl font-bold">EasyITR</span>
               </div>
               <p className="text-gray-400 text-sm leading-relaxed">
                 India's trusted tax filing platform. AI-powered, secure, and designed for everyone.
@@ -611,7 +611,7 @@ export default function Index() {
               <ul className="space-y-3 text-sm text-gray-400">
                 <li className="flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  <span>support@taxmitra.in</span>
+                  <span>support@easyitr.in</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="h-4 w-4" />
@@ -626,7 +626,7 @@ export default function Index() {
           </div>
 
           <div className="mt-12 pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-sm text-gray-500">© 2026 TaxMitra Technologies Pvt. Ltd. All rights reserved.</p>
+            <p className="text-sm text-gray-500">© 2026 EasyITR Technologies Pvt. Ltd. All rights reserved.</p>
             <div className="flex items-center gap-6 text-sm text-gray-500">
               <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
               <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
@@ -641,3 +641,4 @@ export default function Index() {
     </div>
   );
 }
+

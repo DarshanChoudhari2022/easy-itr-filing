@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Filing Gate
+ * EasyITR — Filing Gate
  * =======================
  * Evaluates whether the user can safely file taxes based on:
  *   - Data coverage checklist completion
@@ -273,7 +273,7 @@ export function createOverrideRecord(
 
 // ============= PERSISTENCE =============
 
-const OVERRIDE_STORAGE_KEY = 'taxmitra_filing_overrides';
+const OVERRIDE_STORAGE_KEY = 'easyitr_filing_overrides';
 
 export function saveOverride(override: OverrideRecord): void {
     try {
@@ -309,3 +309,4 @@ function loadAllOverrides(): Record<string, OverrideRecord> {
         return {};
     }
 }
+

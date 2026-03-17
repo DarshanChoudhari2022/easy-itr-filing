@@ -452,7 +452,7 @@ export function SmartFilingWizard() {
 
         // 1. Primary: Read from Supabase user data store (saved by Crypto Tax page)
         try {
-            const summary = await loadUserData<any>('taxmitra_crypto_tax_summary');
+            const summary = await loadUserData<any>('easyitr_crypto_tax_summary');
             if (summary && summary.taxableCapitalGains !== undefined) {
                 setIncome(prev => ({
                     ...prev,
@@ -474,7 +474,7 @@ export function SmartFilingWizard() {
 
         // 2. Fallback: Read from localStorage (cache from same browser)
         try {
-            const saved = localStorage.getItem('taxmitra_crypto_tax_summary');
+            const saved = localStorage.getItem('easyitr_crypto_tax_summary');
             if (saved) {
                 const summary = JSON.parse(saved);
                 if (summary.taxableCapitalGains !== undefined) {
@@ -873,7 +873,7 @@ export function SmartFilingWizard() {
                                 Step 1: Securely Fetch Your Financial Data
                             </CardTitle>
                             <CardDescription className="text-indigo-100 text-base max-w-2xl">
-                                TaxMitra works best when you provide official data from the Income Tax Department.
+                                EasyITR works best when you provide official data from the Income Tax Department.
                                 This ensures zero errors and captures every tax credit you're entitled to.
                             </CardDescription>
                         </CardHeader>
@@ -1425,7 +1425,7 @@ export function SmartFilingWizard() {
 
                                     <div className="bg-emerald-50 text-emerald-800 text-[11px] px-3 py-2 rounded-lg border border-emerald-200 flex items-center gap-2">
                                         <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                                        <span><b>Auto-fetched:</b> Data natively synced from your TaxMitra Crypto Module. The computed tax will be carried directly to ITR.</span>
+                                        <span><b>Auto-fetched:</b> Data natively synced from your EasyITR Crypto Module. The computed tax will be carried directly to ITR.</span>
                                     </div>
 
                                     <div className="grid gap-4 sm:grid-cols-2">
@@ -2408,3 +2408,4 @@ export function SmartFilingWizard() {
         </div>
     );
 }
+

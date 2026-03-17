@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Guided Import Wizard (v2)
+ * EasyITR — Guided Import Wizard (v2)
  * =====================================
  * Professional step-by-step wizard for importing crypto data.
  * - FY-aware download instructions with direct CoinDCX links
@@ -26,8 +26,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import type { NormalizedTransaction, TDSRecord } from '@/lib/taxmitra';
-import type { FYChecklist, DataSourceType } from '@/lib/taxmitra/coverage-tracker';
+import type { NormalizedTransaction, TDSRecord } from '@/lib/easyitr';
+import type { FYChecklist, DataSourceType } from '@/lib/easyitr/coverage-tracker';
 import type { SyncProgress, FullSyncResult } from '@/lib/coindcx-api';
 
 // ============= TYPES =============
@@ -276,7 +276,7 @@ export function GuidedImportWizard({
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `TaxMitra_Transactions_${selectedFY}.csv`;
+        a.download = `EasyITR_Transactions_${selectedFY}.csv`;
         a.click();
         URL.revokeObjectURL(url);
         toast.success(`Exported ${parsedTransactions.length} transactions`);
@@ -966,3 +966,4 @@ function renderMiniTable(
         </div>
     );
 }
+

@@ -696,7 +696,7 @@ export async function exportScheduleVDA(
     }
 
     const csv = generateScheduleVDACSV(result.data);
-    const filename = `TaxMitra_ScheduleVDA_${financialYear}_${new Date().toISOString().split('T')[0]}.csv`;
+    const filename = `EasyITR_ScheduleVDA_${financialYear}_${new Date().toISOString().split('T')[0]}.csv`;
 
     return { success: true, data: { csv, filename } };
 }
@@ -713,7 +713,7 @@ export async function exportTDSReconciliation(
     }
 
     const csv = generateTDSReconciliationCSV(result.data);
-    const filename = `TaxMitra_TDSReconciliation_${financialYear}_${new Date().toISOString().split('T')[0]}.csv`;
+    const filename = `EasyITR_TDSReconciliation_${financialYear}_${new Date().toISOString().split('T')[0]}.csv`;
 
     return { success: true, data: { csv, filename } };
 }
@@ -731,3 +731,4 @@ export async function getPnLSummary(
 
     return { success: true, data: formatPnLSummary(result.data) };
 }
+

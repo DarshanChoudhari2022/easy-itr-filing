@@ -1,5 +1,5 @@
 /**
- * TaxMitra Tax Engine — Core Calculation Module
+ * EasyITR Tax Engine — Core Calculation Module
  * AY 2024-25, 2025-26, 2026-27 compliant
  * 
  * ARCHITECTURE:
@@ -1047,3 +1047,4 @@ export function calculateTaxCompat(data: {
         recommendedForm: result.recommendedForm,
     };
 }
+

@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Coverage Dashboard Component
+ * EasyITR — Coverage Dashboard Component
  * =========================================
  * Shows the complete data coverage status for a Financial Year:
  *   - Overall status (🔴/🟠/🟡/✅)
@@ -19,9 +19,9 @@ import {
     ExternalLink, BarChart3
 } from 'lucide-react';
 
-import type { FYChecklist, ChecklistItem, TaxPreviewState } from '@/lib/taxmitra/coverage-tracker';
-import type { ReconciliationCheck, FullReconciliationResult } from '@/lib/taxmitra/reconciliation-engine-v2';
-import type { MonthActivity } from '@/lib/taxmitra/gap-detector';
+import type { FYChecklist, ChecklistItem, TaxPreviewState } from '@/lib/easyitr/coverage-tracker';
+import type { ReconciliationCheck, FullReconciliationResult } from '@/lib/easyitr/reconciliation-engine-v2';
+import type { MonthActivity } from '@/lib/easyitr/gap-detector';
 
 // ============= PROPS =============
 
@@ -426,3 +426,4 @@ function formatDate(d: Date): string {
 }
 
 export default CoverageDashboard;
+

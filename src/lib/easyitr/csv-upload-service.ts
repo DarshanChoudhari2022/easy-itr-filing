@@ -1,11 +1,11 @@
 /**
- * TaxMitra — CSV Upload Service (Client-Side)
+ * EasyITR — CSV Upload Service (Client-Side)
  * =============================================
  * Handles file → parse → deduplicate → insert into Supabase.
  *
  * Usage:
  *   import { uploadOrderHistoryCSV, uploadTDSSummaryCSV }
- *     from '@/lib/taxmitra/csv-upload-service';
+ *     from '@/lib/easyitr/csv-upload-service';
  *   const result = await uploadOrderHistoryCSV(file, 'FY2024-25');
  *   const tdsResult = await uploadTDSSummaryCSV(file, 'FY2024-25');
  *
@@ -576,3 +576,4 @@ export async function previewInstaHistoryCSV(file: File): Promise<InstaCSVParseR
     const csvText = await file.text();
     return parseInstaHistoryCSV(csvText);
 }
+

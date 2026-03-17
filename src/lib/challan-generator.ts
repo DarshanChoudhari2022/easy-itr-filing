@@ -175,7 +175,7 @@ export function generateChallanHTML(data: Challan280Data): string {
     5. Enter PAN: ${data.pan}, Assessment Year: ${data.assessmentYear}<br>
     6. Pay via Net Banking / Debit Card / UPI<br>
     7. After payment, note down the BSR Code, Challan Date, and Serial Number.<br>
-    8. Enter these details in TaxMitra to attach to your ITR.
+    8. Enter these details in EasyITR to attach to your ITR.
   </p>
 </body></html>`;
 }
@@ -195,3 +195,4 @@ export function downloadChallanHTML(data: Challan280Data): void {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+

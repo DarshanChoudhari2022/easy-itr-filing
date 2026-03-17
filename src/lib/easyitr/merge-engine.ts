@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Merge & Deduplication Engine
+ * EasyITR — Merge & Deduplication Engine
  * =======================================
  * Responsible for merging data from multiple sources (API, CSV, Manual)
  * and ensuring no duplicate transactions exist in the normalized layer.
@@ -201,3 +201,4 @@ function mapDbToNormalized(db: any): NormalizedTransaction {
         rawData: db.metadata || {}
     };
 }
+

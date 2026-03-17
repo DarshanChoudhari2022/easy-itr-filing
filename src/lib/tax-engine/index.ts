@@ -1,5 +1,5 @@
 /**
- * TaxMitra Tax Engine — Module Entry Point
+ * EasyITR Tax Engine — Module Entry Point
  * 
  * This is the new, correct tax calculation engine for Indian Income Tax.
  * It replaces the buggy calculation in src/lib/tax-calculation.ts.
@@ -32,3 +32,4 @@ export {
     type ITRFormType,
     type BusinessSection,
 } from './types';
+

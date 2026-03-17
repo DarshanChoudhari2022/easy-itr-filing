@@ -54,10 +54,10 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-2 py-2">
-          <img src="/logo.png" alt="TaxMitra" className="h-10 w-10 rounded-xl" />
+          <img src="/logo.png" alt="EasyITR" className="h-10 w-10 rounded-xl" />
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-bold text-sidebar-foreground bg-gradient-to-r from-indigo-400 to-teal-400 bg-clip-text text-transparent">TaxMitra</span>
+              <span className="font-bold text-sidebar-foreground bg-gradient-to-r from-indigo-400 to-teal-400 bg-clip-text text-transparent">EasyITR</span>
               <span className="text-xs text-sidebar-foreground/60">{currentAY}</span>
             </div>
           )}
@@ -150,3 +150,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+

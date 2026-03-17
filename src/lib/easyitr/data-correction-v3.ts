@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Surgical Data Correction v3
+ * EasyITR — Surgical Data Correction v3
  * ========================================
  * One-time fix for buy price bug: all BUY rows from CSV import
  * had pricePerUnit=₹1.00, causing FIFO to compute ₹17L fake gains.
@@ -702,7 +702,7 @@ export function diagnoseTransactions(
 ): string {
     const lines: string[] = [
         '═══════════════════════════════════════════════════',
-        '  TaxMitra Data Correction v3 — Diagnostic Report',
+        '  EasyITR Data Correction v3 — Diagnostic Report',
         '═══════════════════════════════════════════════════',
         '',
     ];
@@ -770,3 +770,4 @@ export const EXPECTED_RESULTS = {
         GALA: { grossProfit: 7589, grossLoss: 0, net: 7589 },
     },
 } as const;
+

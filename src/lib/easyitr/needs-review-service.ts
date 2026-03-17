@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Needs Review Service
+ * EasyITR — Needs Review Service
  * ================================
  * Manages the "Needs Review" bucket — transactions that could not be
  * auto-classified or have suspicious data. Filing is BLOCKED until
@@ -240,7 +240,7 @@ export function allItemsResolved(items: NeedsReviewItem[]): boolean {
 
 // ============= PERSISTENCE =============
 
-const REVIEW_STORAGE_KEY = 'taxmitra_needs_review';
+const REVIEW_STORAGE_KEY = 'easyitr_needs_review';
 
 export function saveReviewItems(financialYear: string, items: NeedsReviewItem[]): void {
     try {
@@ -314,3 +314,4 @@ function formatCurrency(value: number): string {
         minimumFractionDigits: 0,
     }).format(value);
 }
+

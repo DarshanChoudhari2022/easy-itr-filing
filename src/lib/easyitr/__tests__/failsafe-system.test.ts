@@ -1,5 +1,5 @@
 /**
- * TaxMitra Fail-Safe System — Comprehensive Tests
+ * EasyITR Fail-Safe System — Comprehensive Tests
  * =================================================
  * Tests for: coverage-tracker, gap-detector, duplicate-detector,
  * needs-review-service, filing-gate, reconciliation-engine-v2
@@ -583,3 +583,4 @@ describe('Reconciliation Engine V2', () => {
         expect(['healthy', 'warnings', 'issues']).toContain(result.overallStatus);
     });
 });
+

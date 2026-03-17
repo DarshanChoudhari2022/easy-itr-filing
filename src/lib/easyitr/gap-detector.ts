@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Gap Detector
+ * EasyITR — Gap Detector
  * ========================
  * Detects date range gaps, truncated CSVs, and missing data periods
  * within imported transaction data for a given Financial Year.
@@ -241,3 +241,4 @@ function formatDate(d: Date): string {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
+

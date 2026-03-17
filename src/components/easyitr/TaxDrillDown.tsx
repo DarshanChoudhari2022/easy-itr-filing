@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Tax Drill-Down + Schedule VDA Component
+ * EasyITR — Tax Drill-Down + Schedule VDA Component
  * ====================================================
  * Tab 1: Capital Gains Drill-Down — per-asset P&L table with expandable FIFO lots
  * Tab 2: Schedule VDA — ITR-ready lot-level rows for filing
@@ -15,7 +15,7 @@ import {
     AlertTriangle, Info, Download, Target
 } from 'lucide-react';
 
-import type { TaxComputationResult, AssetGainSummary, LotMatch } from '@/lib/taxmitra/tax-computation-engine';
+import type { TaxComputationResult, AssetGainSummary, LotMatch } from '@/lib/easyitr/tax-computation-engine';
 
 // ============= PROPS =============
 
@@ -493,3 +493,4 @@ function formatDate(d: Date | string | undefined): string {
 }
 
 export default TaxDrillDown;
+

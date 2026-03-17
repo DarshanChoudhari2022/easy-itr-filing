@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const confirmedAt = new Date(session.user.email_confirmed_at).getTime();
           const now = Date.now();
           if (now - confirmedAt < 60000) {
-            toast.success('🎉 Email verified successfully! Welcome to TaxMitra.', {
+            toast.success('🎉 Email verified successfully! Welcome to EasyITR.', {
               duration: 5000,
               description: 'Your account is ready. Start filing your taxes!',
             });
@@ -50,12 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clear localStorage when user signs out to prevent data leaking
         if (event === 'SIGNED_OUT') {
           const userDataKeys = [
-            'taxmitra_transactions', 'taxmitra_tds', 'taxSettings',
-            'taxmitra_coindcx_creds',       // CoinDCX API credentials (actual key)
-            'taxmitra_fy_checklist',         // Data coverage checklist per FY
-            'taxmitra_crypto_tax_summary',   // Computed tax summary
-            'taxmitra_needs_review',         // Needs review items
-            'taxmitra_review_items',         // Review items per FY
+            'easyitr_transactions', 'easyitr_tds', 'taxSettings',
+            'easyitr_coindcx_creds',       // CoinDCX API credentials (actual key)
+            'easyitr_fy_checklist',         // Data coverage checklist per FY
+            'easyitr_crypto_tax_summary',   // Computed tax summary
+            'easyitr_needs_review',         // Needs review items
+            'easyitr_review_items',         // Review items per FY
             'crypto_sync_state',             // Sync state
           ];
           userDataKeys.forEach(key => localStorage.removeItem(key));
@@ -127,3 +127,4 @@ export function useAuth() {
   }
   return context;
 }
+

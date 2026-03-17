@@ -1,5 +1,5 @@
 /**
- * TaxMitra — FY Data Coverage Tracker
+ * EasyITR — FY Data Coverage Tracker
  * ====================================
  * Tracks which data sources have been provided per Financial Year.
  * Computes coverage scores and determines filing readiness.
@@ -463,7 +463,7 @@ function recomputeChecklist(checklist: FYChecklist): FYChecklist {
 
 // ============= PERSISTENCE (localStorage) =============
 
-const CHECKLIST_STORAGE_KEY = 'taxmitra_fy_checklist';
+const CHECKLIST_STORAGE_KEY = 'easyitr_fy_checklist';
 
 /**
  * Save checklist to localStorage.
@@ -518,3 +518,4 @@ function loadAllChecklists(): Record<string, FYChecklist> {
         return {};
     }
 }
+

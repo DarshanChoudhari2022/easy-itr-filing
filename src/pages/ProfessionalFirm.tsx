@@ -170,7 +170,7 @@ export default function ProfessionalFirm() {
                             <div className="p-4 rounded-xl bg-white border border-emerald-100 shadow-sm flex items-center justify-between">
                                 <div>
                                     <p className="font-bold text-slate-900">Auto-fill ready</p>
-                                    <p className="text-xs text-slate-500 mt-1">Data fetched via AIS/26AS/TaxMitra Engine</p>
+                                    <p className="text-xs text-slate-500 mt-1">Data fetched via AIS/26AS/EasyITR Engine</p>
                                 </div>
                                 <Badge className="bg-emerald-500">READY</Badge>
                             </div>
@@ -205,3 +205,4 @@ function FirmStat({ label, value, sub, icon }: FirmStatProps) {
         </Card>
     );
 }
+

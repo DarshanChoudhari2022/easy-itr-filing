@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Needs Review Panel (Light Theme)
+ * EasyITR — Needs Review Panel (Light Theme)
  * =============================================
  * UI for reviewing unclassified or suspicious transactions.
  * Filing is blocked until all blocker-level items are resolved.
@@ -11,8 +11,8 @@ import {
     ChevronDown, ChevronRight, Eye, Trash2, Edit3, Tag
 } from 'lucide-react';
 
-import type { NeedsReviewItem, SuggestedAction } from '@/lib/taxmitra/needs-review-service';
-import { resolveReviewItem } from '@/lib/taxmitra/needs-review-service';
+import type { NeedsReviewItem, SuggestedAction } from '@/lib/easyitr/needs-review-service';
+import { resolveReviewItem } from '@/lib/easyitr/needs-review-service';
 
 // ============= PROPS =============
 
@@ -239,3 +239,4 @@ function formatCurrency(value: number): string {
 }
 
 export default NeedsReviewPanel;
+

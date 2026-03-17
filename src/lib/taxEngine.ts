@@ -1,6 +1,6 @@
 /**
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- * TaxMitra — SINGLE SOURCE OF TRUTH TAX ENGINE
+ * EasyITR — SINGLE SOURCE OF TRUTH TAX ENGINE
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  *
  * ALL tax logic lives here. No other file should hardcode
@@ -992,3 +992,4 @@ export function legacyCompareRegimes(data: Omit<LegacyTaxData, 'regime'>): {
 
     return { oldRegime: oldResult, newRegime: newResult, recommendation, savings, reasons };
 }
+

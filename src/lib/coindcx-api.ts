@@ -10,10 +10,10 @@
 
 import CryptoJS from 'crypto-js';
 import { supabase } from '../integrations/supabase/client';
-import { mergeTransactions } from './taxmitra/merge-engine';
-import { classifyVdaEvent } from './taxmitra/tax-computation-engine';
+import { mergeTransactions } from './easyitr/merge-engine';
+import { classifyVdaEvent } from './easyitr/tax-computation-engine';
 import { saveUserData, loadUserData, deleteUserData } from './supabase-data-service';
-import type { NormalizedTransaction, TDSRecord } from './taxmitra/coindcx-ingestion';
+import type { NormalizedTransaction, TDSRecord } from './easyitr/coindcx-ingestion';
 
 // ============= CONFIG =============
 // Proxy URL — our own Vercel serverless function (same domain = no CORS)
@@ -678,7 +678,7 @@ function hashContent(s: string): string {
  * 
  * ROOT CAUSE FIX: CoinDCX trial endpoints and deposit/withdrawal APIs sometimes
  * return records with null/missing token symbols, zero quantities, or ₹1 placeholder
- * prices. These inflated TaxMitra's transaction count from 71 (KoinX) to 299.
+ * prices. These inflated EasyITR's transaction count from 71 (KoinX) to 299.
  * 
  * This gate rejects invalid transactions and quarantines them for audit.
  * Returns { valid: true } if the transaction is good, or { valid: false, reason } if not.
@@ -2072,8 +2072,8 @@ function buildMissingDataChecklist(
 // API keys are encrypted using Web Crypto API's AES-GCM before storage.
 // Even if XSS reads localStorage, the attacker gets ciphertext, not raw keys.
 
-const CREDS_KEY = 'taxmitra_coindcx_creds';
-const SALT = 'TaxMitra-CoinDCX-v1'; // Static salt for key derivation
+const CREDS_KEY = 'easyitr_coindcx_creds';
+const SALT = 'EasyITR-CoinDCX-v1'; // Static salt for key derivation
 
 /**
  * Derive an AES encryption key from user ID.
@@ -2250,3 +2250,4 @@ export async function hasStoredCredentialsAsync(): Promise<boolean> {
     } catch { /* ignore */ }
     return false;
 }
+

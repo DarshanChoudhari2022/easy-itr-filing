@@ -102,7 +102,7 @@ export default function Auth() {
             </li>
             <li className="flex items-start gap-3">
               <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">2</span>
-              <span>Click the <strong>"Confirm your email"</strong> link in the email from TaxMitra</span>
+              <span>Click the <strong>"Confirm your email"</strong> link in the email from EasyITR</span>
             </li>
             <li className="flex items-start gap-3">
               <span className="h-6 w-6 rounded-full bg-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">3</span>
@@ -133,8 +133,8 @@ export default function Auth() {
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-primary text-primary-foreground p-12 flex-col justify-between">
         <div>
           <div className="flex items-center gap-3 mb-12">
-            <img src="/logo.png" alt="TaxMitra" className="h-12 w-12 rounded-xl" />
-            <span className="text-2xl font-bold">TaxMitra</span>
+            <img src="/logo.png" alt="EasyITR" className="h-12 w-12 rounded-xl" />
+            <span className="text-2xl font-bold">EasyITR</span>
           </div>
 
           <h1 className="text-4xl font-bold mb-4">
@@ -185,7 +185,7 @@ export default function Auth() {
         </div>
 
         <p className="text-sm text-primary-foreground/50">
-          © 2026 TaxMitra Technologies. All rights reserved.
+          © 2026 EasyITR Technologies. All rights reserved.
         </p>
       </div>
 
@@ -193,8 +193,8 @@ export default function Auth() {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <img src="/logo.png" alt="TaxMitra" className="h-10 w-10 rounded-xl" />
-            <span className="text-xl font-bold">TaxMitra</span>
+            <img src="/logo.png" alt="EasyITR" className="h-10 w-10 rounded-xl" />
+            <span className="text-xl font-bold">EasyITR</span>
           </div>
 
           <Button
@@ -335,3 +335,4 @@ export default function Auth() {
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Reconciliation Engine
+ * EasyITR — Reconciliation Engine
  * ==================================
  * Full reconciliation pipeline that runs after every data import.
  * Orchestrates all checks: duplicates, gaps, cross-source matching,
@@ -385,3 +385,4 @@ function computeInventoryBalances(
 
     return checks.sort((a, b) => a.asset.localeCompare(b.asset));
 }
+

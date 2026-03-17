@@ -86,7 +86,7 @@ export default function AuditLogs() {
                                 </div>
                                 <h3 className="text-lg font-semibold mb-2">No activity recorded yet</h3>
                                 <p className="text-sm text-muted-foreground max-w-sm">
-                                    System actions like tax computations, data imports, and filing events will appear here automatically as you use TaxMitra.
+                                    System actions like tax computations, data imports, and filing events will appear here automatically as you use EasyITR.
                                 </p>
                             </div>
                         ) : (
@@ -128,3 +128,4 @@ export default function AuditLogs() {
         </AppLayout>
     );
 }
+

@@ -317,7 +317,7 @@ export function createDefaultSession(userId: string, fy: string): FilingSession 
 // PERSISTENCE — localStorage + Supabase
 // ═══════════════════════════════════════════════════════════════
 
-const STORAGE_KEY = 'taxmitra_filing_session';
+const STORAGE_KEY = 'easyitr_filing_session';
 
 function getStorageKey(userId: string, fy: string): string {
     return `${STORAGE_KEY}_${userId}_${fy}`;
@@ -608,3 +608,4 @@ export function getFilingProgress(session: FilingSession): number {
     const done = steps.filter(Boolean).length;
     return Math.round((done / steps.length) * 100);
 }
+

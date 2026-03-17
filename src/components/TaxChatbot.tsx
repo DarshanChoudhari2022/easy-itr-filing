@@ -22,7 +22,7 @@ export default function TaxChatbot({ taxContext }: TaxChatbotProps = {}) {
         {
             id: "welcome",
             role: "assistant",
-            content: "👋 Hi! I'm TaxMitra AI, your personal tax assistant. Ask me anything about Indian Income Tax, GST, Crypto taxation, or filing ITR!",
+            content: "👋 Hi! I'm EasyITR AI, your personal tax assistant. Ask me anything about Indian Income Tax, GST, Crypto taxation, or filing ITR!",
             timestamp: new Date(),
         },
     ]);
@@ -127,7 +127,7 @@ export default function TaxChatbot({ taxContext }: TaxChatbotProps = {}) {
                                     <Bot className="h-6 w-6 text-white" />
                                 </div>
                                 <div className="flex-1">
-                                    <h3 className="font-bold text-white text-lg">TaxMitra AI</h3>
+                                    <h3 className="font-bold text-white text-lg">EasyITR AI</h3>
                                     <p className="text-white/80 text-sm flex items-center gap-1">
                                         <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
                                         Online • Powered by AI
@@ -236,3 +236,4 @@ export default function TaxChatbot({ taxContext }: TaxChatbotProps = {}) {
         </>
     );
 }
+

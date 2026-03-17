@@ -1,5 +1,5 @@
 /**
- * TaxMitra Crypto Service - Production Ready
+ * EasyITR Crypto Service - Production Ready
  * Handles all Supabase operations for crypto trades
  * 
  * Features:
@@ -692,3 +692,4 @@ export function dbTradeToTransaction(trade: CryptoTrade): Transaction {
 export function dbTradesToTransactions(trades: CryptoTrade[]): Transaction[] {
     return trades.map(dbTradeToTransaction);
 }
+

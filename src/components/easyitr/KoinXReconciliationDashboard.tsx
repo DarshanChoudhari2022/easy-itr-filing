@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ShieldCheck, Target, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
-import type { ReconciliationResult, ReconciliationCheck, AssetReconciliation } from "@/lib/taxmitra/koinx-reconciliation";
+import type { ReconciliationResult, ReconciliationCheck, AssetReconciliation } from "@/lib/easyitr/koinx-reconciliation";
 
 export function KoinXReconciliationDashboard({ result }: { result: ReconciliationResult | null }) {
     if (!result) return null;
@@ -62,7 +62,7 @@ export function KoinXReconciliationDashboard({ result }: { result: Reconciliatio
                                         result.overallStatus === 'MINOR_DISCREPANCY' ? 'text-amber-700' :
                                             'text-red-700'
                                 }>
-                                    Comparing TaxMitra V5 Engine output against known KoinX reference data for {result.financialYear}
+                                    Comparing EasyITR V5 Engine output against known KoinX reference data for {result.financialYear}
                                 </CardDescription>
                             </div>
                         </div>
@@ -86,7 +86,7 @@ export function KoinXReconciliationDashboard({ result }: { result: Reconciliatio
                             <thead>
                                 <tr className="bg-slate-50 border-b">
                                     <th className="text-left py-3 px-4 font-semibold text-slate-600">Metric</th>
-                                    <th className="text-right py-3 px-4 font-semibold text-slate-600">TaxMitra</th>
+                                    <th className="text-right py-3 px-4 font-semibold text-slate-600">EasyITR</th>
                                     <th className="text-right py-3 px-4 font-semibold text-slate-600">KoinX Ref</th>
                                     <th className="text-right py-3 px-4 font-semibold text-slate-600">Variance</th>
                                     <th className="text-center py-3 px-4 font-semibold text-slate-600">Status</th>
@@ -100,7 +100,7 @@ export function KoinXReconciliationDashboard({ result }: { result: Reconciliatio
                                             <p className="text-xs text-slate-500">{check.notes}</p>
                                         </td>
                                         <td className="py-3 px-4 text-right font-medium text-indigo-700">
-                                            {check.metric.includes('Count') ? check.taxMitraValue : formatCurrency(check.taxMitraValue)}
+                                            {check.metric.includes('Count') ? check.easyITRValue : formatCurrency(check.easyITRValue)}
                                         </td>
                                         <td className="py-3 px-4 text-right font-medium text-slate-700">
                                             {check.metric.includes('Count') ? check.koinxValue : formatCurrency(check.koinxValue)}
@@ -147,3 +147,4 @@ export function KoinXReconciliationDashboard({ result }: { result: Reconciliatio
         </div>
     );
 }
+

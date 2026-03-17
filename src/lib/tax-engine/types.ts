@@ -1,5 +1,5 @@
 /**
- * TaxMitra Tax Engine — Type Definitions
+ * EasyITR Tax Engine — Type Definitions
  * AY 2026-27 (FY 2025-26) compliant
  * 
  * These types model the complete Indian Income Tax computation
@@ -300,3 +300,4 @@ export interface RegimeComparisonResult {
     savings: number;
     reasons: string[];
 }
+

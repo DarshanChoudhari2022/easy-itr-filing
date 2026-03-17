@@ -1,5 +1,5 @@
 /**
- * TaxMitra Tax Engine — AY 2026-27 Tax Rates & Configuration
+ * EasyITR Tax Engine — AY 2026-27 Tax Rates & Configuration
  * 
  * Ground truth source: CBDT notification + Union Budget 2025
  * 
@@ -322,3 +322,4 @@ export const DEFAULT_AY: AssessmentYear = '2026-27';
 export function getConfig(ay?: AssessmentYear): YearTaxConfig {
     return TAX_CONFIGS[ay || DEFAULT_AY];
 }
+

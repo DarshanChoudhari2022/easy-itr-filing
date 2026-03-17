@@ -172,7 +172,7 @@ export default function EFile() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `TaxMitra_ITR_${panToUse}_AY${assessmentYear.replace("-", "")}.json`;
+    a.download = `EasyITR_ITR_${panToUse}_AY${assessmentYear.replace("-", "")}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -193,7 +193,7 @@ export default function EFile() {
 
     // Mock Audit Pack (Zip simulation)
     const files = [
-      "TaxMitra_Computation_AY2026.pdf",
+      "EasyITR_Computation_AY2026.pdf",
       "AIS_Reconciliation_Report.pdf",
       "Crypto_FIFO_Audit_Trail.pdf",
       "Section_80_Proofs_Snapshot.pdf"
@@ -566,3 +566,4 @@ export default function EFile() {
     </AppLayout>
   );
 }
+

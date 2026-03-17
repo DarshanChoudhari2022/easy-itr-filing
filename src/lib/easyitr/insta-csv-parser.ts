@@ -1,5 +1,5 @@
 /**
- * TaxMitra — CoinDCX Insta History CSV Parser
+ * EasyITR — CoinDCX Insta History CSV Parser
  * ==============================================
  * Pure parsing logic — no Supabase dependency.
  *
@@ -530,3 +530,4 @@ function buildInstaSummary(
         financial_years: [...fySet].sort(),
     };
 }
+

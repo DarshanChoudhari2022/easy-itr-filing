@@ -1,5 +1,5 @@
 /**
- * TaxMitra — CoinDCX TDS Summary CSV Parser
+ * EasyITR — CoinDCX TDS Summary CSV Parser
  * ============================================
  * Pure parsing logic — no Supabase dependency.
  *
@@ -414,3 +414,4 @@ function buildTDSSummary(rows: ParsedTDSRow[]): TDSCSVParseResult['summary'] {
         financial_years: [...fySet].sort(),
     };
 }
+

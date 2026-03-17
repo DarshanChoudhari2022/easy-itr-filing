@@ -642,11 +642,11 @@ export async function getFileUrl(filePath: string) {
  * This stores data in a per-user JSON blob that persists across browsers.
  * 
  * Data keys used:
- * - taxmitra_transactions: NormalizedTransaction[]
- * - taxmitra_tds: TDSRecord[]
+ * - easyitr_transactions: NormalizedTransaction[]
+ * - easyitr_tds: TDSRecord[]
  * - taxSettings: TaxSettings
- * - taxmitra_crypto_tax_summary: crypto tax computation result
- * - taxmitra_coindcx_creds: CoinDCX API credentials (base64 encoded)
+ * - easyitr_crypto_tax_summary: crypto tax computation result
+ * - easyitr_coindcx_creds: CoinDCX API credentials (base64 encoded)
  * - notificationSettings: notification preferences
  * - privacySettings: privacy preferences
  */
@@ -746,3 +746,4 @@ export async function saveUserDataBatch(entries: Record<string, any>): Promise<v
     }
     console.log(`[UserDataStore] ✅ Batch saved ${rows.length} keys`);
 }
+

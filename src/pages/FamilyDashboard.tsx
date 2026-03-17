@@ -135,7 +135,7 @@ export default function FamilyDashboard() {
                         <h4 className="font-bold text-rose-900">Privacy & Controlled Access</h4>
                         <p className="text-xs text-rose-800/80 mt-1 max-w-2xl leading-relaxed">
                             Adding a family member requires their one-time PAN consent. You can choose to have "Full Access" or only "Visibility Access" for their tax documents.
-                            TaxMitra ensures data isolation within the group based on role permissions.
+                            EasyITR ensures data isolation within the group based on role permissions.
                         </p>
                     </div>
                 </div>
@@ -143,3 +143,4 @@ export default function FamilyDashboard() {
         </AppLayout>
     );
 }
+

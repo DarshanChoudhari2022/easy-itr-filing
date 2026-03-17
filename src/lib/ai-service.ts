@@ -1,5 +1,5 @@
 /**
- * TaxMitra AI Service — Enhanced with User Context
+ * EasyITR AI Service — Enhanced with User Context
  * Powered by Hugging Face Inference API
  * 
  * Features:
@@ -86,7 +86,7 @@ function buildContextPrompt(question: string, context?: UserTaxContext): string 
         }
     }
 
-    return `[INST] You are TaxMitra Guru, an expert AI assistant for Indian Income Tax, GST, and Crypto/VDA tax regulations.
+    return `[INST] You are EasyITR Guru, an expert AI assistant for Indian Income Tax, GST, and Crypto/VDA tax regulations.
 
 IMPORTANT RULES:
 1. Answer based on the latest Indian tax laws (Finance Act 2024 and Budget 2025).
@@ -188,7 +188,7 @@ export async function askTaxGuru(
 
     } catch (error) {
         const err = error as Error;
-        console.error("TaxMitra AI Error:", err);
+        console.error("EasyITR AI Error:", err);
 
         // Provide fallback answers for common intents
         const fallbacks: Partial<Record<Intent, string>> = {
@@ -205,3 +205,4 @@ export async function askTaxGuru(
         };
     }
 }
+

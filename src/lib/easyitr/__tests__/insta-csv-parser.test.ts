@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Insta History CSV Parser Tests
+ * EasyITR — Insta History CSV Parser Tests
  * ==========================================
  * Tests for CoinDCX Insta History CSV parsing logic,
  * including BUY/SELL trades AND staking/reward income events.
@@ -274,3 +274,4 @@ describe('parseInstaHistoryCSV — column detection', () => {
         expect(result.incomeRows).toHaveLength(0);
     });
 });
+

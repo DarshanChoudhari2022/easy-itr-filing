@@ -1,5 +1,5 @@
 /**
- * TaxMitra — FIFO Tax Engine Unit Tests (v6)
+ * EasyITR — FIFO Tax Engine Unit Tests (v6)
  * ============================================
  * Tests the core computeAssetFIFO logic directly via the public
  * computeVdaTaxForFinancialYear function.
@@ -396,3 +396,4 @@ describe('FIFO v6 — Reward Income', () => {
         expect(result.totalTaxableVDA).toBe(100);
     });
 });
+

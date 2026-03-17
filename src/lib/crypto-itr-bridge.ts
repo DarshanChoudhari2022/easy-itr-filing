@@ -13,7 +13,7 @@ import {
 import {
     fetchOverview, fetchScheduleVDA, checkDataQuality,
     type TaxSummary, type ScheduleVDAResponse
-} from '@/lib/taxmitra/api-client';
+} from '@/lib/easyitr/api-client';
 
 export interface CryptoSyncResult {
     success: boolean;
@@ -139,3 +139,4 @@ export async function isCryptoSynced(userId: string, fy: string): Promise<boolea
         return false;
     }
 }
+

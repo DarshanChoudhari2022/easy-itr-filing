@@ -82,7 +82,7 @@ export default function ForeignCompliance() {
                                 <p className="text-sm text-muted-foreground max-w-2xl leading-relaxed">
                                     As an Indian resident, failing to disclose foreign assets (including RSUs, bank accounts, or ESOPs from US employers)
                                     can lead to a <strong>₹10,00,000 penalty</strong> per year and prosecution, even if the income was not taxable.
-                                    TaxMitra helps you automate <strong>Schedule FA</strong> filing to stay 100% safe.
+                                    EasyITR helps you automate <strong>Schedule FA</strong> filing to stay 100% safe.
                                 </p>
                             </div>
                         </div>
@@ -199,7 +199,7 @@ export default function ForeignCompliance() {
                                         </div>
                                         <div className="text-sm text-muted-foreground">
                                             {income.length > 0
-                                                ? 'TaxMitra will calculate optimal DTAA relief for your foreign income sources.'
+                                                ? 'EasyITR will calculate optimal DTAA relief for your foreign income sources.'
                                                 : 'Add foreign income to auto-calculate DTAA tax credits and generate Form 67.'
                                             }
                                         </div>
@@ -214,3 +214,4 @@ export default function ForeignCompliance() {
         </AppLayout>
     );
 }
+

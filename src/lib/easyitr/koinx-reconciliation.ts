@@ -1,8 +1,8 @@
 /**
- * TaxMitra — KoinX Reconciliation Engine
+ * EasyITR — KoinX Reconciliation Engine
  * =======================================
  * 
- * Compares TaxMitra's computed output against KoinX reference data.
+ * Compares EasyITR's computed output against KoinX reference data.
  * Generates a detailed reconciliation report highlighting any discrepancies.
  * 
  * Usage:
@@ -50,7 +50,7 @@ export interface ReconciliationResult {
 
 export interface ReconciliationCheck {
     metric: string;
-    taxMitraValue: number;
+    easyITRValue: number;
     koinxValue: number;
     discrepancy: number;
     discrepancyPct: number;
@@ -60,7 +60,7 @@ export interface ReconciliationCheck {
 
 export interface AssetReconciliation {
     assetSymbol: string;
-    taxMitraGains: number;
+    easyITRGains: number;
     koinxGains: number;
     discrepancy: number;
     status: 'MATCH' | 'MINOR' | 'MAJOR' | 'CRITICAL';
@@ -69,18 +69,18 @@ export interface AssetReconciliation {
 // ============= RECONCILIATION ENGINE =============
 
 /**
- * Compare TaxMitra computation result against KoinX reference data.
+ * Compare EasyITR computation result against KoinX reference data.
  * Returns a detailed reconciliation report.
  */
 export function reconcileWithKoinX(
-    taxMitraResult: TaxComputationResult,
+    easyITRResult: TaxComputationResult,
     koinxRef: KoinXReference,
     toleranceInr: number = 500 // Default tolerance: ₹500
 ): ReconciliationResult {
     const checks: ReconciliationCheck[] = [];
 
     // 1. Transaction Count
-    const txCount = taxMitraResult.totalVDAEntries;
+    const txCount = easyITRResult.totalVDAEntries;
     checks.push(makeCheck(
         'Transaction Count',
         txCount,
@@ -92,7 +92,7 @@ export function reconcileWithKoinX(
     // 2. Total Taxable Capital Gains
     checks.push(makeCheck(
         'Taxable Capital Gains',
-        taxMitraResult.taxableCapitalGains,
+        easyITRResult.taxableCapitalGains,
         koinxRef.totalCapitalGains,
         toleranceInr,
         'Sum of profitable trade gains only (no loss offset per 115BBH)'
@@ -101,7 +101,7 @@ export function reconcileWithKoinX(
     // 3. Total Sale Consideration
     checks.push(makeCheck(
         'Total Sale Consideration',
-        taxMitraResult.totalConsiderationInr,
+        easyITRResult.totalConsiderationInr,
         koinxRef.totalSaleConsideration,
         toleranceInr * 2,
         'Total value of all disposals in the FY'
@@ -110,7 +110,7 @@ export function reconcileWithKoinX(
     // 4. Total Cost of Acquisition
     checks.push(makeCheck(
         'Cost of Acquisition',
-        taxMitraResult.totalCostOfAcquisitionInr,
+        easyITRResult.totalCostOfAcquisitionInr,
         koinxRef.totalCostOfAcquisition,
         toleranceInr * 2,
         'Total FIFO cost basis for disposed assets'
@@ -119,7 +119,7 @@ export function reconcileWithKoinX(
     // 5. TDS Credit
     checks.push(makeCheck(
         'TDS Credit',
-        taxMitraResult.totalTDSCredit,
+        easyITRResult.totalTDSCredit,
         koinxRef.tdsCredit,
         50, // Tight tolerance for TDS (₹50)
         'TDS deducted under Section 194S'
@@ -128,7 +128,7 @@ export function reconcileWithKoinX(
     // 6. Other Income
     checks.push(makeCheck(
         'Other VDA Income',
-        taxMitraResult.otherVDAIncome,
+        easyITRResult.otherVDAIncome,
         koinxRef.otherIncome,
         100, // ₹100 tolerance
         'Staking rewards, interest, airdrops valued at FMV'
@@ -138,7 +138,7 @@ export function reconcileWithKoinX(
     if (koinxRef.totalCapitalLosses !== undefined) {
         checks.push(makeCheck(
             'Capital Losses (Info)',
-            taxMitraResult.grossCapitalLosses,
+            easyITRResult.grossCapitalLosses,
             koinxRef.totalCapitalLosses,
             toleranceInr,
             'Sum of loss-making trades (cannot offset gains per 115BBH)'
@@ -149,13 +149,13 @@ export function reconcileWithKoinX(
     const assetChecks: AssetReconciliation[] = [];
     if (koinxRef.assetBreakdown) {
         for (const koinxAsset of koinxRef.assetBreakdown) {
-            const tmAsset = taxMitraResult.assetSummaries.find(
+            const tmAsset = easyITRResult.assetSummaries.find(
                 a => a.assetSymbol.toUpperCase() === koinxAsset.assetSymbol.toUpperCase()
             );
 
             assetChecks.push({
                 assetSymbol: koinxAsset.assetSymbol,
-                taxMitraGains: tmAsset?.taxableGain || 0,
+                easyITRGains: tmAsset?.taxableGain || 0,
                 koinxGains: koinxAsset.totalGains,
                 discrepancy: Math.abs((tmAsset?.taxableGain || 0) - koinxAsset.totalGains),
                 status: getStatus(
@@ -176,10 +176,10 @@ export function reconcileWithKoinX(
 
     // Generate reports
     const summary = generateSummary(checks, overallStatus);
-    const detailedReport = generateDetailedReport(checks, assetChecks, taxMitraResult);
+    const detailedReport = generateDetailedReport(checks, assetChecks, easyITRResult);
 
     return {
-        financialYear: taxMitraResult.financialYear,
+        financialYear: easyITRResult.financialYear,
         overallStatus,
         checks,
         assetChecks,
@@ -192,18 +192,18 @@ export function reconcileWithKoinX(
 
 function makeCheck(
     metric: string,
-    taxMitraValue: number,
+    easyITRValue: number,
     koinxValue: number,
     toleranceInr: number,
     notes: string
 ): ReconciliationCheck {
-    const discrepancy = Math.abs(taxMitraValue - koinxValue);
+    const discrepancy = Math.abs(easyITRValue - koinxValue);
     const base = Math.max(Math.abs(koinxValue), 1);
     const discrepancyPct = (discrepancy / base) * 100;
 
     return {
         metric,
-        taxMitraValue: Math.round(taxMitraValue * 100) / 100,
+        easyITRValue: Math.round(easyITRValue * 100) / 100,
         koinxValue: Math.round(koinxValue * 100) / 100,
         discrepancy: Math.round(discrepancy * 100) / 100,
         discrepancyPct: Math.round(discrepancyPct * 100) / 100,
@@ -234,7 +234,7 @@ function generateSummary(checks: ReconciliationCheck[], status: string): string 
         const icon = check.status === 'MATCH' ? '✅' :
             check.status === 'MINOR' ? '🟡' :
                 check.status === 'MAJOR' ? '🟠' : '🔴';
-        summary += `${icon} **${check.metric}**: TaxMitra ₹${check.taxMitraValue.toLocaleString('en-IN')} vs KoinX ₹${check.koinxValue.toLocaleString('en-IN')}`;
+        summary += `${icon} **${check.metric}**: EasyITR ₹${check.easyITRValue.toLocaleString('en-IN')} vs KoinX ₹${check.koinxValue.toLocaleString('en-IN')}`;
         if (check.discrepancy > 0) {
             summary += ` (Δ ₹${check.discrepancy.toLocaleString('en-IN')}, ${check.discrepancyPct}%)`;
         }
@@ -249,22 +249,22 @@ function generateDetailedReport(
     assetChecks: AssetReconciliation[],
     result: TaxComputationResult
 ): string {
-    let report = `# TaxMitra vs KoinX — Detailed Reconciliation Report\n`;
+    let report = `# EasyITR vs KoinX — Detailed Reconciliation Report\n`;
     report += `**FY:** ${result.financialYear} | **Engine:** v${result.engineVersion} | **Computed:** ${result.computedAt.toISOString()}\n\n`;
 
     report += `## Metric Comparison\n\n`;
-    report += `| Metric | TaxMitra | KoinX | Δ | Δ% | Status |\n`;
+    report += `| Metric | EasyITR | KoinX | Δ | Δ% | Status |\n`;
     report += `|--------|----------|-------|---|----|---------|\n`;
     for (const c of checks) {
-        report += `| ${c.metric} | ₹${c.taxMitraValue.toLocaleString('en-IN')} | ₹${c.koinxValue.toLocaleString('en-IN')} | ₹${c.discrepancy.toLocaleString('en-IN')} | ${c.discrepancyPct}% | ${c.status} |\n`;
+        report += `| ${c.metric} | ₹${c.easyITRValue.toLocaleString('en-IN')} | ₹${c.koinxValue.toLocaleString('en-IN')} | ₹${c.discrepancy.toLocaleString('en-IN')} | ${c.discrepancyPct}% | ${c.status} |\n`;
     }
 
     if (assetChecks.length > 0) {
         report += `\n## Per-Asset Comparison\n\n`;
-        report += `| Asset | TaxMitra Gains | KoinX Gains | Δ | Status |\n`;
+        report += `| Asset | EasyITR Gains | KoinX Gains | Δ | Status |\n`;
         report += `|-------|----------------|-------------|---|--------|\n`;
         for (const a of assetChecks) {
-            report += `| ${a.assetSymbol} | ₹${a.taxMitraGains.toLocaleString('en-IN')} | ₹${a.koinxGains.toLocaleString('en-IN')} | ₹${a.discrepancy.toLocaleString('en-IN')} | ${a.status} |\n`;
+            report += `| ${a.assetSymbol} | ₹${a.easyITRGains.toLocaleString('en-IN')} | ₹${a.koinxGains.toLocaleString('en-IN')} | ₹${a.discrepancy.toLocaleString('en-IN')} | ${a.status} |\n`;
         }
     }
 
@@ -338,4 +338,5 @@ export function getKoinXReference(fy: string): KoinXReference | null {
         default: return null;
     }
 }
+
 

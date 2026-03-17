@@ -1,5 +1,5 @@
 /**
- * TaxMitra — CoinDCX Order History CSV Parser
+ * EasyITR — CoinDCX Order History CSV Parser
  * =============================================
  * Pure parsing logic — no Supabase dependency.
  *
@@ -668,3 +668,4 @@ function buildSummary(rows: ParsedOrderRow[]): OrderCSVParseResult['summary'] {
         financial_years: Array.from(fySet).sort(),
     };
 }
+

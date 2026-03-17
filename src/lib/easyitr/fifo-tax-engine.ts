@@ -1,5 +1,5 @@
 /**
- * TaxMitra — FIFO Capital Gains Tax Engine
+ * EasyITR — FIFO Capital Gains Tax Engine
  * ==========================================
  * Implements Indian crypto tax calculation per Section 115BBH.
  *
@@ -714,3 +714,4 @@ function errorResult(fy: string, errors: string[]): TaxComputationResult {
         errors,
     };
 }
+

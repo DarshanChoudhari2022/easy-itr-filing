@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Duplicate Detector
+ * EasyITR — Duplicate Detector
  * ==============================
  * 3-layer duplicate detection for transactions from multiple sources:
  *   Layer 1: Exact content hash match (100% confidence)
@@ -198,3 +198,4 @@ function getSourcePriority(tx: NormalizedTransaction): number {
     if (source === 'manual') return 3;
     return 4;
 }
+

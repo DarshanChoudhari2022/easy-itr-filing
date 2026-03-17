@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* BharatTax Design System
+/* EasyITR Design System
    Primary: Navy Blue - trust & professionalism
    Secondary: Emerald Green - financial growth & savings
    All colors MUST be HSL.
@@ -144,6 +144,7 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
@@ -151,6 +152,13 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
     scroll-behavior: smooth;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Safe area for notched devices (iPhone X+) */
+  main {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   /* Smooth fade-in for all sections */
@@ -170,10 +178,23 @@
     }
   }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  /* Custom scrollbar - hide on mobile for cleaner look */
+  @media (max-width: 640px) {
+    ::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 3px;
+    }
+  }
+
+  @media (min-width: 641px) {
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
   }
 
   ::-webkit-scrollbar-track {
@@ -186,6 +207,13 @@
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-muted-foreground/50;
+  }
+
+  /* Ensure minimum touch target sizes on mobile */
+  @media (max-width: 640px) {
+    button, a, [role="button"] {
+      min-height: 36px;
+    }
   }
 }
 

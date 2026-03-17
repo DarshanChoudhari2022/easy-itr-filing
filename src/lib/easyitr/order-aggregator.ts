@@ -1,15 +1,15 @@
-﻿/**
- * TaxMitra â€” Order-Level Aggregation Engine
+/**
+ * EasyITR — Order-Level Aggregation Engine
  * ==========================================
  * 
  * KEY INSIGHT (KoinX Matching):
- *   CoinDCX API returns fill-level trades (one order â†’ multiple fills).
+ *   CoinDCX API returns fill-level trades (one order → multiple fills).
  *   KoinX aggregates fills into order-level transactions.
  *   This is the #1 reason for transaction count + capital gains mismatch.
  * 
  *   Example:
- *     API fills:    Fill1: 0.1 BTC @ â‚¹50,100 (orderABC) + Fill2: 0.4 BTC @ â‚¹50,200 (orderABC)
- *     KoinX view:   Order ABC: 0.5 BTC @ â‚¹50,180 (VWAP) â†’ 1 transaction
+ *     API fills:    Fill1: 0.1 BTC @ ₹50,100 (orderABC) + Fill2: 0.4 BTC @ ₹50,200 (orderABC)
+ *     KoinX view:   Order ABC: 0.5 BTC @ ₹50,180 (VWAP) → 1 transaction
  * 
  * This module converts fill-level transactions to order-level transactions,
  * matching KoinX's aggregation logic exactly.
@@ -87,7 +87,7 @@ export function isValidTrade(tx: NormalizedTransaction): { valid: boolean; reaso
         }
     }
 
-    // 4. Reject INR (fiat) as base asset â€” these are deposits/withdrawals, not crypto trades
+    // 4. Reject INR (fiat) as base asset — these are deposits/withdrawals, not crypto trades
     if (asset === 'INR') {
         return { valid: false, reason: 'FIAT_ASSET' };
     }
@@ -108,12 +108,12 @@ export function isValidTrade(tx: NormalizedTransaction): { valid: boolean; reaso
  * This is the key transformation to match KoinX's transaction counting.
  * 
  * Logic:
- *   1. Group fills by (orderId + side) â€” one order can only be buy OR sell
+ *   1. Group fills by (orderId + side) — one order can only be buy OR sell
  *   2. For each group:
- *      - Sum quantities â†’ totalQuantity
- *      - Compute VWAP price = Î£(qty_i Ã— price_i) / Î£(qty_i)
- *      - Sum fees â†’ totalFee
- *      - Sum TDS â†’ totalTds
+ *      - Sum quantities → totalQuantity
+ *      - Compute VWAP price = Σ(qty_i × price_i) / Σ(qty_i)
+ *      - Sum fees → totalFee
+ *      - Sum TDS → totalTds
  *      - Use earliest fill timestamp as order timestamp
  *      - Sum gross amounts
  *   3. Produce one NormalizedTransaction per order
@@ -180,7 +180,7 @@ export function aggregateFillsToOrders(
         const isSell = txType.includes('sell') || txType === 'swap_out' || txType === 'p2p_sell';
 
         if (!orderId || orderId.startsWith('coindcx-') || orderId.startsWith('man-')) {
-            // No real orderId â€” can't aggregate, keep as-is
+            // No real orderId — can't aggregate, keep as-is
             noOrderTxs.push(tx);
             stats.noOrderIdCount++;
             continue;
@@ -201,11 +201,11 @@ export function aggregateFillsToOrders(
 
     for (const [groupKey, fills] of orderGroups.entries()) {
         if (fills.length === 1) {
-            // Single fill â€” no aggregation needed
+            // Single fill — no aggregation needed
             aggregatedTxs.push(fills[0]);
             stats.singleFillOrders++;
         } else {
-            // Multi-fill â€” aggregate into one order-level transaction
+            // Multi-fill — aggregate into one order-level transaction
             const aggregated = aggregateFills(fills, warnings);
             if (aggregated) {
                 aggregatedTxs.push(aggregated);
@@ -266,7 +266,7 @@ function aggregateFills(
     }
 
     // Compute VWAP (Volume Weighted Average Price)
-    // VWAP = Î£(quantity_i Ã— price_i) / Î£(quantity_i)
+    // VWAP = Σ(quantity_i × price_i) / Σ(quantity_i)
     const weightedPriceSum = parsedFills.reduce((sum, f) => sum + f.quantity * f.pricePerUnit, 0);
     const vwapPricePerUnit = weightedPriceSum / totalQuantity;
 
@@ -298,7 +298,7 @@ function aggregateFills(
 
     // Build description
     const side = ref.transactionType.toUpperCase();
-    const description = `${side} ${totalQuantity} ${ref.assetSymbol} @ â‚¹${vwapPriceInr.toFixed(2)} VWAP (${fills.length} fills)`;
+    const description = `${side} ${totalQuantity} ${ref.assetSymbol} @ ₹${vwapPriceInr.toFixed(2)} VWAP (${fills.length} fills)`;
 
     // Return aggregated order
     const aggregated: NormalizedTransaction = {
@@ -406,3 +406,4 @@ function computeOrderKey(tx: NormalizedTransaction): string | null {
     const side = (tx.transactionType || '').toLowerCase().includes('buy') ? 'buy' : 'sell';
     return `orderkey:${orderId}:${tx.assetSymbol}:${side}`;
 }
+

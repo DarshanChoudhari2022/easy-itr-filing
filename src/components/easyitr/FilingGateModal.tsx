@@ -1,5 +1,5 @@
 /**
- * TaxMitra — Filing Gate Modal
+ * EasyITR — Filing Gate Modal
  * =============================
  * Override confirmation modal for users who want to proceed
  * despite soft blockers. Requires:
@@ -10,8 +10,8 @@
 import React, { useState, useMemo } from 'react';
 import { ShieldAlert, AlertTriangle, XCircle, CheckCircle, Lock } from 'lucide-react';
 
-import type { FilingBlocker, FilingGateResult } from '@/lib/taxmitra/filing-gate';
-import { validateOverride, createOverrideRecord, saveOverride } from '@/lib/taxmitra/filing-gate';
+import type { FilingBlocker, FilingGateResult } from '@/lib/easyitr/filing-gate';
+import { validateOverride, createOverrideRecord, saveOverride } from '@/lib/easyitr/filing-gate';
 
 // ============= PROPS =============
 
@@ -221,3 +221,4 @@ export function FilingGateModal({
 }
 
 export default FilingGateModal;
+

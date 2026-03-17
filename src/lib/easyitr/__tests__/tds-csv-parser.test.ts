@@ -1,5 +1,5 @@
 /**
- * TaxMitra — TDS CSV Parser Tests
+ * EasyITR — TDS CSV Parser Tests
  * =================================
  * Tests for CoinDCX TDS Summary CSV parsing logic.
  *
@@ -318,3 +318,4 @@ describe('parseTDSSummaryCSV', () => {
         expect(result.rows[0].raw_data['extra_col']).toBe('some_info');
     });
 });
+

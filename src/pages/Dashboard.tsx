@@ -143,20 +143,20 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
-      <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="space-y-5 md:space-y-8 animate-in fade-in duration-500">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight flex items-center gap-4">
-              TaxMitra Dashboard <Badge className="bg-gradient-to-r from-indigo-600 to-teal-500 text-[10px] animate-pulse">LIVE AY {assessmentYear}</Badge>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight flex flex-wrap items-center gap-2 md:gap-4">
+              EasyITR Dashboard <Badge className="bg-gradient-to-r from-indigo-600 to-teal-500 text-[9px] md:text-[10px] animate-pulse">LIVE AY {assessmentYear}</Badge>
             </h1>
-            <p className="text-muted-foreground font-medium mt-1">
+            <p className="text-muted-foreground font-medium mt-1 text-xs sm:text-sm">
               Welcome back, {profile?.full_name || user?.email?.split("@")[0]} • FY {YEAR_CONFIGS[assessmentYear].fy} • Secure Storage
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Select value={assessmentYear} onValueChange={(v: AssessmentYear) => setAssessmentYear(v)}>
-              <SelectTrigger className="w-[140px] border-indigo-100 font-bold text-indigo-700">
+              <SelectTrigger className="w-[120px] sm:w-[140px] border-indigo-100 font-bold text-indigo-700 text-xs sm:text-sm h-9 sm:h-10">
                 <SelectValue placeholder="Select AY" />
               </SelectTrigger>
               <SelectContent>
@@ -165,12 +165,12 @@ export default function Dashboard() {
                 <SelectItem value="2026-27">AY 2026-27</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="gap-2 border-indigo-100 hover:bg-indigo-50 text-indigo-700">
-              <Zap className="h-4 w-4 fill-indigo-500 text-indigo-500" /> AI Optimization
+            <Button variant="outline" className="gap-1.5 sm:gap-2 border-indigo-100 hover:bg-indigo-50 text-indigo-700 text-xs sm:text-sm h-9 sm:h-10 px-2.5 sm:px-4">
+              <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 fill-indigo-500 text-indigo-500" /> AI Optimization
             </Button>
-            <Button asChild className="bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20">
+            <Button asChild className="bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 text-xs sm:text-sm h-9 sm:h-10 px-3 sm:px-4">
               <Link to="/efile">
-                File Now <ArrowRight className="ml-2 h-4 w-4" />
+                File Now <ArrowRight className="ml-1.5 sm:ml-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </Link>
             </Button>
           </div>
@@ -178,43 +178,43 @@ export default function Dashboard() {
 
         {/* Fetch Live Data Banner - Replacing Welcome Message */}
         <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 border-none text-white shadow-lg overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <ShieldCheck className="h-32 w-32" />
+          <div className="absolute top-0 right-0 p-2 sm:p-4 opacity-10">
+            <ShieldCheck className="h-20 w-20 sm:h-32 sm:w-32" />
           </div>
-          <CardHeader>
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md">
-                <FileText className="h-6 w-6 text-white" />
+          <CardHeader className="px-4 sm:px-6 py-4 sm:py-6">
+            <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md shrink-0">
+                <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold">Sync with Income Tax Portal</CardTitle>
-                <CardDescription className="text-blue-100 text-base">
+                <CardTitle className="text-lg sm:text-xl md:text-2xl font-bold">Sync with Income Tax Portal</CardTitle>
+                <CardDescription className="text-blue-100 text-xs sm:text-sm md:text-base">
                   Automatic data collection from your PAN. We fetch your AIS, 26AS, and Pre-filled JSON.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
-                <h4 className="font-bold flex items-center gap-2 mb-2">
-                  <Zap className="h-4 w-4 text-yellow-300" /> Annual Information Statement (AIS)
+          <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <div className="flex-1 bg-white/10 rounded-xl p-3 sm:p-4 backdrop-blur-sm border border-white/10">
+                <h4 className="font-bold flex items-center gap-2 mb-1.5 sm:mb-2 text-sm sm:text-base">
+                  <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-yellow-300" /> Annual Information Statement (AIS)
                 </h4>
-                <p className="text-xs text-blue-100 mb-3">
+                <p className="text-[11px] sm:text-xs text-blue-100 mb-2.5 sm:mb-3">
                   Reconcile salary, interest, dividends, and market transactions linked to your PAN.
                 </p>
-                <Button asChild size="sm" variant="secondary" className="bg-white text-blue-700 hover:bg-blue-50 w-full font-bold">
+                <Button asChild size="sm" variant="secondary" className="bg-white text-blue-700 hover:bg-blue-50 w-full font-bold text-xs sm:text-sm h-8 sm:h-9">
                   <Link to="/ais">Fetch Live Data</Link>
                 </Button>
               </div>
-              <div className="flex-1 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
-                <h4 className="font-bold flex items-center gap-2 mb-2">
-                  <Briefcase className="h-4 w-4" /> Form 26AS & TIS
+              <div className="flex-1 bg-white/10 rounded-xl p-3 sm:p-4 backdrop-blur-sm border border-white/10">
+                <h4 className="font-bold flex items-center gap-2 mb-1.5 sm:mb-2 text-sm sm:text-base">
+                  <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Form 26AS & TIS
                 </h4>
-                <p className="text-xs text-blue-100 mb-3">
+                <p className="text-[11px] sm:text-xs text-blue-100 mb-2.5 sm:mb-3">
                   Verify tax credits (TDS/TCS) and high-value transactions reported against your PAN.
                 </p>
-                <Button asChild size="sm" variant="ghost" className="bg-white/10 text-white hover:bg-white/20 w-full font-medium border border-white/20">
+                <Button asChild size="sm" variant="ghost" className="bg-white/10 text-white hover:bg-white/20 w-full font-medium border border-white/20 text-xs sm:text-sm h-8 sm:h-9">
                   <Link to="/income">Verify TDS Credits</Link>
                 </Button>
               </div>
@@ -224,38 +224,38 @@ export default function Dashboard() {
 
         {/* Priority Action Center */}
         {showTasks && (
-          <Card className="bg-indigo-900 border-none text-white overflow-hidden relative shadow-2xl shadow-indigo-100 mb-8">
+          <Card className="bg-indigo-900 border-none text-white overflow-hidden relative shadow-2xl shadow-indigo-100 mb-4 sm:mb-8">
             <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-indigo-800/50 to-transparent pointer-events-none"></div>
-            <CardHeader className="relative z-10">
+            <CardHeader className="relative z-10 px-4 sm:px-6 py-4 sm:py-6">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-xl flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-indigo-300" /> Expert-Backed Filing Console
+                <CardTitle className="text-base sm:text-lg md:text-xl flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-300" /> Expert-Backed Filing Console
                 </CardTitle>
-                <button onClick={() => setShowTasks(false)} className="text-indigo-300 hover:text-white"><CheckCircle2 className="h-5 w-5" /></button>
+                <button onClick={() => setShowTasks(false)} className="text-indigo-300 hover:text-white p-1"><CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" /></button>
               </div>
-              <CardDescription className="text-indigo-200">Leverage our intelligent matching engine and professional review systems to optimize your ITR and Crypto compliance.</CardDescription>
+              <CardDescription className="text-indigo-200 text-xs sm:text-sm">Leverage our intelligent matching engine and professional review systems to optimize your ITR and Crypto compliance.</CardDescription>
             </CardHeader>
-            <CardContent className="relative z-10 flex flex-col md:flex-row gap-6 items-center">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
+            <CardContent className="relative z-10 flex flex-col gap-4 sm:gap-6 items-stretch md:flex-row md:items-center px-4 sm:px-6 pb-4 sm:pb-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 flex-1">
                 {dashboardTasks.map((task) => (
                   <Link to={task.link} key={task.id} className="group">
-                    <div className={`p-4 rounded-2xl border transition-all ${task.status === 'completed'
+                    <div className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all ${task.status === 'completed'
                       ? 'bg-emerald-500/20 border-emerald-500/30'
                       : 'bg-white/10 border-white/10 hover:bg-white/20'
                       }`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="p-2 rounded-lg bg-white/10 text-white">
+                      <div className="flex items-center justify-between mb-2 sm:mb-3">
+                        <div className="p-1.5 sm:p-2 rounded-lg bg-white/10 text-white">
                           {task.icon}
                         </div>
-                        {task.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                        {task.status === 'completed' && <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-400" />}
                       </div>
-                      <h4 className="text-xs font-bold">{task.title}</h4>
+                      <h4 className="text-[10px] sm:text-xs font-bold">{task.title}</h4>
                     </div>
                   </Link>
                 ))}
               </div>
-              <Button asChild size="lg" className="bg-white text-indigo-900 hover:bg-indigo-50 px-10 h-16 rounded-2xl font-black shadow-2xl">
-                <Link to="/guided">START SIMPLE FILING <ArrowRight className="ml-2 h-5 w-5" /></Link>
+              <Button asChild size="lg" className="bg-white text-indigo-900 hover:bg-indigo-50 px-6 sm:px-10 h-12 sm:h-16 rounded-xl sm:rounded-2xl font-black shadow-2xl text-sm sm:text-base w-full md:w-auto">
+                <Link to="/guided">START SIMPLE FILING <ArrowRight className="ml-2 h-4 w-4 sm:h-5 sm:w-5" /></Link>
               </Button>
             </CardContent>
           </Card>
@@ -264,28 +264,28 @@ export default function Dashboard() {
         {/* ITR Filing Progress — From Filing Session */}
         {filingSession && (
           <Card className="border-indigo-200 bg-gradient-to-r from-indigo-50/50 to-violet-50/50 shadow-sm">
-            <CardContent className="py-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-indigo-600" />
+            <CardContent className="py-4 sm:py-5 px-4 sm:px-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+                    <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900">ITR Filing — {filingSession.assessmentYear}</h3>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">ITR Filing — {filingSession.assessmentYear}</h3>
+                    <p className="text-[11px] sm:text-xs text-muted-foreground">
                       {itrForm.form !== 'auto' ? `${itrForm.form} • ` : ''}{filingSession.regime !== 'undecided' ? `${filingSession.regime === 'old' ? 'Old' : 'New'} Regime • ` : ''}{filingProgress}% complete
                     </p>
                   </div>
                 </div>
-                <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-500">
-                  <Link to="/guided">{filingProgress > 0 ? 'Continue Filing' : 'Start Filing'} <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-500 w-full sm:w-auto text-xs sm:text-sm h-8 sm:h-9">
+                  <Link to="/guided">{filingProgress > 0 ? 'Continue Filing' : 'Start Filing'} <ArrowRight className="ml-1 h-3 w-3 sm:h-3.5 sm:w-3.5" /></Link>
                 </Button>
               </div>
-              <Progress value={filingProgress} className="h-2 mb-2" />
+              <Progress value={filingProgress} className="h-1.5 sm:h-2 mb-2" />
               {incomeTypes.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap mt-2">
+                <div className="flex gap-1 sm:gap-1.5 flex-wrap mt-2">
                   {incomeTypes.map((t: string) => (
-                    <Badge key={t} variant="outline" className="text-[10px] border-indigo-200 text-indigo-700 bg-white">{t}</Badge>
+                    <Badge key={t} variant="outline" className="text-[9px] sm:text-[10px] border-indigo-200 text-indigo-700 bg-white">{t}</Badge>
                   ))}
                 </div>
               )}
@@ -294,7 +294,8 @@ export default function Dashboard() {
         )}
 
         {/* Core Pillars */}
-        <div className="grid gap-6 md:grid-cols-3">
+        {/* Core Pillars */}
+        <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
           <ModuleCard
             title="GST Intelligence"
             desc="Monthly compliance & ITC analytics"
@@ -328,41 +329,42 @@ export default function Dashboard() {
         </div>
 
         {/* Insights Section */}
-        <div className="grid gap-6 lg:grid-cols-7">
+        {/* Insights Section */}
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-7">
           <Card className="lg:col-span-4 border-slate-100 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-indigo-600" /> Compliance Intelligence
+            <CardHeader className="px-4 sm:px-6 py-4 sm:py-6">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600" /> Compliance Intelligence
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 flex gap-5">
-                <div className="h-12 w-12 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
-                  <Sparkles className="h-6 w-6 text-indigo-600" />
+            <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6 pb-4 sm:pb-6">
+              <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-indigo-50 border border-indigo-100 flex flex-col sm:flex-row gap-3 sm:gap-5">
+                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+                  <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
                 </div>
                 <div className="flex-1">
-                  <div className="flex justify-between">
-                    <h4 className="font-bold text-indigo-900">Tax Optimization Engine</h4>
-                    <Badge variant="outline" className="border-indigo-200 text-indigo-700">AI INSIGHT</Badge>
+                  <div className="flex flex-wrap justify-between items-start gap-2">
+                    <h4 className="font-bold text-indigo-900 text-sm sm:text-base">Tax Optimization Engine</h4>
+                    <Badge variant="outline" className="border-indigo-200 text-indigo-700 text-[9px] sm:text-[10px]">AI INSIGHT</Badge>
                   </div>
-                  <p className="text-sm text-indigo-800/80 mt-1 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-indigo-800/80 mt-1 leading-relaxed">
                     Based on your {stats.totalIncome > 0 ? "current" : "estimated"} income of ₹{(stats.totalIncome / 100000).toFixed(2)}L, we recommend checking your <strong>Section 80C</strong> limit to save up to ₹45,000 in taxes.
                   </p>
-                  <Button asChild variant="link" className="text-indigo-800 font-bold p-0 h-auto mt-3 gap-2">
+                  <Button asChild variant="link" className="text-indigo-800 font-bold p-0 h-auto mt-2.5 sm:mt-3 gap-2 text-xs sm:text-sm">
                     <Link to="/optimizer">Optimize Now <ArrowRight className="h-3 w-3" /></Link>
                   </Button>
                 </div>
               </div>
 
               {/* Advance Tax Progress */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter italic">
-                    <Calendar className="h-4 w-4 text-indigo-600" /> Advance Tax Roadmap
+              <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-100 space-y-3 sm:space-y-4">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                  <span className="font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter italic text-xs sm:text-sm">
+                    <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-600" /> Advance Tax Roadmap
                   </span>
-                  <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-none">Next Due: March 15</Badge>
+                  <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-none text-[10px] sm:text-xs w-fit">Next Due: March 15</Badge>
                 </div>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
                   <Installment status="paid" date="Jun 15" installment={1} />
                   <Installment status="paid" date="Sep 15" installment={2} />
                   <Installment status="paid" date="Dec 15" installment={3} />
@@ -372,60 +374,58 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <div className="lg:col-span-3 space-y-6">
+          <div className="lg:col-span-3 space-y-4 sm:space-y-6">
             <Card className="bg-rose-50/20 border-rose-100 shadow-sm overflow-hidden">
-              <CardHeader className="pb-3 border-b border-rose-100/50 bg-rose-50/30">
-                <CardTitle className="text-sm font-black text-rose-900 flex items-center gap-2 uppercase tracking-widest">
-                  <Briefcase className="h-4 w-4" /> My Profile
+              <CardHeader className="pb-3 border-b border-rose-100/50 bg-rose-50/30 px-4 sm:px-6">
+                <CardTitle className="text-xs sm:text-sm font-black text-rose-900 flex items-center gap-2 uppercase tracking-widest">
+                  <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> My Profile
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-4 space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-rose-200 bg-white/50">
-                  <div className="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-lg border-2 border-white shadow-sm">
+              <CardContent className="pt-3 sm:pt-4 space-y-2.5 sm:space-y-3 px-4 sm:px-6 pb-4">
+                <div className="flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-xl border border-rose-200 bg-white/50">
+                  <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-bold text-base sm:text-lg border-2 border-white shadow-sm shrink-0">
                     {profile?.full_name?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-900 truncate">
+                    <p className="font-bold text-slate-900 truncate text-sm">
                       {profile?.full_name || 'User'}
                     </p>
-                    <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                    <p className="text-[11px] sm:text-xs text-slate-500 truncate">{user?.email}</p>
                   </div>
-                  <Badge variant="outline" className="text-xs border-rose-200 text-rose-700 bg-rose-50">
+                  <Badge variant="outline" className="text-[10px] sm:text-xs border-rose-200 text-rose-700 bg-rose-50">
                     Self
                   </Badge>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-slate-400 font-medium mb-0.5">PAN</p>
-                    <p className="font-mono font-bold text-slate-700 tracking-wide">
+                    <p className="text-slate-400 font-medium mb-0.5 text-[10px] sm:text-xs">PAN</p>
+                    <p className="font-mono font-bold text-slate-700 tracking-wide text-[11px] sm:text-xs">
                       {profile?.pan_number || '----------'}
                     </p>
                   </div>
                   <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-slate-400 font-medium mb-0.5">Status</p>
-                    <p className="font-bold text-emerald-600 flex items-center gap-1">
+                    <p className="text-slate-400 font-medium mb-0.5 text-[10px] sm:text-xs">Status</p>
+                    <p className="font-bold text-emerald-600 flex items-center gap-1 text-[11px] sm:text-xs">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Active
                     </p>
                   </div>
                 </div>
 
-                <Button asChild variant="ghost" className="w-full text-xs h-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 mt-1 font-bold">
+                <Button asChild variant="ghost" className="w-full text-[11px] sm:text-xs h-8 sm:h-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 mt-1 font-bold">
                   <Link to="/settings">Manage Profile & Settings</Link>
                 </Button>
               </CardContent>
             </Card>
 
-
-
             <Card className="bg-slate-900 text-white shadow-2xl border-none">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-indigo-400" /> AI Tax Guru
+              <CardHeader className="pb-3 px-4 sm:px-6">
+                <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-2">
+                  <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-400" /> AI Tax Guru
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-[11px] text-white/70 max-h-[150px] overflow-y-auto custom-scrollbar">
+              <CardContent className="space-y-3 sm:space-y-4 px-4 sm:px-6 pb-4 sm:pb-6">
+                <div className="p-2.5 sm:p-3 bg-white/5 rounded-xl border border-white/10 text-[10px] sm:text-[11px] text-white/70 max-h-[120px] sm:max-h-[150px] overflow-y-auto custom-scrollbar">
                   {asking ? (
                     <div className="flex items-center gap-2 py-2">
                       <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
@@ -443,15 +443,15 @@ export default function Dashboard() {
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAskAI()}
-                    className="text-xs bg-white/5 border-white/10 text-white placeholder:text-white/30 h-10"
+                    className="text-xs bg-white/5 border-white/10 text-white placeholder:text-white/30 h-9 sm:h-10"
                   />
                   <Button
                     size="icon"
                     onClick={handleAskAI}
                     disabled={asking}
-                    className="h-10 w-10 shrink-0 bg-indigo-600 hover:bg-indigo-700"
+                    className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 bg-indigo-600 hover:bg-indigo-700"
                   >
-                    {asking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                    {asking ? <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
                   </Button>
                 </div>
               </CardContent>
@@ -460,7 +460,7 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Footer Stats */}
-        <div className="flex flex-wrap gap-12 pt-4 border-t">
+        <div className="flex flex-wrap gap-4 sm:gap-6 md:gap-12 pt-4 border-t">
           <FooterStat label="Trust Score" value="99.9%" icon={<ShieldCheck className="h-4 w-4 text-accent" />} />
           <FooterStat label="Data Residency" value="India (Mumbai)" icon={<FileText className="h-4 w-4 text-primary" />} />
           <FooterStat label="Total Tax Saved" value={stats.taxSaved > 0 ? `₹${(stats.taxSaved / 1000).toFixed(1)}k` : "₹0"} icon={<TrendingUp className="h-4 w-4 text-accent" />} />
@@ -516,13 +516,13 @@ interface InstallmentProps {
 }
 
 const Installment = ({ status, date, installment }: InstallmentProps) => (
-  <div className={`p-4 rounded-2xl text-center border transition-all ${status === 'paid'
+  <div className={`p-2.5 sm:p-4 rounded-xl sm:rounded-2xl text-center border transition-all ${status === 'paid'
     ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg shadow-emerald-100'
     : 'bg-white border-slate-200 text-slate-400'
     }`}>
-    <p className="text-[9px] font-black opacity-60 uppercase mb-1">Q{installment}</p>
-    <p className="text-[11px] font-bold">{date}</p>
-    <CheckCircle2 className={`h-3 w-3 mx-auto mt-2 ${status === 'paid' ? 'block' : 'hidden'}`} />
+    <p className="text-[8px] sm:text-[9px] font-black opacity-60 uppercase mb-0.5 sm:mb-1">Q{installment}</p>
+    <p className="text-[10px] sm:text-[11px] font-bold">{date}</p>
+    <CheckCircle2 className={`h-2.5 w-2.5 sm:h-3 sm:w-3 mx-auto mt-1 sm:mt-2 ${status === 'paid' ? 'block' : 'hidden'}`} />
   </div>
 );
 
@@ -535,13 +535,14 @@ interface FooterStatProps {
 }
 
 const FooterStat = ({ label, value, icon }: FooterStatProps) => (
-  <div className="flex items-center gap-4">
-    <div className="h-10 w-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+  <div className="flex items-center gap-2.5 sm:gap-4">
+    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
       {icon}
     </div>
     <div>
-      <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black leading-none">{label}</p>
-      <p className="text-base font-black text-slate-900 mt-1.5">{value}</p>
+      <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-slate-400 font-black leading-none">{label}</p>
+      <p className="text-sm sm:text-base font-black text-slate-900 mt-1 sm:mt-1.5">{value}</p>
     </div>
   </div>
 );
+

@@ -1,5 +1,5 @@
 /**
- * TaxMitra Tax Engine — Comprehensive Test Suite
+ * EasyITR Tax Engine — Comprehensive Test Suite
  * 
  * Tests cover:
  * 1. Simple salaried (ITR-1)
@@ -677,3 +677,4 @@ describe('TaxEngine v2 — User Bug Scenario', () => {
         expect(result.recommendedForm).toBe('ITR-3'); // Business + Crypto → ITR-3
     });
 });
+
