@@ -24,13 +24,14 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (id.includes("react") || id.includes("react-dom") || id.includes("react-router-dom")) return "vendor-react";
-          if (id.includes("@supabase")) return "vendor-supabase";
-          if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
-          if (id.includes("pdfjs-dist") || id.includes("jspdf")) return "vendor-pdf";
-          if (id.includes("@radix-ui")) return "vendor-radix";
-          return "vendor";
+          const moduleId = id.replaceAll("\\", "/");
+          if (!moduleId.includes("/node_modules/")) return undefined;
+          // Keep React, router, Radix and their shared helpers in Vite's
+          // default vendor graph. Splitting that graph creates circular chunks
+          // where React can be evaluated after a consumer calls createContext.
+          if (moduleId.includes("/node_modules/@supabase/")) return "vendor-supabase";
+          if (moduleId.includes("/node_modules/pdfjs-dist/") || moduleId.includes("/node_modules/jspdf")) return "vendor-pdf";
+          return undefined;
         },
       },
     },

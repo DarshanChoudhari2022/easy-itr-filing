@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "verify:build-chunks": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-build-chunks.ps1",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
