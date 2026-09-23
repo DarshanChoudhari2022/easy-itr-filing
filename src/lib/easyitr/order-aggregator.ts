@@ -130,7 +130,7 @@ export function aggregateFillsToOrders(
         validateFirst?: boolean;
         /** Whether to aggregate (false = pass-through for debugging) */
         aggregate?: boolean;
-    } = { validateFirst: false, aggregate: true }
+    } = { validateFirst: true, aggregate: true }
 ): AggregationResult {
     const warnings: string[] = [];
     const stats: AggregationStats = {

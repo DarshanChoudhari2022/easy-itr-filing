@@ -23,18 +23,27 @@ import { downloadITRJson, validateITRData, mapSessionToITRData, type ITRFilingDa
 import { INDIAN_STATES } from '@/lib/validators';
 import { generateChallan280, downloadChallanHTML } from '@/lib/challan-generator';
 import { downloadComputationStatement, generateComputationReport } from '@/lib/tax-reports';
+import { getAISData } from '@/lib/supabase-data-service';
 import {
     parseExchangeCSV, calculateDetailedPortfolio, DEFAULT_TAX_SETTINGS,
     type PortfolioSummary, type Transaction,
 } from '@/lib/crypto-engine';
 import { computeTax, computeSalaryNetTaxable, getConfig } from '@/lib/taxEngine';
+import {
+    BEGINNER_FILING_JOURNEY,
+    CRYPTO_TAX_PATH,
+    FILING_STARTER_DOCUMENTS,
+    getFilingModulePlan,
+} from '@/lib/filing-guidance';
 
 const STEPS = [
+    { id: 'start', label: 'Start Here', icon: CheckCircle },
     { id: 'personal', label: 'Personal Info', icon: User },
     { id: 'income-select', label: 'Income Sources', icon: Briefcase },
     { id: 'income-entry', label: 'Income Details', icon: Wallet },
     { id: 'deductions', label: 'Deductions', icon: Shield },
     { id: 'regime', label: 'Tax Regime', icon: Calculator },
+    { id: 'bank', label: 'Bank Details', icon: CreditCard },
     { id: 'review', label: 'Review & File', icon: FileText },
 ];
 
@@ -118,8 +127,8 @@ export default function GuidedFiling() {
     // Review & Confirm: show interstitial before advancing (skip for final step)
     const handleNext = () => {
         if (step >= STEPS.length - 1) return;
-        // Step 5 is already the Review page — no review interstitial needed before it
-        if (step === 4) {
+        // Intro, regime, and bank steps move directly. Data-entry steps get a review checkpoint.
+        if (step === 0 || step >= 5) {
             setStep(step + 1);
             forceSave();
         } else {
@@ -180,12 +189,14 @@ export default function GuidedFiling() {
                         />
                     ) : (
                         <>
-                            {step === 0 && <PersonalInfoStep session={session} updateSession={updateSession} />}
-                            {step === 1 && <IncomeSelectionStep session={session} updateSession={updateSession} />}
-                            {step === 2 && <IncomeEntryStep session={session} updateSession={updateSession} />}
-                            {step === 3 && <DeductionsStep session={session} updateSession={updateSession} />}
-                            {step === 4 && <RegimeStep session={session} updateSession={updateSession} grossIncome={grossIncome} totalTDS={totalTDS} />}
-                            {step === 5 && <ReviewStep session={session} updateSession={updateSession} validation={validation} itrForm={itrForm} grossIncome={grossIncome} totalTDS={totalTDS} />}
+                            {step === 0 && <BeginnerLaunchStep session={session} progress={progress} />}
+                            {step === 1 && <PersonalInfoStep session={session} updateSession={updateSession} />}
+                            {step === 2 && <IncomeSelectionStep session={session} updateSession={updateSession} />}
+                            {step === 3 && <IncomeEntryStep session={session} updateSession={updateSession} />}
+                            {step === 4 && <DeductionsStep session={session} updateSession={updateSession} />}
+                            {step === 5 && <RegimeStep session={session} updateSession={updateSession} grossIncome={grossIncome} totalTDS={totalTDS} />}
+                            {step === 6 && <BankDetailsStep session={session} updateSession={updateSession} />}
+                            {step === 7 && <ReviewStep session={session} updateSession={updateSession} validation={validation} itrForm={itrForm} grossIncome={grossIncome} totalTDS={totalTDS} />}
                         </>
                     )}
                 </div>
@@ -210,6 +221,106 @@ export default function GuidedFiling() {
                 )}
             </div>
         </AppLayout>
+    );
+}
+
+// ═══════════ STEP 0: Beginner Launchpad ═══════════
+function BeginnerLaunchStep({ session, progress }: { session: FilingSession; progress: number }) {
+    const selectedSources = getSelectedIncomeLabels(session);
+    const modulePlan = getFilingModulePlan(session);
+
+    return (
+        <div className="space-y-4">
+            <Card className="border-primary/20 bg-primary/5">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-primary" />
+                        File your ITR one small step at a time
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        This guided flow is built for a first-time filer. You do not need to know ITR forms, tax sections, or portal order in advance.
+                    </p>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <Stat label="Current FY" value={session.financialYear} />
+                    <Stat label="Assessment Year" value={session.assessmentYear} />
+                    <Stat label="Progress" value={`${progress}%`} />
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" />Keep These Ready</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {FILING_STARTER_DOCUMENTS.map(item => (
+                            <div key={item.label} className="flex gap-3 p-3 rounded-lg bg-muted/40">
+                                <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-sm font-medium">{item.label}</p>
+                                    <p className="text-xs text-muted-foreground">{item.detail}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2"><ArrowRight className="h-4 w-4" />What Will Happen</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {BEGINNER_FILING_JOURNEY.map((item, index) => (
+                            <div key={item.title} className="flex gap-3 items-start">
+                                <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{index + 1}</div>
+                                <div>
+                                    <p className="text-sm font-medium">{item.title}</p>
+                                    <p className="text-xs text-muted-foreground">{item.outcome}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2"><Shield className="h-4 w-4" />Module Plan</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {modulePlan.map(item => (
+                            <div key={item.id} className="rounded-lg border p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-medium">{item.title}</p>
+                                    <Badge variant={item.status === 'ready' ? 'default' : 'outline'} className="capitalize">{item.status.replace('-', ' ')}</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">{item.purpose}</p>
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2"><Coins className="h-4 w-4" />Crypto Tax Path</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {CRYPTO_TAX_PATH.map(item => (
+                            <div key={item.label} className="flex gap-3 p-3 rounded-lg bg-muted/40">
+                                <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-sm font-medium">{item.label}</p>
+                                    <p className="text-xs text-muted-foreground">{item.detail}</p>
+                                </div>
+                            </div>
+                        ))}
+                        <p className="text-xs text-muted-foreground pt-1">Selected so far: {selectedSources.length > 0 ? selectedSources.join(', ') : 'none yet'}</p>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
     );
 }
 
@@ -272,6 +383,12 @@ const INCOME_OPTIONS = [
     { key: 'foreignAssets', label: 'Foreign Income', desc: 'Income from outside India', icon: Globe, color: 'from-sky-500 to-blue-500' },
     { key: 'agriculture', label: 'Agriculture', desc: 'Farm income (exempt, reported)', icon: Leaf, color: 'from-lime-500 to-green-500' },
 ];
+
+function getSelectedIncomeLabels(session: FilingSession): string[] {
+    return INCOME_OPTIONS
+        .filter(option => Boolean((session[option.key as keyof FilingSession] as any)?.enabled))
+        .map(option => option.label);
+}
 
 function IncomeSelectionStep({ session, updateSession }: { session: FilingSession; updateSession: (fn: (s: FilingSession) => FilingSession) => void }) {
     const toggle = (key: string) => updateSession(s => {
@@ -338,6 +455,38 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
             {help && <p className="text-[11px] text-muted-foreground mt-0.5">{help}</p>}
         </div>
     );
+
+    const applyAISAutoFill = async () => {
+        try {
+            const aisRow = await getAISData(session.assessmentYear);
+            const parsed = aisRow?.parsed_data as AISParsedSummary | undefined;
+            if (!parsed?.incomeDetails && !parsed?.tdsDetails) {
+                toast.error('No parsed AIS data found. Upload AIS/TIS in the AIS Reconciler first.');
+                return;
+            }
+
+            const interestIncome = parsed.incomeDetails?.interest || 0;
+            const dividendIncome = parsed.incomeDetails?.dividend || 0;
+            const interestTDS = parsed.tdsDetails?.interest || 0;
+            const dividendTDS = parsed.tdsDetails?.dividend || 0;
+
+            updateSession(s => ({
+                ...s,
+                otherSources: {
+                    ...s.otherSources,
+                    enabled: true,
+                    savingsInterest: s.otherSources.savingsInterest || interestIncome,
+                    dividendIncome: s.otherSources.dividendIncome || dividendIncome,
+                    tdsInterest: s.otherSources.tdsInterest || interestTDS,
+                    tdsDividend: s.otherSources.tdsDividend || dividendTDS,
+                },
+            }));
+
+            toast.success('AIS values applied to interest, dividend, and TDS fields.');
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Could not load AIS data.');
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -411,9 +560,7 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
                     <CardHeader className="pb-3 border-b mb-0">
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-base flex items-center gap-2"><Landmark className="h-4 w-4" />Interest & Dividends</CardTitle>
-                            <Button variant="outline" size="sm" onClick={() => {
-                                toast.info('AIS integration coming soon! Enter values manually for now.', { duration: 3000 });
-                            }} className="h-8 gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
+                            <Button variant="outline" size="sm" onClick={applyAISAutoFill} className="h-8 gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
                                 <Download className="h-3.5 w-3.5" />
                                 Auto-fill from AIS
                             </Button>
@@ -520,6 +667,17 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
             )}
         </div>
     );
+}
+
+interface AISParsedSummary {
+    incomeDetails?: {
+        interest?: number;
+        dividend?: number;
+    };
+    tdsDetails?: {
+        interest?: number;
+        dividend?: number;
+    };
 }
 
 // ═══════════ STEP 4: Deductions ═══════════
@@ -698,7 +856,69 @@ function RegimeStep({ session, updateSession, grossIncome, totalTDS }: { session
     );
 }
 
-// ═══════════ STEP 6: Review ═══════════
+// ═══════════ STEP 6: Bank Details ═══════════
+function BankDetailsStep({ session, updateSession }: { session: FilingSession; updateSession: (fn: (s: FilingSession) => FilingSession) => void }) {
+    return (
+        <div className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Add Your Refund Bank Account</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        The Income Tax Department needs one validated bank account even if no refund is expected. Use your own account linked to PAN.
+                    </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                        <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="font-medium">Where to find it</p>
+                            <p className="text-xs text-muted-foreground mt-1">Bank passbook, cancelled cheque, net banking profile, or UPI/bank app account details.</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="font-medium">What must match</p>
+                            <p className="text-xs text-muted-foreground mt-1">Account number and IFSC must be exact. Wrong bank details can delay refunds.</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="font-medium">Portal step later</p>
+                            <p className="text-xs text-muted-foreground mt-1">On incometax.gov.in, check Profile → My Bank Account before final submission.</p>
+                        </div>
+                    </div>
+
+                    {session.bankDetails.length === 0 ? (
+                        <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg">
+                            <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-sm font-medium">No bank account added yet</p>
+                            <p className="text-xs">Add at least one account to pass final ITR validation.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {session.bankDetails.map((bank, idx) => (
+                                <div key={idx} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg">
+                                    <div className="flex-1 text-sm">
+                                        <p className="font-medium">{bank.bankName || 'Bank'} — {bank.accountNumber}</p>
+                                        <p className="text-xs text-muted-foreground">IFSC: {bank.ifsc} | {bank.accountType === 'SB' ? 'Savings' : bank.accountType === 'CA' ? 'Current' : 'Other'}{bank.isRefundAccount ? ' | Refund account' : ''}</p>
+                                    </div>
+                                    <Button variant="ghost" size="sm" onClick={() => updateSession(s => ({ ...s, bankDetails: s.bankDetails.filter((_, i) => i !== idx) }))}>
+                                        <Trash2 className="h-4 w-4 text-red-400" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <BankDetailForm onAdd={(bank) => updateSession(s => ({
+                        ...s,
+                        bankDetails: [
+                            ...s.bankDetails.map(existing => ({ ...existing, isRefundAccount: false })),
+                            { ...bank, isRefundAccount: true },
+                        ],
+                    }))} />
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════ STEP 7: Review ═══════════
 function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, totalTDS }: any) {
     const report = generateComputationReport(session);
     const netPayable = report.netPayable;
@@ -1271,7 +1491,7 @@ interface ReviewItem { label: string; value: string; anomaly?: string }
 function buildReviewItems(step: number, session: FilingSession, grossIncome: number, totalTDS: number): { title: string; items: ReviewItem[] } {
     const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
     switch (step) {
-        case 0: { // Personal Info
+        case 1: { // Personal Info
             const p = session.personalInfo;
             const items: ReviewItem[] = [
                 { label: 'PAN', value: p.pan || '—', anomaly: !p.pan ? 'PAN is missing — required for filing' : (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(p.pan) ? 'PAN format looks invalid' : undefined) },
@@ -1284,7 +1504,7 @@ function buildReviewItems(step: number, session: FilingSession, grossIncome: num
             ];
             return { title: 'Personal Information', items };
         }
-        case 1: { // Income Selection
+        case 2: { // Income Selection
             const heads = INCOME_OPTIONS.filter(o => (session[o.key as keyof FilingSession] as any)?.enabled);
             const items: ReviewItem[] = heads.length > 0
                 ? heads.map(h => ({ label: h.label, value: h.desc }))
@@ -1293,7 +1513,7 @@ function buildReviewItems(step: number, session: FilingSession, grossIncome: num
             items.push({ label: 'Recommended ITR Form', value: `${detected.form} — ${detected.reason}` });
             return { title: 'Income Sources Selected', items };
         }
-        case 2: { // Income Entry
+        case 3: { // Income Entry
             const items: ReviewItem[] = [];
             if (session.salary.enabled) {
                 items.push(
@@ -1327,7 +1547,7 @@ function buildReviewItems(step: number, session: FilingSession, grossIncome: num
             items.push({ label: 'Gross Total Income', value: fmt(grossIncome) });
             return { title: 'Income Details Entered', items };
         }
-        case 3: { // Deductions
+        case 4: { // Deductions
             const d = session.deductions;
             const items: ReviewItem[] = [];
             if (d.section80C > 0) items.push({ label: '80C (PPF, ELSS, LIC, EPF)', value: fmt(d.section80C), anomaly: d.section80C > 150000 ? '80C exceeds ₹1.5L limit — will be capped' : undefined });
@@ -1344,7 +1564,7 @@ function buildReviewItems(step: number, session: FilingSession, grossIncome: num
             items.push({ label: 'Total Deductions', value: fmt(total), anomaly: total > grossIncome * 0.5 ? 'Deductions > 50% of income — double-check all claims' : undefined });
             return { title: 'Deductions Summary', items };
         }
-        case 4: { // Regime
+        case 5: { // Regime
             const items: ReviewItem[] = [
                 { label: 'Selected Regime', value: session.regime === 'old' ? 'Old Regime' : session.regime === 'new' ? 'New Regime' : '—', anomaly: session.regime === 'undecided' ? 'No regime selected — please choose one' : undefined },
             ];

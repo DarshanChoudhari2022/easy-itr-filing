@@ -46,6 +46,8 @@ export default function GSTCenter() {
     const [invoices, setInvoices] = useState<Database["public"]["Tables"]["gst_invoices"]["Row"][]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
+    const [newInvoice, setNewInvoice] = useState<InvoiceDraft>(createEmptyInvoiceDraft());
 
     useEffect(() => {
         if (user) {
@@ -68,16 +70,55 @@ export default function GSTCenter() {
         setLoading(false);
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.target.value = "";
         if (!file) return;
+        if (!user) {
+            toast.error("Please sign in before importing invoices.");
+            return;
+        }
 
         setUploading(true);
-        // TODO: implement actual CSV/Excel parsing
-        setTimeout(() => {
-            toast.info("CSV/Excel parsing coming soon. Please add invoices manually for now.");
+        try {
+            if (!file.name.toLowerCase().endsWith(".csv")) {
+                throw new Error("Please upload a CSV file. Excel import needs a spreadsheet parser dependency; CSV works now.");
+            }
+
+            const rows = parseGSTInvoiceCSV(await file.text(), user.id);
+            if (rows.length === 0) {
+                throw new Error("No valid invoice rows found. Check that the CSV has invoice number, date, vendor, and amount columns.");
+            }
+
+            const { error } = await supabase.from("gst_invoices").insert(rows);
+            if (error) throw error;
+
+            toast.success(`Imported ${rows.length} invoice${rows.length === 1 ? "" : "s"} from CSV.`);
+            await fetchInvoices();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to import invoices.");
+        } finally {
             setUploading(false);
-        }, 1000);
+        }
+    };
+
+    const handleCreateInvoice = async () => {
+        if (!user) {
+            toast.error("Please sign in before adding invoices.");
+            return;
+        }
+
+        try {
+            const row = invoiceDraftToInsert(newInvoice, user.id);
+            const { error } = await supabase.from("gst_invoices").insert(row);
+            if (error) throw error;
+            toast.success("Invoice added.");
+            setNewInvoice(createEmptyInvoiceDraft());
+            setNewInvoiceOpen(false);
+            await fetchInvoices();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to add invoice.");
+        }
     };
 
     return (
@@ -103,23 +144,39 @@ export default function GSTCenter() {
                                     />
                                 </Button>
                             </div>
-                            <Dialog>
+                            <Dialog open={newInvoiceOpen} onOpenChange={setNewInvoiceOpen}>
                                 <DialogTrigger asChild>
                                     <Button className="gap-2">
-                                        <FilePlus className="h-4 w-4" /> New E-Invoice
+                                        <FilePlus className="h-4 w-4" /> New Invoice
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent>
                                     <DialogHeader>
-                                        <DialogTitle>Generate E-Invoice</DialogTitle>
-                                        <DialogDescription>Generate IRN and QR code directly via GSP.</DialogDescription>
+                                        <DialogTitle>Add Invoice</DialogTitle>
+                                        <DialogDescription>Enter the invoice details from your purchase or sales register.</DialogDescription>
                                     </DialogHeader>
-                                    <div className="grid gap-4 py-4">
-                                        {/* Form fields would go here */}
-                                        <p className="text-sm text-muted-foreground italic text-center">Form implementation in next phase...</p>
+                                    <div className="grid gap-3 py-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <Input value={newInvoice.invoice_number} onChange={e => setNewInvoice(s => ({ ...s, invoice_number: e.target.value }))} placeholder="Invoice number" />
+                                            <Input type="date" value={newInvoice.invoice_date} onChange={e => setNewInvoice(s => ({ ...s, invoice_date: e.target.value }))} />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <Input value={newInvoice.vendor_name} onChange={e => setNewInvoice(s => ({ ...s, vendor_name: e.target.value }))} placeholder="Vendor / Customer name" />
+                                            <Input value={newInvoice.vendor_gstin} onChange={e => setNewInvoice(s => ({ ...s, vendor_gstin: e.target.value.toUpperCase() }))} placeholder="GSTIN" maxLength={15} />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                            <Input type="number" value={newInvoice.taxable_value} onChange={e => setNewInvoice(s => ({ ...s, taxable_value: e.target.value }))} placeholder="Taxable value" />
+                                            <Input type="number" value={newInvoice.igst} onChange={e => setNewInvoice(s => ({ ...s, igst: e.target.value }))} placeholder="IGST" />
+                                            <Input type="number" value={newInvoice.cgst} onChange={e => setNewInvoice(s => ({ ...s, cgst: e.target.value }))} placeholder="CGST" />
+                                            <Input type="number" value={newInvoice.sgst} onChange={e => setNewInvoice(s => ({ ...s, sgst: e.target.value }))} placeholder="SGST" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button type="button" variant={newInvoice.is_purchase ? "default" : "outline"} onClick={() => setNewInvoice(s => ({ ...s, is_purchase: true }))}>Purchase</Button>
+                                            <Button type="button" variant={!newInvoice.is_purchase ? "default" : "outline"} onClick={() => setNewInvoice(s => ({ ...s, is_purchase: false }))}>Sales</Button>
+                                        </div>
                                     </div>
                                     <DialogFooter>
-                                        <Button disabled>Generate IRN</Button>
+                                        <Button onClick={handleCreateInvoice}>Save Invoice</Button>
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
@@ -328,3 +385,162 @@ const HistoryItem = ({ month, type, status }: HistoryItemProps) => (
         </Badge>
     </div>
 );
+
+type GSTInvoiceInsert = Database["public"]["Tables"]["gst_invoices"]["Insert"];
+
+interface InvoiceDraft {
+    invoice_number: string;
+    invoice_date: string;
+    vendor_name: string;
+    vendor_gstin: string;
+    taxable_value: string;
+    igst: string;
+    cgst: string;
+    sgst: string;
+    is_purchase: boolean;
+}
+
+function createEmptyInvoiceDraft(): InvoiceDraft {
+    return {
+        invoice_number: "",
+        invoice_date: new Date().toISOString().split("T")[0],
+        vendor_name: "",
+        vendor_gstin: "",
+        taxable_value: "",
+        igst: "",
+        cgst: "",
+        sgst: "",
+        is_purchase: true,
+    };
+}
+
+function invoiceDraftToInsert(draft: InvoiceDraft, userId: string): GSTInvoiceInsert {
+    return normalizeInvoiceRow({
+        invoice_number: draft.invoice_number,
+        invoice_date: draft.invoice_date,
+        vendor_name: draft.vendor_name,
+        vendor_gstin: draft.vendor_gstin,
+        taxable_value: draft.taxable_value,
+        igst: draft.igst,
+        cgst: draft.cgst,
+        sgst: draft.sgst,
+        is_purchase: draft.is_purchase ? "purchase" : "sales",
+    }, userId);
+}
+
+function parseGSTInvoiceCSV(csv: string, userId: string): GSTInvoiceInsert[] {
+    const rows = parseCSV(csv);
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(normalizeHeader);
+    return rows.slice(1)
+        .filter(row => row.some(cell => cell.trim() !== ""))
+        .map(row => {
+            const record: Record<string, string> = {};
+            headers.forEach((header, index) => {
+                record[header] = row[index]?.trim() || "";
+            });
+            return normalizeInvoiceRow(record, userId);
+        });
+}
+
+function normalizeInvoiceRow(record: Record<string, string>, userId: string): GSTInvoiceInsert {
+    const invoiceNumber = pick(record, ["invoice_number", "invoice_no", "invoice", "bill_number", "bill_no"]);
+    const invoiceDate = normalizeDate(pick(record, ["invoice_date", "date", "bill_date"]));
+    const vendorName = pick(record, ["vendor_name", "supplier_name", "customer_name", "party_name", "name"]);
+
+    if (!invoiceNumber) throw new Error("Invoice number is required.");
+    if (!invoiceDate) throw new Error(`Invoice ${invoiceNumber}: valid invoice date is required.`);
+    if (!vendorName) throw new Error(`Invoice ${invoiceNumber}: vendor/customer name is required.`);
+
+    const taxableValue = parseMoney(pick(record, ["taxable_value", "taxable", "taxable_amount", "amount_before_tax"]));
+    const igst = parseMoney(pick(record, ["igst", "igst_amount"]));
+    const cgst = parseMoney(pick(record, ["cgst", "cgst_amount"]));
+    const sgst = parseMoney(pick(record, ["sgst", "sgst_amount"]));
+    const totalFromCSV = parseMoney(pick(record, ["total_value", "invoice_value", "total", "gross_amount", "amount"]));
+    const computedTotal = taxableValue + igst + cgst + sgst;
+    const totalValue = totalFromCSV > 0 ? totalFromCSV : computedTotal;
+
+    return {
+        user_id: userId,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        vendor_name: vendorName,
+        vendor_gstin: pick(record, ["vendor_gstin", "supplier_gstin", "customer_gstin", "gstin"]).toUpperCase() || null,
+        taxable_value: taxableValue,
+        igst,
+        cgst,
+        sgst,
+        total_value: totalValue,
+        is_purchase: !["sale", "sales", "outward"].includes(pick(record, ["type", "invoice_type", "category"]).toLowerCase()),
+        match_status: "pending",
+        confidence_score: 0,
+    };
+}
+
+function parseCSV(csv: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < csv.length; index += 1) {
+        const char = csv[index];
+        const next = csv[index + 1];
+
+        if (char === '"' && inQuotes && next === '"') {
+            cell += '"';
+            index += 1;
+        } else if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+            row.push(cell);
+            cell = "";
+        } else if ((char === "\n" || char === "\r") && !inQuotes) {
+            if (char === "\r" && next === "\n") index += 1;
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = "";
+        } else {
+            cell += char;
+        }
+    }
+
+    row.push(cell);
+    rows.push(row);
+    return rows;
+}
+
+function normalizeHeader(value: string): string {
+    return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function pick(record: Record<string, string>, keys: string[]): string {
+    for (const key of keys) {
+        const value = record[key];
+        if (value && value.trim()) return value.trim();
+    }
+    return "";
+}
+
+function parseMoney(value: string): number {
+    const normalized = value.replace(/[₹,\s]/g, "");
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeDate(value: string): string {
+    if (!value) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+    const match = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (match) {
+        const [, dd, mm, rawYear] = match;
+        const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+        return `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().split("T")[0];
+}

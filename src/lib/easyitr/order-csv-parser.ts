@@ -20,7 +20,7 @@
  *   - Extract asset from pair (BTCINR → BTC, BTC/INR → BTC, ETH-INR → ETH)
  *   - Also extract quote_currency (INR, USDT, etc.) for proper valuation
  *   - Compute FY from timestamp (Apr 1 = start of FY)
- *   - Compute total_inr = qty × price if missing
+ *   - Use the exchange Total column for INR pairs; compute qty × price only if missing
  *   - Import ALL financial years (BUY orders from older FYs are cost lots for FIFO)
  *   - Generate synthetic source_id when order_id column is missing
  */
@@ -238,7 +238,7 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             const rawQuantity = parseNum(cells[colMap.quantity]);
             const rawRemaining = colMap.remaining >= 0 ? parseNum(cells[colMap.remaining]) : 0;
             const price = colMap.price >= 0 ? parseNum(cells[colMap.price]) : 0;
-            let total = colMap.total >= 0 ? parseNum(cells[colMap.total]) : 0;
+            const total = colMap.total >= 0 ? parseNum(cells[colMap.total]) : 0;
             const fee = colMap.fee >= 0 ? parseNum(cells[colMap.fee]) : 0;
             const tds = colMap.tds >= 0 ? parseNum(cells[colMap.tds]) : 0;
 
@@ -249,12 +249,11 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             }
 
             // ── INR VALUE COMPUTATION ──
-            // For INR pairs: value_inr = qty × price
+            // For INR pairs: value_inr = exchange total; fall back to qty × price.
             // For NON-INR pairs (USDT/USDC): derive from TDS (TDS = 1% of INR value)
             let valueInr: number;
             if (quoteCurrency === 'INR') {
-                valueInr = quantity * price;
-                if (valueInr <= 0 && total > 0) valueInr = total;
+                valueInr = total > 0 ? total : quantity * price;
             } else {
                 // Non-INR pair: derive INR from TDS or fee
                 if (tds > 0) {
@@ -283,80 +282,26 @@ export function parseOrderHistoryCSV(csvText: string): OrderCSVParseResult {
             // ── Status ──
             const statusValue = colMap.status >= 0 ? (cells[colMap.status] ?? '').trim() : 'filled';
 
-            if (quoteCurrency === 'INR') {
-                // ── Simple INR pair: ONE record ──
-                if (seenIds.has(sourceId)) continue;
-                seenIds.add(sourceId);
+            if (seenIds.has(sourceId)) continue;
+            seenIds.add(sourceId);
 
-                rows.push({
-                    source_id: sourceId,
-                    source: 'ORDER_CSV',
-                    txn_type: txnType,
-                    asset,
-                    quote_currency: quoteCurrency,
-                    quantity,
-                    price_inr: price,
-                    total_inr: valueInr,
-                    fee_inr: fee,
-                    tds_inr: tds,
-                    timestamp: timestamp.toISOString(),
-                    financial_year: fy,
-                    pair: pairRaw,
-                    status: statusValue,
-                    raw_data: rawData,
-                });
-            } else {
-                // ── NON-INR pair: TWO records ──
-                // sell ACA_USDT → SELL ACA + BUY USDT
-                // buy ONDO_USDT → BUY ONDO + SELL USDT
-                const quoteQty = quantity * price; // qty in USDT/USDC
-
-                // Leg 1: The crypto asset
-                const assetId = sourceId + '_asset';
-                if (!seenIds.has(assetId)) {
-                    seenIds.add(assetId);
-                    rows.push({
-                        source_id: assetId,
-                        source: 'ORDER_CSV',
-                        txn_type: txnType,
-                        asset,
-                        quote_currency: quoteCurrency,
-                        quantity,
-                        price_inr: valueInr > 0 ? valueInr / quantity : 0,
-                        total_inr: valueInr,
-                        fee_inr: fee,
-                        tds_inr: txnType === 'SELL' ? tds : 0,
-                        timestamp: timestamp.toISOString(),
-                        financial_year: fy,
-                        pair: pairRaw,
-                        status: statusValue,
-                        raw_data: rawData,
-                    });
-                }
-
-                // Leg 2: The quote currency (reverse side)
-                const quoteId = sourceId + '_quote';
-                if (!seenIds.has(quoteId)) {
-                    seenIds.add(quoteId);
-                    rows.push({
-                        source_id: quoteId,
-                        source: 'ORDER_CSV',
-                        txn_type: txnType === 'SELL' ? 'BUY' : 'SELL',
-                        asset: quoteCurrency, // USDT, USDC, etc.
-                        quote_currency: 'INR',
-                        quantity: quoteQty,
-                        price_inr: valueInr > 0 ? valueInr / quoteQty : 0,
-                        total_inr: valueInr,
-                        fee_inr: 0,
-                        tds_inr: txnType === 'BUY' ? tds : 0,
-                        timestamp: timestamp.toISOString(),
-                        financial_year: fy,
-                        pair: `${quoteCurrency}_INR`,
-                        status: statusValue,
-                        raw_data: rawData,
-                    });
-                }
-            }
+            rows.push({
+                source_id: sourceId,
+                source: 'ORDER_CSV',
+                txn_type: txnType,
+                asset,
+                quote_currency: quoteCurrency,
+                quantity,
+                price_inr: quoteCurrency === 'INR' ? price : (valueInr > 0 ? valueInr / quantity : 0),
+                total_inr: valueInr,
+                fee_inr: fee,
+                tds_inr: 0,
+                timestamp: timestamp.toISOString(),
+                financial_year: fy,
+                pair: pairRaw,
+                status: statusValue,
+                raw_data: rawData,
+            });
         } catch (err) {
             errors.push({ row: rowNum, reason: `Unexpected error: ${(err as Error).message}` });
         }
@@ -560,8 +505,9 @@ function extractAssetAndQuote(pair: string): { asset: string; quoteCurrency: str
     // Trim and uppercase
     let p = pair.trim().toUpperCase();
 
-    // Remove CoinDCX exchange prefix: I-BTCINR, B-ACA_USDT, KC-ONDO_USDT → base pair
-    p = p.replace(/^[A-Z]+-/, '');
+    // Remove known CoinDCX exchange prefixes: I-BTCINR, B-ACA_USDT, KC-ONDO_USDT.
+    // Do this narrowly so normal pairs like ETH-INR keep their base asset.
+    p = p.replace(/^(I|B|KC)-/, '');
 
     // Handle explicit separators: BTC/INR → BTC + INR
     for (const sep of ['/', '-', '_']) {

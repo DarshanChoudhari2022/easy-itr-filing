@@ -483,8 +483,32 @@ export function calculateTaxV2(profile: TaxProfile): TaxCalculationResult {
     // ────────────────────────────────────────────────
 
     const activeSlabs = regime === 'new' ? config.newSlabs : config.oldSlabs;
-    const slabResult = computeSlabTax(normalTaxableIncome, activeSlabs);
-    const normalIncomeTax = slabResult.tax;
+    let slabResult = computeSlabTax(normalTaxableIncome, activeSlabs);
+    let normalIncomeTax = slabResult.tax;
+    const agricultureIncome = Math.max(0, profile.agricultureIncome || 0);
+    const basicExemptionLimit = activeSlabs[0]?.max === Infinity ? 0 : activeSlabs[0]?.max || 0;
+    const appliesAgriculturePartialIntegration =
+        agricultureIncome > 5000 && normalTaxableIncome > basicExemptionLimit;
+
+    if (appliesAgriculturePartialIntegration) {
+        const taxOnIncomePlusAgriculture = computeSlabTax(normalTaxableIncome + agricultureIncome, activeSlabs);
+        const taxOnExemptionPlusAgriculture = computeSlabTax(basicExemptionLimit + agricultureIncome, activeSlabs);
+        const taxBeforeIntegration = slabResult.tax;
+
+        normalIncomeTax = Math.max(0, taxOnIncomePlusAgriculture.tax - taxOnExemptionPlusAgriculture.tax);
+        slabResult = {
+            tax: normalIncomeTax,
+            details: [
+                ...slabResult.details,
+                {
+                    range: 'Agriculture partial integration adjustment',
+                    rate: 0,
+                    taxableAmount: agricultureIncome,
+                    tax: normalIncomeTax - taxBeforeIntegration,
+                },
+            ],
+        };
+    }
 
     // ────────────────────────────────────────────────
     // STEP 5: TAX ON SPECIAL RATE INCOMES (SEPARATELY)
@@ -775,10 +799,11 @@ export function calculateTaxV2(profile: TaxProfile): TaxCalculationResult {
     const recommendedForm = recommendITRForm(profile);
 
     // Agriculture income warning
-    if ((profile.agricultureIncome || 0) > 500000) {
+    if (agricultureIncome > 5000) {
         warnings.push(
-            'Agriculture income exceeds ₹5,000 — partial integration method applies for tax computation. ' +
-            'This is not yet implemented. TODO: Implement partial integration for agriculture income.'
+            appliesAgriculturePartialIntegration
+                ? 'Agriculture income exceeds ₹5,000. Partial integration has been applied to slab tax computation; keep evidence for review.'
+                : 'Agriculture income exceeds ₹5,000, but partial integration did not change tax because normal taxable income is within the basic exemption limit.'
         );
     }
 
