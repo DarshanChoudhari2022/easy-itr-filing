@@ -12,6 +12,26 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 
 const COINDCX_API_BASE = 'https://api.coindcx.com';
+const READ_ONLY_ENDPOINTS = new Set([
+    '/exchange/v1/users/balances',
+    '/exchange/v1/orders/trade_history',
+    '/exchange/v1/margin/fetch_orders',
+    '/exchange/v1/derivatives/futures/positions/transactions',
+    '/exchange/v1/insta/order_history',
+    '/exchange/v1/p2p/trades',
+    '/exchange/v1/users/deposits',
+    '/exchange/v1/users/withdrawals',
+    '/exchange/v1/deposits',
+    '/exchange/v1/withdrawals',
+    '/exchange/v1/users/transactions',
+    '/exchange/v1/funding/fetch_orders',
+    '/exchange/v1/funding/lend_history',
+    '/exchange/v1/funding/interest_history',
+    '/exchange/v1/lending/interest',
+    '/exchange/v1/earn/orders',
+    '/exchange/v1/markets_details',
+    '/exchange/v1/orders/active_orders_count',
+]);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Set CORS headers for your domain
@@ -35,6 +55,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({
                 error: 'Missing required fields: endpoint, apiKey, apiSecret'
             });
+        }
+
+        // Keep this proxy read-only even if a client is compromised or sends
+        // a hand-crafted request. Trading and withdrawal endpoints are never
+        // forwarded by this application.
+        if (typeof endpoint !== 'string' || !READ_ONLY_ENDPOINTS.has(endpoint)) {
+            return res.status(403).json({ error: 'Endpoint is not allowed by the read-only tax integration' });
         }
 
         // Generate HMAC-SHA256 signature

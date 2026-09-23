@@ -39,6 +39,13 @@ import { formatINR, formatINRFull, TAX_RULES } from "@/lib/easyitr/constants";
 import { getLocalAvailableYears, getLocalOverview, getLocalAssetPnL, getLocalDataQuality } from "@/lib/easyitr/local-crypto-data";
 import { syncCryptoToFiling } from "@/lib/crypto-itr-bridge";
 import { useNavigate } from "react-router-dom";
+import { GuidedImportWizard } from "@/components/easyitr/GuidedImportWizard";
+import {
+  fullCoinDCXSync, loadCredentialsAsync, saveCredentials, clearCredentials,
+  type CoinDCXCredentials, type FullSyncResult, type SyncProgress,
+} from "@/lib/coindcx-api";
+import { createFYChecklist, updateChecklistItem, type FYChecklist, type DataSourceType } from "@/lib/easyitr/coverage-tracker";
+import type { NormalizedTransaction, TDSRecord } from "@/lib/easyitr";
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -273,7 +280,7 @@ const CryptoTaxPage: React.FC = () => {
               <DrillDownTab fy={fy} data={assetPnl} onRefresh={loadAssetPnl} />
             </TabsContent>
             <TabsContent value="import">
-              <ImportTab onComplete={() => { loadYears(); loadAll(); }} />
+              <ImportTab fy={fy} onComplete={() => { loadYears(); loadAll(); }} />
             </TabsContent>
             <TabsContent value="reports">
               <ReportsTab fy={fy} summary={summary} assetPnl={assetPnl} scheduleVDA={scheduleVDA} onLoadVDA={loadScheduleVDA} />
@@ -765,37 +772,158 @@ const DrillDownTab: React.FC<{ fy: string; data: AssetPnLResponse | null; onRefr
 // ═══════════════════════════════════════════════════════════════
 // IMPORT TAB
 // ═══════════════════════════════════════════════════════════════
-const ImportTab: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-  const [status, setStatus] = useState<Record<string, { state: string; result: UploadResponse | null }>>({
-    order: { state: 'idle', result: null }, insta: { state: 'idle', result: null }, tds: { state: 'idle', result: null },
-  });
-  const upload = async (key: string, fn: (f: File) => Promise<UploadResponse>, file: File) => {
-    setStatus(s => ({ ...s, [key]: { state: 'uploading', result: null } }));
+const ImportTab: React.FC<{ fy: string; onComplete: () => void }> = ({ fy, onComplete }) => {
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [apiConnected, setApiConnected] = useState(false);
+  const [apiSyncing, setApiSyncing] = useState(false);
+  const [apiSyncProgress, setApiSyncProgress] = useState<SyncProgress | null>(null);
+  const [apiSyncResult, setApiSyncResult] = useState<FullSyncResult | null>(null);
+  const [parsedTransactions, setParsedTransactions] = useState<NormalizedTransaction[]>([]);
+  const [parsedTDSRecords] = useState<TDSRecord[]>([]);
+  const [checklist, setChecklist] = useState<FYChecklist>(() => createFYChecklist(fy));
+
+  useEffect(() => {
+    setChecklist(createFYChecklist(fy));
+    setApiSyncResult(null);
+    setParsedTransactions([]);
+    let mounted = true;
+    loadCredentialsAsync().then(credentials => {
+      if (!mounted || !credentials) return;
+      setApiKey(credentials.apiKey);
+      setApiSecret(credentials.apiSecret);
+    }).catch(error => console.warn('[ImportTab] Could not load saved CoinDCX credentials:', error));
+    return () => { mounted = false; };
+  }, [fy]);
+
+  const updateSource = (source: DataSourceType, update: Parameters<typeof updateChecklistItem>[2]) => {
+    setChecklist(current => updateChecklistItem(current, source, update));
+  };
+
+  const syncApi = async (credentials: CoinDCXCredentials) => {
+    setApiSyncing(true);
+    setApiSyncProgress(null);
     try {
-      const r = await fn(file);
-      setStatus(s => ({ ...s, [key]: { state: r.success ? 'done' : 'error', result: r } }));
-      if (r.success) { toast.success(r.message); onComplete(); }
-      else toast.error(r.message || r.errors?.[0]?.issue);
-    } catch (e) {
-      setStatus(s => ({ ...s, [key]: { state: 'error', result: { success: false, errors: [{ row: 0, issue: (e as Error).message }], message: (e as Error).message } as UploadResponse } }));
+      const result = await fullCoinDCXSync(credentials, progress => setApiSyncProgress(progress));
+      setApiSyncResult(result);
+      setParsedTransactions(result.transactions || []);
+      setApiConnected(result.success);
+      if (result.success) {
+        await saveCredentials(credentials);
+        updateSource('api_sync', {
+          status: 'uploaded',
+          recordCount: result.summary.totalTransactions,
+          fileName: 'CoinDCX API sync',
+        });
+        toast.success(`CoinDCX sync complete: ${result.summary.totalTransactions} records fetched`);
+        onComplete();
+      } else {
+        toast.error(result.error || 'CoinDCX sync failed. Check the key permissions and try again.');
+      }
+    } catch (error) {
+      setApiConnected(false);
+      toast.error((error as Error).message || 'CoinDCX sync failed');
+    } finally {
+      setApiSyncing(false);
     }
   };
+
+  const handleApiConnect = async () => {
+    const credentials = { apiKey: apiKey.trim(), apiSecret: apiSecret.trim() };
+    if (!credentials.apiKey || !credentials.apiSecret) {
+      toast.error('Enter both the CoinDCX API key and secret');
+      return;
+    }
+    await syncApi(credentials);
+  };
+
+  const handleApiResync = async () => {
+    await syncApi({ apiKey: apiKey.trim(), apiSecret: apiSecret.trim() });
+  };
+
+  const handleCsvUpload = async (files: FileList, fileType?: string) => {
+    const file = files.item(0);
+    if (!file) return;
+    try {
+      let result: UploadResponse;
+      let source: DataSourceType;
+      if (fileType === 'order_csv') {
+        result = await uploadOrderHistory(file);
+        source = 'order_history_csv';
+      } else if (fileType === 'tds_csv') {
+        result = await uploadTDS(file);
+        source = 'tds_summary_csv';
+      } else if (fileType === 'insta_csv') {
+        result = await uploadInstaHistory(file);
+        source = 'insta_history_csv';
+      } else if (fileType === 'rewards') {
+        // CoinDCX uses the Insta-history endpoint for reward/staking rows too;
+        // the server classifies them as income events from their type/category.
+        result = await uploadInstaHistory(file);
+        source = 'rewards_csv';
+      } else {
+        toast.info('This source needs a supported CoinDCX CSV export or manual entry.');
+        return;
+      }
+      if (!result.success) {
+        toast.error(result.message || result.errors?.[0]?.issue || 'CSV import failed');
+        return;
+      }
+      updateSource(source, {
+        status: 'uploaded',
+        fileName: file.name,
+        recordCount: result.imported ?? result.total_parsed ?? result.trades_imported ?? result.income_events_imported ?? 0,
+      });
+      toast.success(result.message || `${file.name} imported`);
+      onComplete();
+    } catch (error) {
+      toast.error((error as Error).message || 'CSV import failed');
+    }
+  };
+
+  const handleDisconnect = () => {
+    clearCredentials();
+    setApiKey('');
+    setApiSecret('');
+    setApiConnected(false);
+    setApiSyncResult(null);
+    setParsedTransactions([]);
+    updateSource('api_sync', { status: 'pending' });
+    toast.success('CoinDCX API disconnected');
+  };
+
+  const handleReset = async () => {
+    clearCredentials();
+    setApiKey('');
+    setApiSecret('');
+    setApiConnected(false);
+    setApiSyncResult(null);
+    setParsedTransactions([]);
+    setChecklist(createFYChecklist(fy));
+    toast.success('Import checklist reset. Existing saved tax data was not deleted.');
+  };
+
   return (
-    <div className="space-y-5">
-      <div className="text-center mb-4">
-        <h2 className="text-xl font-bold text-white mb-1">Import CoinDCX Data</h2>
-        <p className="text-slate-400 text-sm">Download from CoinDCX → Profile → Reports</p>
-      </div>
-      <ImportCard step={1} title="Order History CSV" desc="All buy & sell trades with correct prices"
-        instructions={['CoinDCX → Profile → Reports → Order History', 'Set date range to "All Time"', 'Export CSV']}
-        status={status.order} onUpload={f => upload('order', uploadOrderHistory, f)} />
-      <ImportCard step={2} title="Insta History CSV" desc="Instant trades, staking rewards, cashback"
-        instructions={['CoinDCX → Reports → Insta History', 'Export All Time history']}
-        status={status.insta} onUpload={f => upload('insta', uploadInstaHistory, f)} />
-      <ImportCard step={3} title="TDS Certificate CSV" desc="1% TDS deducted (§194S)"
-        instructions={['CoinDCX → Reports → TDS Certificate', 'Select FY', 'Export CSV']}
-        status={status.tds} onUpload={f => upload('tds', uploadTDS, f)} />
-    </div>
+    <GuidedImportWizard
+      parsedTransactions={parsedTransactions}
+      parsedTDSRecords={parsedTDSRecords}
+      checklist={checklist}
+      selectedFY={fy}
+      apiKey={apiKey}
+      apiSecret={apiSecret}
+      apiConnected={apiConnected}
+      apiSyncing={apiSyncing}
+      apiSyncProgress={apiSyncProgress}
+      apiSyncResult={apiSyncResult}
+      setApiKey={setApiKey}
+      setApiSecret={setApiSecret}
+      onApiConnect={handleApiConnect}
+      onApiResync={handleApiResync}
+      onCsvUpload={handleCsvUpload}
+      onDisconnect={handleDisconnect}
+      onReset={handleReset}
+      formatCurrency={value => formatINR(value ?? 0)}
+    />
   );
 };
 

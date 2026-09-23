@@ -239,7 +239,7 @@ export function GuidedImportWizard({
     // Upload handler
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            await onCsvUpload(e.target.files);
+            await onCsvUpload(e.target.files, activeStep.id);
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -536,13 +536,14 @@ export function GuidedImportWizard({
 
                                     <Alert className="bg-indigo-50 border-indigo-200">
                                         <Info className="h-4 w-4 text-indigo-500" />
-                                        <AlertDescription className="text-indigo-700 text-xs">
-                                            <strong>How to get your API key:</strong>{' '}
+                                        <AlertDescription className="text-indigo-700 text-xs space-y-1">
+                                            <div><strong>How to get your API key:</strong>{' '}
                                             <a href="https://coindcx.com/api-dashboard" target="_blank" rel="noopener noreferrer"
                                                 className="underline hover:text-indigo-900 inline-flex items-center gap-1">
                                                 coindcx.com → API Dashboard <ExternalLink className="h-3 w-3" />
                                             </a>
-                                            {' '}→ Create New Key. Your keys stay in your browser and are encrypted.
+                                            {' '}→ Create New Key.</div>
+                                            <div><strong>Security:</strong> create a read-only key. Do not enable trading, withdrawals, or transfers. The secret is sent only to this app's server proxy and is stored encrypted for your account; never paste it into chat or support messages.</div>
                                         </AlertDescription>
                                     </Alert>
 
@@ -593,6 +594,21 @@ export function GuidedImportWizard({
                                                 ))}
                                             </div>
                                         </details>
+                                    )}
+                                    {apiSyncResult && apiSyncResult.missingDataChecklist && apiSyncResult.missingDataChecklist.length > 0 && (
+                                        <Alert className="mt-3 border-amber-200 bg-amber-50">
+                                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                            <AlertDescription className="text-amber-800 text-xs">
+                                                <strong>Review before calculating:</strong> API data is supplementary and cannot prove complete filing coverage by itself.
+                                                <ul className="mt-2 space-y-1 list-disc pl-4">
+                                                    {apiSyncResult.missingDataChecklist.slice(0, 6).map((item, i) => (
+                                                        <li key={`${item.category}-${i}`}>
+                                                            <span className="font-medium">{item.category}:</span> {item.description} {item.action}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </AlertDescription>
+                                        </Alert>
                                     )}
                                 </div>
                             )}
