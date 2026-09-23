@@ -360,7 +360,7 @@ describe('computeVdaTaxForFinancialYear — TDS', () => {
 // ============= TEST 8: Fee Handling =============
 
 describe('computeVdaTaxForFinancialYear — Fee Handling', () => {
-    test('fee in quote asset (INR) added to cost of acquisition', () => {
+    test('exchange charges do not reduce VDA transfer income', () => {
         const txs: NormalizedTransaction[] = [
             makeTx({
                 assetSymbol: 'BTC',
@@ -387,10 +387,8 @@ describe('computeVdaTaxForFinancialYear — Fee Handling', () => {
 
         const result = computeVdaTaxForFinancialYear(txs, [], '2024-25', 'FIFO');
 
-        // Cost basis = 30000 + 50 fee = 30050
-        // Gain = 40000 - 30050 = 9950
-        expect(result.grossCapitalGains).toBe(9950);
-        expect(result.totalCostOfAcquisitionInr).toBe(30050);
+        expect(result.grossCapitalGains).toBe(10000);
+        expect(result.totalCostOfAcquisitionInr).toBe(30000);
     });
 });
 

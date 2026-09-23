@@ -31,7 +31,7 @@ async function apiFetch<T>(
     const res = await fetch(url, { ...options, headers });
     const data = await res.json();
 
-    if (!res.ok && !data.success) {
+    if (!res.ok || data.success === false) {
         throw new Error(data.message || data.error || `API error: ${res.status}`);
     }
 

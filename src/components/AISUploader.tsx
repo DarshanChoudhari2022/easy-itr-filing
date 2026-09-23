@@ -10,7 +10,6 @@ import { Progress } from './ui/progress';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { useToast } from '../hooks/use-toast';
-import { extractTextFromPDF, detectDocumentType } from '../lib/pdf-extractor';
 import {
     parseAISJson, reconcileWithITR,
     AISData, ReconciliationResult, getAutoFillSuggestions
@@ -102,6 +101,7 @@ export default function AISUploader({ itrData, initialData, onAutoFill, onNext }
                 // If password was already provided (retry), use it
                 const currentPassword = (file === pendingFile) ? pdfPassword : undefined;
 
+                const { extractTextFromPDF, detectDocumentType } = await import('../lib/pdf-extractor');
                 const pdfResult = await extractTextFromPDF(file, currentPassword);
                 const docType = detectDocumentType(pdfResult.text);
 

@@ -142,7 +142,7 @@ export default function Auth() {
           </h1>
           <p className="text-lg text-primary-foreground/80 mb-12">
             AI-powered tax filing for individuals and professionals.
-            File ITR 1-4 with confidence.
+            Prepare a draft and follow the official portal filing steps.
           </p>
         </div>
 
@@ -154,7 +154,7 @@ export default function Auth() {
             <div>
               <h3 className="font-semibold mb-1">Secure & Compliant</h3>
               <p className="text-sm text-primary-foreground/70">
-                Your data is encrypted and protected with enterprise-grade security
+                Sign in to access your personal filing workspace
               </p>
             </div>
           </div>
@@ -178,7 +178,7 @@ export default function Auth() {
             <div>
               <h3 className="font-semibold mb-1">Easy E-Filing</h3>
               <p className="text-sm text-primary-foreground/70">
-                Generate ITR JSON ready for upload to the Income Tax portal
+                Review your draft, then submit and e-verify on the official portal
               </p>
             </div>
           </div>

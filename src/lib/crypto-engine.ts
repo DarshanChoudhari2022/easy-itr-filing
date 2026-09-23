@@ -265,10 +265,7 @@ export function calculateTokenGains(
                 costBasis = tx.pricePerUnit;
             }
 
-            // Include fees in cost basis (if paid for the buy)
-            if (tx.fee && tx.type === 'buy') {
-                costBasis += (tx.fee / tx.quantity);
-            }
+            // Keep exchange fees separate from the asset purchase consideration.
 
             inventory.push({
                 id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
@@ -315,8 +312,8 @@ export function calculateTokenGains(
                 const cost = matchedQty * lot.costBasis;
                 const gain = proceeds - cost;
 
-                // Deduct fees from proceeds (if applicable)
-                const netGain = tx.fee ? gain - (tx.fee * (matchedQty / tx.quantity)) : gain;
+                // Section 115BBH does not allow disposal expenses to reduce income.
+                const netGain = gain;
 
                 // Calculate holding period
                 const holdingPeriod = Math.floor((tx.date.getTime() - lot.date.getTime()) / (1000 * 60 * 60 * 24));
@@ -367,12 +364,8 @@ export function calculateTokenGains(
 
             currentHolding -= (tx.quantity - remainingToSell);
 
-            if (remainingToSell > 0) {
-                auditLog.push({
-                    timestamp: new Date(),
-                    action: 'ERROR',
-                    details: `Could not match ${remainingToSell} ${token} - insufficient inventory`
-                });
+            if (remainingToSell > Math.max(1e-12, tx.quantity * 1e-10)) {
+                throw new Error(`Missing acquisition history for ${remainingToSell} ${token}. Import opening purchases before calculating.`);
             }
         }
     }

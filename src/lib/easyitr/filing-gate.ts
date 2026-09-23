@@ -130,7 +130,7 @@ export function evaluateFilingGate(
         blockers.push({
             type: 'NO_TDS_DATA',
             severity: 'soft',
-            message: 'TDS Summary CSV not uploaded. TDS credit will be estimated at 1% of sell volume.',
+            message: 'TDS evidence is missing. No estimated credit will be claimed; reconcile actual deductions with Form 26AS.',
             canOverride: true,
             riskDescription: 'Your TDS credit may be inaccurate. This could result in paying more tax than necessary or an incorrect refund claim.',
             impactEstimate: 'TDS credit could differ from Form 26AS by ₹500+',
@@ -142,9 +142,9 @@ export function evaluateFilingGate(
     if (instaItem?.isConditionallyRequired && instaItem.status === 'pending') {
         blockers.push({
             type: 'MISSING_INSTA_CSV',
-            severity: 'soft',
-            message: 'Instant Buy/Sell trades detected but Insta History CSV not uploaded. Buy-side cost basis will be estimated.',
-            canOverride: true,
+            severity: 'hard',
+            message: 'Instant Buy/Sell trades detected. Upload Insta history to establish acquisition costs.',
+            canOverride: false,
             riskDescription: 'Cost of acquisition for Insta trades will be estimated from market price, which may differ from actual purchase price.',
         });
     }
@@ -153,10 +153,10 @@ export function evaluateFilingGate(
     if (negativeInventoryAssets.length > 0) {
         blockers.push({
             type: 'NEGATIVE_INVENTORY',
-            severity: 'soft',
+            severity: 'hard',
             message: `${negativeInventoryAssets.length} asset(s) have negative inventory (${negativeInventoryAssets.join(', ')}). Missing buy/deposit transactions.`,
-            canOverride: true,
-            riskDescription: 'Selling more than purchased means buy-side data is missing. Cost of acquisition will be ₹0 for unmatched sells, inflating your tax.',
+            canOverride: false,
+            riskDescription: 'Acquisition history is missing. Resolve unmatched disposals before using these figures for filing.',
         });
     }
 
@@ -198,9 +198,9 @@ export function evaluateFilingGate(
     if (unresolvedDuplicates.length > 0) {
         blockers.push({
             type: 'UNRESOLVED_DUPLICATES',
-            severity: 'soft',
+            severity: 'hard',
             message: `${unresolvedDuplicates.length} potential duplicate transaction(s) need review.`,
-            canOverride: true,
+            canOverride: false,
             riskDescription: 'Duplicate transactions could inflate or deflate your capital gains calculation.',
         });
     }

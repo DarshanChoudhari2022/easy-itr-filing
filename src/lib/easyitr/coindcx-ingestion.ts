@@ -532,8 +532,9 @@ export function parseCoinDCXTradesCSV(
                     priceInr = quantity > 0 ? totalFromCsv / quantity : pricePerUnit;
                 }
             } else if (pricePerUnit <= 0 && totalFromCsv > 0) {
-                // BUG 2 FIX: Price column missing but total is available (non-INR pair)
-                grossAmountInr = totalFromCsv;
+                const rate = quoteAsset === 'INR' ? 1 : fxRateLookup?.(quoteAsset, tradeDate);
+                if (!rate || !Number.isFinite(rate) || rate <= 0) throw new Error('Historical INR valuation is required for this non-INR trade.');
+                grossAmountInr = totalFromCsv * rate;
                 priceInr = quantity > 0 ? totalFromCsv / quantity : 0;
             } else {
                 // Non-INR pair or no total column — compute from price
@@ -542,12 +543,7 @@ export function parseCoinDCXTradesCSV(
                         const rate = fxRateLookup(quoteAsset, tradeDate);
                         priceInr = pricePerUnit * rate;
                     } else {
-                        const defaultRates: Record<string, number> = {
-                            'USDT': 84, 'USDC': 84, 'BUSD': 84,
-                            'BTC': 7500000, 'ETH': 250000
-                        };
-                        priceInr = pricePerUnit * (defaultRates[quoteAsset] || 84);
-                        result.warnings.push(`Row ${i + 1}: Used default FX rate for ${quoteAsset}/INR. For accuracy, upload FX data.`);
+                        throw new Error('Historical INR valuation is required; no default exchange rate will be applied.');
                     }
                 }
                 grossAmountInr = quantity * priceInr;
@@ -1218,12 +1214,7 @@ export function parseWazirXTradesCSV(
                     const rate = fxRateLookup(quoteAsset, tradeDate);
                     priceInr = pricePerUnit * rate;
                 } else {
-                    const defaultRates: Record<string, number> = {
-                        'USDT': 84, 'USDC': 84, 'BUSD': 84,
-                        'BTC': 7500000, 'ETH': 250000, 'WRX': 15
-                    };
-                    priceInr = pricePerUnit * (defaultRates[quoteAsset] || 84);
-                    result.warnings.push(`Row ${i + 1}: Used default FX rate for ${quoteAsset}/INR.`);
+                    throw new Error('Historical INR valuation is required; no default exchange rate will be applied.');
                 }
             }
 

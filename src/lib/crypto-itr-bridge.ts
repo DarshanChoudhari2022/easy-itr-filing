@@ -38,8 +38,8 @@ export async function syncCryptoToFiling(
         // 1. Fetch latest computed tax data
         const [overview, scheduleVDA, quality] = await Promise.all([
             fetchOverview(financialYear),
-            fetchScheduleVDA(financialYear).catch(() => null),
-            checkDataQuality(financialYear).catch(() => null),
+            fetchScheduleVDA(financialYear),
+            checkDataQuality(financialYear),
         ]);
 
         // Check if tax has been computed
@@ -55,6 +55,12 @@ export async function syncCryptoToFiling(
         }
 
         const summary = overview as TaxSummary;
+        if (!quality.success || quality.warnings.some(w => w.severity === 'critical' || w.severity === 'high')) {
+            throw new Error('Resolve crypto data-quality issues before sending data to your ITR.');
+        }
+        if (summary.financial_year !== financialYear || (summary.num_sell_events > 0 && !scheduleVDA.rows?.length)) {
+            throw new Error('Missing Schedule VDA or mismatched financial year. Recompute before syncing.');
+        }
 
         // 2. Build Schedule VDA entries
         const vdaEntries: ScheduleVDAEntry[] = [];
@@ -101,6 +107,10 @@ export async function syncCryptoToFiling(
         };
 
         session.cryptoVDA = cryptoData;
+        if (session.portalJourney) {
+            session.portalJourney.cryptoHistoryComplete = false;
+            session.portalJourney.cryptoTdsReconciled = false;
+        }
 
         // 6. Update TDS
         session.taxesPaid.tdsCrypto = summary.tds_credit;

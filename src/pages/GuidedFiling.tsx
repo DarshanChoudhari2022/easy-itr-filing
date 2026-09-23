@@ -4,6 +4,12 @@
  */
 import React, { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PortalReadiness } from '@/components/PortalReadiness';
+import { getPreparationBlockers, indianTaxDate } from '@/lib/filing-readiness';
+import { syncCryptoToFiling } from '@/lib/crypto-itr-bridge';
+import { parseCoinDCXTradesCSV } from '@/lib/easyitr/coindcx-ingestion';
+import { getOrCreateSession } from '@/lib/filing-session';
+import { Link } from 'react-router-dom';
 import { useFilingSession } from '@/hooks/useFilingSession';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -189,7 +195,7 @@ export default function GuidedFiling() {
                         />
                     ) : (
                         <>
-                            {step === 0 && <BeginnerLaunchStep session={session} progress={progress} />}
+                            {step === 0 && <><PortalReadiness session={session} updateSession={updateSession} /><BeginnerLaunchStep session={session} progress={progress} /></>}
                             {step === 1 && <PersonalInfoStep session={session} updateSession={updateSession} />}
                             {step === 2 && <IncomeSelectionStep session={session} updateSession={updateSession} />}
                             {step === 3 && <IncomeEntryStep session={session} updateSession={updateSession} />}
@@ -213,7 +219,7 @@ export default function GuidedFiling() {
                                 <Button onClick={() => {
                                     forceSave();
                                     updateSession(s => ({ ...s, status: 'review' as const }));
-                                    toast.success('Review complete! Scroll down to generate your ITR JSON.');
+                                    toast.info('Draft saved. Review preparation checks before continuing to the portal.');
                                 }} className="bg-emerald-600 hover:bg-emerald-500"><CheckCircle className="h-4 w-4 mr-1" />Complete</Button>
                             )}
                         </div>
@@ -362,10 +368,15 @@ function PersonalInfoStep({ session, updateSession }: { session: FilingSession; 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><Label>Pincode *</Label><Input value={p.pincode || ''} onChange={e => u('pincode', e.target.value)} maxLength={6} /></div>
                     <div><Label>Resident Status</Label>
-                        <Select value={p.residentStatus || 'RES'} onValueChange={v => u('residentStatus', v)}><SelectTrigger><SelectValue /></SelectTrigger>
+                        <Select value={p.residentStatus || ''} onValueChange={v => u('residentStatus', v)}><SelectTrigger><SelectValue placeholder="Select residential status" /></SelectTrigger>
                             <SelectContent><SelectItem value="RES">Resident</SelectItem><SelectItem value="NRI">Non-Resident</SelectItem><SelectItem value="RNOR">RNOR</SelectItem></SelectContent>
                         </Select>
                     </div>
+                </div>
+                <div><Label>Taxpayer type</Label>
+                    <Select value={p.filingStatus || ''} onValueChange={v => u('filingStatus', v)}><SelectTrigger><SelectValue placeholder="Select taxpayer type" /></SelectTrigger>
+                        <SelectContent><SelectItem value="INDIVIDUAL">Individual (my own return)</SelectItem><SelectItem value="HUF">Hindu Undivided Family (specialist review)</SelectItem></SelectContent>
+                    </Select>
                 </div>
             </CardContent>
         </Card>
@@ -459,7 +470,7 @@ function IncomeEntryStep({ session, updateSession }: { session: FilingSession; u
     const applyAISAutoFill = async () => {
         try {
             const aisRow = await getAISData(session.assessmentYear);
-            const parsed = aisRow?.parsed_data as AISParsedSummary | undefined;
+            const parsed = (aisRow && 'parsed_data' in aisRow ? aisRow.parsed_data : undefined) as AISParsedSummary | undefined;
             if (!parsed?.incomeDetails && !parsed?.tdsDetails) {
                 toast.error('No parsed AIS data found. Upload AIS/TIS in the AIS Reconciler first.');
                 return;
@@ -1057,6 +1068,11 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                 </Button>
                 <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500"
                     onClick={() => {
+                        const blockers = [...validation.errors, ...getPreparationBlockers(session)];
+                        if (blockers.length) {
+                            blockers.forEach(message => toast.error(message));
+                            return;
+                        }
                         const itrData = mapSessionToITRData(session, itrForm.form as any);
                         const val = validateITRData(itrData);
                         if (!val.valid) {
@@ -1070,11 +1086,15 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                         updateSession(s => ({ ...s, jsonGeneratedAt: new Date().toISOString(), status: 'json_generated' as const }));
                         toast.success(`Generated ${itrForm.form} data file! 🎉`);
                     }}>
-                    <Download className="h-5 w-5 mr-2" />Download ITR Data (JSON)
+                    <Download className="h-5 w-5 mr-2" />Download Draft (not for portal upload)
                 </Button>
             </div>
 
             {/* How to File on Portal */}
+            <div className="space-y-3">
+                {getPreparationBlockers(session).map(message => <p key={message} className="text-sm text-amber-600">{message}</p>)}
+                <Button asChild variant="outline"><Link to="/efile">Portal steps and submission tracking</Link></Button>
+            </div>
             <Card className="border-indigo-500/30">
                 <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-base">📋 How to File on the Income Tax Portal</CardTitle>
@@ -1111,9 +1131,9 @@ function ReviewStep({ session, updateSession, validation, itrForm, grossIncome, 
                 <CardContent className="py-4">
                     <p className="text-xs text-amber-400 font-semibold mb-2">⚠️ Important Notes</p>
                     <div className="text-[11px] text-muted-foreground space-y-1.5">
-                        <p>• The downloaded JSON is for <strong>reference & offline utility use</strong>. Use "Prepare Online" mode on the IT portal and enter values from your Tax Computation Statement.</p>
+                        <p>• The downloaded JSON is a <strong>draft reference only, not a validated portal upload</strong>. Use Prepare Online on the official portal and reconcile the draft figures before submission.</p>
                         <p>• <strong>Always verify TDS</strong>: Login to incometax.gov.in → e-File → View Form 26AS. TDS claimed must match 26AS exactly, or you’ll get a notice.</p>
-                        <p>• <strong>Due date</strong>: ITR for FY2025-26 is due by <strong>July 31, 2026</strong>. Late filing = penalty ₹1,000-₹5,000 (u/s 234F) + interest 1%/month on unpaid tax (u/s 234A).</p>
+                        <p>• <strong>Filing deadline</strong>: Check the current official deadline for your taxpayer category and filing type. The portal must calculate applicable interest and late fees; they are not fully included in this draft.</p>
                         <p>• <strong>Crypto TDS</strong>: If you claimed §194S TDS, verify it in Form 26AS Part A2. If missing, contact your exchange.</p>
                         <p>• <strong>Keep all documents</strong>: Save Form 16, 26AS, AIS, exchange CSVs, and your Tax Computation Statement for at least 6 years.</p>
                     </div>
@@ -1166,63 +1186,18 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
 
     // Auto-fill from pre-computed data (from the Crypto Tax Calculator page)
     const autoFillFromCryptoPage = async () => {
+        setComputing(true);
         try {
-            // Try fetching from API first
-            const res = await fetch(`/api/crypto/overview?fy=FY2025-26`);
-            const data = await res.json();
-            if (data && !data.not_computed && data.taxable_capital_gains > 0) {
-                updateSession(s => ({
-                    ...s,
-                    cryptoVDA: {
-                        ...s.cryptoVDA,
-                        enabled: true,
-                        taxableGains: data.taxable_capital_gains,
-                        saleConsideration: data.sale_consideration,
-                        costOfAcquisition: data.cost_of_acquisition,
-                        grossLosses: data.gross_losses,
-                        tdsCredit: data.tds_credit,
-                        numSellEvents: data.num_sell_events,
-                        numFifoLots: data.num_fifo_lots,
-                        financialYear: 'FY2025-26',
-                        syncedAt: new Date().toISOString(),
-                    },
-                    taxesPaid: { ...s.taxesPaid, tdsCrypto: data.tds_credit },
-                }));
-                toast.success(`Auto-filled from Crypto Calculator! ₹${Math.round(data.taxable_capital_gains).toLocaleString('en-IN')} taxable gains`);
-                return;
-            }
+            const result = await syncCryptoToFiling(session.userId, session.financialYear);
+            if (!result.success) throw new Error(result.message);
+            const synced = await getOrCreateSession(session.userId, session.financialYear);
+            updateSession(s => ({ ...s, cryptoVDA: synced.cryptoVDA, taxesPaid: { ...s.taxesPaid, tdsCrypto: synced.cryptoVDA.tdsCredit }, portalJourney: s.portalJourney ? { ...s.portalJourney, cryptoHistoryComplete: false, cryptoTdsReconciled: false } : undefined }));
+            toast.success(result.message);
         } catch (e) {
-            // API failed, try local fallback
+            toast.error((e as Error).message);
+        } finally {
+            setComputing(false);
         }
-
-        // Fallback: Use pre-computed local values for FY2025-26
-        const localValues = {
-            taxableGains: 31577,
-            saleConsideration: 562582,
-            costOfAcquisition: 534282,
-            grossLosses: 3277,
-            tdsCredit: 5596,
-            numSellEvents: 14,
-            numFifoLots: 22,
-        };
-        updateSession(s => ({
-            ...s,
-            cryptoVDA: {
-                ...s.cryptoVDA,
-                enabled: true,
-                taxableGains: localValues.taxableGains,
-                saleConsideration: localValues.saleConsideration,
-                costOfAcquisition: localValues.costOfAcquisition,
-                grossLosses: localValues.grossLosses,
-                tdsCredit: localValues.tdsCredit,
-                numSellEvents: localValues.numSellEvents,
-                numFifoLots: localValues.numFifoLots,
-                financialYear: 'FY2025-26',
-                syncedAt: new Date().toISOString(),
-            },
-            taxesPaid: { ...s.taxesPaid, tdsCrypto: localValues.tdsCredit },
-        }));
-        toast.success(`Auto-filled from pre-computed data! ₹${localValues.taxableGains.toLocaleString('en-IN')} taxable gains`);
     };
 
     const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1241,8 +1216,21 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
             else if (fname.includes('zebpay')) hint = 'zebpay';
 
             // 1. Parse CSV
-            const parsed = parseExchangeCSV(text, session.userId || 'user', hint);
+            const imported = parseCoinDCXTradesCSV(text, file.name);
+            if (imported.errors.length || imported.warnings.length) throw new Error('This CSV needs review. Import it in the Crypto workspace and resolve every error or valuation warning.');
+            if (imported.transactions.some(t => t.quoteAsset !== 'INR' || !['buy', 'sell'].includes(t.transactionType))) throw new Error('Quick import supports CoinDCX INR spot trades only. Other trades require review in the Crypto workspace.');
+            const parsed = {
+                exchange: 'CoinDCX', errors: imported.errors,
+                transactions: imported.transactions.map((t): Transaction => ({
+                    id: t.externalId, type: t.transactionType as 'buy' | 'sell', token: t.assetSymbol,
+                    quantity: t.quantity, pricePerUnit: t.priceInr, date: t.tradeTimestamp,
+                    tdsDeducted: t.tdsAmount, exchange: t.exchange,
+                })),
+            };
             setParseResult({ txCount: parsed.transactions.length, errors: parsed.errors.length, exchange: parsed.exchange });
+            if (parsed.errors.length) throw new Error('Resolve all CSV parse errors before importing this file.');
+            if (parsed.transactions.some(t => t.type !== 'buy' && t.type !== 'sell')) throw new Error('This quick import supports INR spot buys and sells only. Review transfers, swaps and rewards in the Crypto workspace.');
+            if (hint === 'binance') throw new Error('Use the Crypto workspace to review quote-currency conversion and historical INR valuations.');
 
             if (parsed.transactions.length === 0) {
                 toast.error(`No transactions found in CSV. ${parsed.errors.length} parse errors.`);
@@ -1251,11 +1239,11 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
             }
 
             // 2. Filter for FY 2025-26 (April 2025 to March 2026)
-            const fyStart = new Date(2025, 3, 1); // Apr 1, 2025
-            const fyEnd = new Date(2026, 2, 31, 23, 59, 59); // Mar 31, 2026
+            const fyStart = new Date('2025-04-01T00:00:00+05:30');
+            const fyEnd = new Date('2026-03-31T23:59:59.999+05:30');
             const fyTxns = parsed.transactions.filter(t => t.date >= fyStart && t.date <= fyEnd);
             // But keep all for FIFO cost basis matching
-            const allTxns = parsed.transactions;
+            const allTxns = parsed.transactions.filter(t => t.date <= fyEnd);
 
             toast.info(`Parsed ${parsed.transactions.length} transactions from ${parsed.exchange}. Running FIFO...`);
 
@@ -1273,19 +1261,18 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
                         slNo: tokenIdx * 100 + lotIdx + 1,
                         asset: result.token,
                         description: `Transfer of ${result.token}`,
-                        dateOfAcquisition: lot.buyDate.toISOString().split('T')[0],
-                        dateOfTransfer: lot.sellDate.toISOString().split('T')[0],
-                        costOfAcquisition: Math.round(lot.quantity * lot.buyPrice),
-                        saleConsideration: Math.round(lot.quantity * lot.sellPrice),
-                        incomeFromTransfer: Math.round(lot.gainLoss),
-                        taxableIncome: lot.gainLoss > 0 ? Math.round(lot.gainLoss) : 0,
+                        dateOfAcquisition: indianTaxDate(lot.buyDate),
+                        dateOfTransfer: indianTaxDate(lot.sellDate),
+                        costOfAcquisition: Number((lot.quantity * lot.buyPrice).toFixed(2)),
+                        saleConsideration: Number((lot.quantity * lot.sellPrice).toFixed(2)),
+                        incomeFromTransfer: Number(lot.gainLoss.toFixed(2)),
+                        taxableIncome: Math.max(0, Number(lot.gainLoss.toFixed(2))),
                     }))
             );
 
             // Count FY sell events
-            const fySellEvents = portfolio.breakdown.reduce((sum, r) =>
-                sum + r.matchedLots.filter(l => l.sellDate >= fyStart && l.sellDate <= fyEnd).length, 0
-            );
+            const fySellEvents = new Set(portfolio.breakdown.flatMap(r => r.matchedLots.filter(l => l.sellDate >= fyStart && l.sellDate <= fyEnd).map(l => l.sellId))).size;
+            vdaEntries.forEach((entry, index) => { entry.slNo = index + 1; });
 
             // 5. Total taxable (only gains, no loss set-off per 115BBH)
             const fyGains = portfolio.breakdown.reduce((sum, r) =>
@@ -1296,11 +1283,12 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
             );
             const fySaleConsideration = vdaEntries.reduce((s, e) => s + e.saleConsideration, 0);
             const fyCostOfAcquisition = vdaEntries.reduce((s, e) => s + e.costOfAcquisition, 0);
-            const fyTDS = Math.round(fySaleConsideration * 0.01); // 1% TDS
+            const fyTDS = fyTxns.reduce((sum, t) => sum + (t.tdsDeducted || 0), 0);
 
             // 6. Update filing session
             updateSession(s => ({
                 ...s,
+                portalJourney: s.portalJourney ? { ...s.portalJourney, cryptoHistoryComplete: false, cryptoTdsReconciled: false } : undefined,
                 cryptoVDA: {
                     ...s.cryptoVDA,
                     enabled: true,
@@ -1368,8 +1356,8 @@ function CryptoUploadCard({ session, updateSession, numField }: { session: Filin
                     ) : (
                         <>
                             <Coins className="h-8 w-8 mx-auto mb-2 text-violet-400/60" />
-                            <p className="text-sm font-medium mb-1">Upload Exchange CSV</p>
-                            <p className="text-xs text-muted-foreground mb-3">WazirX · CoinDCX · Binance · ZebPay · Any exchange</p>
+                            <p className="text-sm font-medium mb-1">Upload CoinDCX INR spot trades</p>
+                            <p className="text-xs text-muted-foreground mb-3">Include opening purchases. Review other exchanges, swaps and rewards in the Crypto workspace.</p>
                             <Button size="sm" variant="outline" className="gap-1.5 border-violet-500/30 text-violet-300 hover:bg-violet-500/10" onClick={() => fileRef.current?.click()}>
                                 <Download className="h-3.5 w-3.5" />Upload CSV File
                             </Button>

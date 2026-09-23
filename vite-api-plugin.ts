@@ -1,8 +1,8 @@
 /**
  * Vite Plugin: Local API Proxy for Vercel Serverless Functions
  * 
- * Intercepts /api/crypto/* requests during local dev and routes them
- * to the actual Vercel serverless function handlers.
+ * Intercepts local API requests during dev and routes them to the
+ * actual Vercel serverless function handlers.
  */
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -43,8 +43,8 @@ export function vercelApiPlugin(): Plugin {
             server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
                 const url = req.url || '';
 
-                // Only handle /api/crypto/* routes
-                if (!url.startsWith('/api/crypto/')) {
+                // Only handle known local API routes.
+                if (!url.startsWith('/api/crypto/') && !url.startsWith('/api/coindcx-proxy')) {
                     return next();
                 }
 
@@ -67,7 +67,9 @@ export function vercelApiPlugin(): Plugin {
                     let handlerPath: string;
 
                     // Route mapping
-                    if (pathAfterCrypto === 'upload/order-history') {
+                    if (url.startsWith('/api/coindcx-proxy')) {
+                        handlerPath = './api/coindcx-proxy.ts';
+                    } else if (pathAfterCrypto === 'upload/order-history') {
                         handlerPath = './api/crypto/upload/order-history.ts';
                     } else if (pathAfterCrypto === 'upload/insta-history') {
                         handlerPath = './api/crypto/upload/insta-history.ts';

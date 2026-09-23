@@ -36,7 +36,6 @@ import {
   type TransactionsResponse, type DataQualityResponse, type UploadResponse,
 } from "@/lib/easyitr/api-client";
 import { formatINR, formatINRFull, TAX_RULES } from "@/lib/easyitr/constants";
-import { getLocalAvailableYears, getLocalOverview, getLocalAssetPnL, getLocalDataQuality } from "@/lib/easyitr/local-crypto-data";
 import { syncCryptoToFiling } from "@/lib/crypto-itr-bridge";
 import { useNavigate } from "react-router-dom";
 import { GuidedImportWizard } from "@/components/easyitr/GuidedImportWizard";
@@ -104,11 +103,9 @@ const CryptoTaxPage: React.FC = () => {
       setSummary(ov.not_computed ? null : ov);
       setQuality(q);
     } catch (e) {
-      console.error('[loadAll] API error, trying local data:', e);
-      // Fallback to local pre-computed data
-      const localOv = getLocalOverview(fy);
-      setSummary(localOv);
-      setQuality(getLocalDataQuality(fy));
+      setSummary(null);
+      setQuality(null);
+      toast.error('Could not load your crypto records', { description: (e as Error).message });
     }
     finally { setLoading(false); }
   };
@@ -118,9 +115,7 @@ const CryptoTaxPage: React.FC = () => {
       const data = await fetchAssetPnL(fy);
       if (data && data.assets && data.assets.length > 0) { setAssetPnl(data); return; }
     } catch (e) { console.error('[loadAssetPnl] API error:', e); }
-    // Fallback to local data
-    const local = getLocalAssetPnL(fy);
-    setAssetPnl(local || { success: true, financial_year: fy, assets: [], totals: { sale: 0, cost: 0, profit: 0, loss: 0, net_taxable: 0 } });
+    setAssetPnl({ success: true, financial_year: fy, assets: [], totals: { sale: 0, cost: 0, profit: 0, loss: 0, net_taxable: 0 } });
   };
   const loadScheduleVDA = async () => { try { setScheduleVDA(await fetchScheduleVDA(fy)); } catch (e) { console.error(e); } };
   const loadTransactions = async (p = 1, t = "all") => {
@@ -312,9 +307,8 @@ const OverviewTab: React.FC<{
   const orderRef = React.useRef<HTMLInputElement>(null);
   const instaRef = React.useRef<HTMLInputElement>(null);
   const tdsRef = React.useRef<HTMLInputElement>(null);
-  // Try local data fallback when API returns nothing
-  const displaySummary = summary || getLocalOverview(fy);
-  const displayQuality = quality || getLocalDataQuality(fy);
+  const displaySummary = summary;
+  const displayQuality = quality;
 
   const guidedUpload = async (key: string, fn: (f: File) => Promise<UploadResponse>, file: File) => {
     setUploadStatus(s => ({ ...s, [key]: { state: 'uploading', result: null } }));
@@ -922,7 +916,7 @@ const ImportTab: React.FC<{ fy: string; onComplete: () => void }> = ({ fy, onCom
       onCsvUpload={handleCsvUpload}
       onDisconnect={handleDisconnect}
       onReset={handleReset}
-      formatCurrency={value => formatINR(value ?? 0)}
+      formatCurrency={value => formatINR(Number(value) || 0)}
     />
   );
 };
@@ -938,8 +932,8 @@ const ReportsTab: React.FC<{
   const [showFullReport, setShowFullReport] = useState(false);
 
   // Use local data as fallback
-  const s = summary || getLocalOverview(fy);
-  const pnl = assetPnl || getLocalAssetPnL(fy);
+  const s = summary;
+  const pnl = assetPnl;
   const ay = s?.assessment_year || '';
   const fyShort = fy.replace('FY', '');
 

@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import type { PortalJourney } from './filing-readiness';
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -227,6 +228,7 @@ export interface ComputedTax {
 }
 
 export interface FilingSession {
+    portalJourney?: PortalJourney;
     id?: string;
     userId: string;
     assessmentYear: string;       // 'AY 2026-27'
@@ -426,6 +428,12 @@ export async function deleteFilingSession(userId: string, fy: string): Promise<v
 
 export function autoDetectITRForm(session: FilingSession): { form: ITRFormType; reason: string } {
     const { salary, houseProperty, capitalGains, cryptoVDA, business, foreignAssets, otherSources } = session;
+    const restrictedSimpleForm = session.personalInfo.residentStatus !== 'RES' ||
+        session.personalInfo.filingStatus !== 'INDIVIDUAL' || foreignAssets.enabled ||
+        (session.agriculture.enabled && session.agriculture.amount > 5000) || computeGrossTotalIncome(session) > 5000000;
+    if (restrictedSimpleForm) {
+        return { form: business.enabled ? 'ITR-3' : 'ITR-2', reason: 'Residential status, taxpayer type or income profile requires detailed form eligibility review.' };
+    }
 
     // ITR-3: Business income (non-presumptive)
     if (business.enabled && business.section === 'regular') {

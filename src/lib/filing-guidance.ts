@@ -33,7 +33,7 @@ export const BEGINNER_FILING_JOURNEY: FilingJourneyItem[] = [
     { title: 'Choose tax regime', outcome: 'Old and new regime outcomes are compared before you commit.' },
     { title: 'Add bank details', outcome: 'Refund account data is ready for validation and JSON generation.' },
     { title: 'Review warnings', outcome: 'Missing fields, mismatches, and risky assumptions are shown before filing.' },
-    { title: 'Generate and file', outcome: 'Download the ITR JSON/report, upload it on the portal, and e-verify.' },
+    { title: 'Prepare, submit and verify', outcome: 'Review the draft report, complete the return on the official portal, save the acknowledgement and e-verify.' },
 ];
 
 export const CRYPTO_TAX_PATH: FilingGuidanceItem[] = [

@@ -1,6 +1,6 @@
 /**
  * ITR JSON Generator
- * Generates Income Tax Portal compatible JSON for direct upload
+ * Generates draft reference data. Official schema validation is not implemented.
  * Supports ITR-1, ITR-2, ITR-3, ITR-4 forms
  */
 
@@ -487,9 +487,9 @@ export function generateITRJson(data: ITRFilingData): { json: object; filename: 
             json = generateITR1Json(data);
     }
 
-    const filename = `${data.formType}_${data.personalInfo.pan}_AY${data.assessmentYear.replace('-', '')}.json`;
+    const filename = `DRAFT_NOT_FOR_UPLOAD_${data.formType}_AY${data.assessmentYear.replace('-', '')}.json`;
 
-    return { json, filename };
+    return { json: { artifactType: 'easyitr-draft', portalUploadCompatible: false, assessmentYear: data.assessmentYear, draft: json }, filename };
 }
 
 /**
@@ -601,7 +601,7 @@ export function mapSessionToITRData(session: FilingSession, formType: ITRFormTyp
     return {
         formType,
         assessmentYear: session.assessmentYear,
-        filingType: 'ORIGINAL',
+        filingType: session.filingType,
         regime: session.regime === 'old' ? 'OLD' : 'NEW',
         personalInfo: {
             pan: session.personalInfo.pan || '',
@@ -618,7 +618,7 @@ export function mapSessionToITRData(session: FilingSession, formType: ITRFormTyp
             mobile: session.personalInfo.mobile || '',
             email: session.personalInfo.email || '',
             residentStatus: session.personalInfo.residentStatus as any || 'RES',
-            filingStatus: 'INDIVIDUAL',
+            filingStatus: session.personalInfo.filingStatus || 'INDIVIDUAL',
         },
         income: {
             salaryGross: session.salary.grossSalary,

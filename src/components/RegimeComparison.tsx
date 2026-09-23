@@ -82,7 +82,7 @@ export function RegimeComparisonWidget({
         <div className="space-y-6">
             {/* Header with Recommendation */}
             <Card className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-700 border-0 text-white overflow-hidden relative">
-                <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.25) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.25) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
                 <CardContent className="p-6 relative">
                     <div className="flex items-start justify-between">
                         <div>

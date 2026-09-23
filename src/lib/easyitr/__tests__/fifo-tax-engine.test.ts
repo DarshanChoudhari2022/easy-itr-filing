@@ -56,8 +56,8 @@ function makeTx(overrides: Partial<NormalizedTransaction> & { assetSymbol: strin
 
 // ─── Test 1: Buy fee included in cost of acquisition ─────────────────
 
-describe('FIFO v6 — Buy Fee in Cost of Acquisition', () => {
-    it('should add INR fee to cost of acquisition', () => {
+describe('VDA purchase consideration', () => {
+    it('keeps exchange charges separate from acquisition consideration', () => {
         const txs: NormalizedTransaction[] = [
             makeTx({
                 assetSymbol: 'BTC',
@@ -84,18 +84,17 @@ describe('FIFO v6 — Buy Fee in Cost of Acquisition', () => {
 
         const result = computeVdaTaxForFinancialYear(txs, [], '2024-25', 'FIFO', { aggregateOrders: false });
 
-        // Cost basis = 30000 + 50 fee = 30050
-        // Gain = 40000 - 30050 = 9950
-        expect(result.totalCostOfAcquisitionInr).toBe(30050);
-        expect(result.grossCapitalGains).toBe(9950);
+        expect(result.totalCostOfAcquisitionInr).toBe(30000);
+        expect(result.grossCapitalGains).toBe(10000);
+        expect(result.totalTDSCredit).toBe(0);
     });
 });
 
 
 // ─── Test 2: Sell fee subtracted from proceeds ───────────────────────
 
-describe('FIFO v6 — Sell Fee Reduces Proceeds', () => {
-    it('should subtract sell fee from sale consideration', () => {
+describe('VDA gross sale consideration', () => {
+    it('does not deduct sell fees from transfer income', () => {
         const txs: NormalizedTransaction[] = [
             makeTx({
                 assetSymbol: 'BTC',
@@ -122,10 +121,7 @@ describe('FIFO v6 — Sell Fee Reduces Proceeds', () => {
 
         const result = computeVdaTaxForFinancialYear(txs, [], '2024-25', 'FIFO', { aggregateOrders: false });
 
-        // Proceeds = 40000 - 100 fee = 39900
-        // Cost = 30000
-        // Gain = 39900 - 30000 = 9900
-        expect(result.grossCapitalGains).toBe(9900);
+        expect(result.grossCapitalGains).toBe(10000);
     });
 });
 
@@ -311,7 +307,7 @@ describe('FIFO v6 — Partial Lot Consumption', () => {
 // ─── Test 7: Combined buy fee + sell fee ─────────────────────────────
 
 describe('FIFO v6 — Combined Fee Handling', () => {
-    it('should include buy fee in cost and subtract sell fee from proceeds', () => {
+    it('keeps buy and sell exchange charges outside VDA transfer income', () => {
         const txs: NormalizedTransaction[] = [
             makeTx({
                 assetSymbol: 'XRP',
@@ -339,11 +335,8 @@ describe('FIFO v6 — Combined Fee Handling', () => {
 
         const result = computeVdaTaxForFinancialYear(txs, [], '2024-25', 'FIFO', { aggregateOrders: false });
 
-        // Cost = 50000 + 250 fee = 50250
-        // Proceeds = 80000 - 400 fee = 79600
-        // Gain = 79600 - 50250 = 29350
-        expect(result.totalCostOfAcquisitionInr).toBe(50250);
-        expect(result.grossCapitalGains).toBe(29350);
+        expect(result.totalCostOfAcquisitionInr).toBe(50000);
+        expect(result.grossCapitalGains).toBe(30000);
     });
 });
 

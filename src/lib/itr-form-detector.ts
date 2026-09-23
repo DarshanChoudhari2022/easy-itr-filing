@@ -78,8 +78,8 @@ export function detectITRForm(profile: IncomeProfile): ITRRecommendation {
         recommendedForm = 'ITR-4';
         reasons.push('Presumptive taxation scheme applicable');
         reasons.push('No need to maintain detailed books of accounts');
-        tips.push('Under 44AD, you can declare 8% (digital) or 6% (cash) as profit');
-    } else if (profile.hasBusinessIncome && !profile.hasPresumptiveIncome) {
+        tips.push('Under 44AD, the presumptive rate is generally 6% for qualifying digital receipts and 8% for cash receipts; check eligibility.');
+    } else if (profile.hasBusinessIncome) {
         recommendedForm = 'ITR-3';
         reasons.push('Regular business/professional income detected');
         reasons.push('Need to report P&L and Balance Sheet');

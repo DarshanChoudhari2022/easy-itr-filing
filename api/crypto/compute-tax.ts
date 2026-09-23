@@ -21,6 +21,16 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const TAX_RATE = 0.30;
 const CESS_RATE = 0.04;
 
+async function readAllRows<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
+    const rows: T[] = [];
+    for (let from = 0; ; from += 1000) {
+        const result = await page(from, from + 999);
+        if (result.error) return { data: null, error: result.error };
+        rows.push(...(result.data || []));
+        if (!result.data || result.data.length < 1000) return { data: rows, error: null };
+    }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -78,12 +88,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // STEP 1: Load ALL buy lots for this user (ALL years)
         // A 2021 ADA buy is needed to price a 2024 ADA sell.
         // ═══════════════════════════════════════════════════════════════
-        const { data: allBuys, error: e1 } = await dbClient
+        const { data: allBuys, error: e1 } = await readAllRows((from, to) => dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, price_per_unit, value_inr, fee_inr, trade_date, financial_year')
             .eq('user_id', userId)
             .eq('type', 'buy')
-            .order('trade_date', { ascending: true }); // FIFO = oldest first
+            .order('trade_date', { ascending: true }).order('id', { ascending: true }).range(from, to));
 
         if (e1) return res.status(500).json({ success: false, error: e1.message });
 
@@ -117,13 +127,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ═══════════════════════════════════════════════════════════════
         // STEP 2: Load sell events for the requested FY only
         // ═══════════════════════════════════════════════════════════════
-        const { data: sells, error: e2 } = await dbClient
+        const { data: sells, error: e2 } = await readAllRows((from, to) => dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, price_per_unit, value_inr, fee_inr, tds_inr, trade_date')
             .eq('user_id', userId)
             .eq('type', 'sell')
             .eq('financial_year', financial_year)
-            .order('trade_date', { ascending: true });
+            .order('trade_date', { ascending: true }).order('id', { ascending: true }).range(from, to));
 
         if (e2) return res.status(500).json({ success: false, error: e2.message });
 
@@ -132,26 +142,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // A 2023 ACA sell must consume the 2023 ACA buy, otherwise
         // the 2024 ACA sell will incorrectly match against the 2023 buy.
         // ═══════════════════════════════════════════════════════════════
-        const { data: priorSells, error: e3 } = await dbClient
+        const { data: priorSells, error: e3 } = await readAllRows((from, to) => dbClient
             .from('crypto_trades')
             .select('id, asset, quantity, trade_date')
             .eq('user_id', userId)
             .eq('type', 'sell')
             .lt('financial_year', financial_year)
-            .order('trade_date', { ascending: true });
+            .order('trade_date', { ascending: true }).order('id', { ascending: true }).range(from, to));
 
-        if (!e3 && priorSells && priorSells.length > 0) {
+        if (e3) return res.status(500).json({ success: false, error: 'Could not load prior-year disposals. Retry before computing tax.' });
+        if (priorSells && priorSells.length > 0) {
             console.log(`[Compute Tax] Consuming ${priorSells.length} prior-year sells from buy lots`);
             for (const ps of priorSells) {
                 const queue = queues[ps.asset] || [];
                 let qtyLeft = Number(ps.quantity);
                 while (qtyLeft > 1e-8 && queue.length > 0) {
                     const lot = queue[0];
+                    if (new Date(lot.trade_date).getTime() > new Date(ps.trade_date).getTime()) break;
                     const matched = Math.min(lot._qty_remaining, qtyLeft);
                     lot._qty_remaining -= matched;
                     qtyLeft -= matched;
                     if (lot._qty_remaining < 1e-8) queue.shift();
                 }
+                if (qtyLeft > 1e-8) return res.status(422).json({ success: false, error: 'Prior-year disposals have missing acquisition history. Import it before computing this year.' });
             }
         }
 
@@ -211,15 +224,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             while (qtyLeft > 1e-8 && queue.length > 0) {
                 const lot = queue[0];
+                if (new Date(lot.trade_date).getTime() > new Date(sell.trade_date).getTime()) break;
                 const matched = Math.min(lot._qty_remaining, qtyLeft);
 
                 // Proportional cost (using total value, not price × qty, for precision)
                 const lotFrac = matched / lot.quantity;
-                const costInr = lotFrac * (lot.value_inr + lot.fee_inr);
+                const costInr = lotFrac * lot.value_inr;
 
-                // Proportional proceeds (fee subtracted; TDS is NOT — it's a credit)
+                // Exchange charges do not reduce VDA sale consideration.
                 const sellFrac = matched / sellQtyFull;
-                const proceedsInr = sellFrac * (sellValFull - sellFeeFull);
+                const proceedsInr = sellFrac * sellValFull;
 
                 const gainInr = proceedsInr - costInr;
                 const taxableGainInr = Math.max(gainInr, 0); // §115BBH: losses = ₹0
@@ -250,45 +264,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
 
             // Track unmatched quantity
-            if (qtyLeft > 1e-4) {
-                const sellFrac = qtyLeft / sellQtyFull;
-                const proceedsInr = sellFrac * (sellValFull - sellFeeFull);
-
-                // For stablecoins (USDC, USDT, BUSD, DAI), the buy price ≈ sell price
-                // since they always trade ~$1. This matches KoinX behavior.
-                const STABLECOINS = ['USDC', 'USDT', 'BUSD', 'DAI'];
-                const isStablecoin = STABLECOINS.includes(sell.asset);
-                const estimatedCost = isStablecoin ? proceedsInr : 0;
-                const gainInr = proceedsInr - estimatedCost;
-                const taxableGainInr = Math.max(gainInr, 0);
-
-                taxLots.push({
-                    user_id: userId,
-                    financial_year,
-                    asset: sell.asset,
-                    sell_trade_id: sell.id,
-                    buy_trade_id: null,
-                    qty_matched: parseFloat(qtyLeft.toFixed(10)),
-                    buy_date: null,
-                    sell_date: sell.trade_date,
-                    cost_inr: round2(estimatedCost),
-                    proceeds_inr: round2(proceedsInr),
-                    gain_inr: round2(gainInr),
-                    taxable_gain_inr: round2(taxableGainInr),
-                });
-
-                totSale += proceedsInr;
-                totCost += estimatedCost;
-                totTaxable += taxableGainInr;
-
-                unmatchedSells.push({
-                    asset: sell.asset,
-                    sell_date: sell.trade_date,
-                    unmatched_qty: parseFloat(qtyLeft.toFixed(6)),
-                    note: isStablecoin
-                        ? `Stablecoin ${sell.asset}: cost estimated at sell price (≈$1). Gain ≈ ₹0.`
-                        : `No buy lot found for ${qtyLeft.toFixed(6)} ${sell.asset}. Upload All-Time Order History CSV to fix.`,
-                });
+            if (qtyLeft > 1e-8) {
+                return res.status(422).json({ success: false, error: `Missing acquisition history for ${sell.asset}. Import earlier purchases; stablecoin costs cannot be assumed equal to sale proceeds.` });
             }
         }
 

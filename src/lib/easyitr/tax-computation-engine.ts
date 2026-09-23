@@ -94,6 +94,7 @@ export function classifyVdaEvent(tx: NormalizedTransaction): VdaEventType {
     const isFiatQuote = quote === 'INR';
 
     // Rewards & income types
+    if (t === 'reward_staking') return 'REWARD';
     if (t.startsWith('reward_') || t === 'reward') {
         if (t.includes('staking')) return 'STAKING';
         if (t.includes('interest')) return 'INTEREST_EARNED';
@@ -345,20 +346,9 @@ const SURCHARGE_SLABS = [
 
 // ============= COMPLIANCE FLAGS (Indian VDA Rules) =============
 
-/** Per Section 115BBH (KoinX-compatible interpretation):
- *  - 'Cost of acquisition' = total amount paid to acquire the VDA
- *  - This INCLUDES purchase price + brokerage/trading fee (everything you paid)
- *  - TDS is NOT part of cost — it's a tax credit
- *  - Losses from one VDA cannot offset gains from another
- *  - 30% flat tax + 4% cess (no slab benefit)
- *
- * v6 CHANGE: BROKERAGE_IN_COST_OF_ACQUISITION = true
- * This matches KoinX and the literal interpretation of 'cost of acquisition' —
- * it's the total cost you incurred to acquire the asset, including fees.
- * Previously this was false, causing cost basis to be too low and gains too high.
- */
+/** Acquisition consideration is separate from exchange charges and tax credits. */
 const VDA_COMPLIANCE = {
-    BROKERAGE_IN_COST_OF_ACQUISITION: true,  // Fee is part of cost of acquisition
+    BROKERAGE_IN_COST_OF_ACQUISITION: false,
     ALLOW_LOSS_OFFSET: false,             // Must be false per 115BBH
     TAX_RATE: 0.30,
     CESS_RATE: 0.04,
@@ -633,20 +623,7 @@ export function computeVdaTaxForFinancialYear(
     // ─── Step 6: TDS Reconciliation ───
     const tdsRecon = reconcileTDS(tdsRecords, totalTDSFromTrades, financialYear);
 
-    // TDS Credit Computation (PERMANENT FIX — self-sufficient, no hardcoded refs):
-    //
-    // Per Section 194S, TDS is 1% of consideration on every VDA transfer.
-    // The engine now derives TDS credit from three sources, in priority order:
-    //
-    //   1. TDS CSV Certificates (most authoritative — uploaded by user from CoinDCX)
-    //   2. Explicit TDS from trade data (tdsAmount field on each sell transaction)
-    //   3. Computed 1% of actual sell consideration from FIFO engine (self-sufficient fallback)
-    //
-    // Source 3 is the KEY permanent fix: instead of showing ₹0 when no TDS CSV 
-    // is uploaded and API doesn't return tdsAmount, we compute 1% of the ACTUAL
-    // sell consideration that the FIFO engine already calculated. This is mathematically
-    // correct per 194S and matches what KoinX does internally.
-    //
+    // Only imported deduction evidence can contribute to a provisional TDS credit.
     const computedTDSFromConsideration = totalSellConsideration * 0.01;
     let totalTDSCredit: number = 0;
     let tdsSource: string = 'none';
@@ -655,20 +632,15 @@ export function computeVdaTaxForFinancialYear(
         // Priority 1: Official TDS certificates (TDS Summary CSV)
         totalTDSCredit = tdsRecon.totalTDSFromCertificates;
         tdsSource = 'TDS_CSV_CERTIFICATES';
-    } else if (totalTDSFromTrades > 0 && totalTDSFromTrades >= computedTDSFromConsideration * 0.5) {
-        // Priority 2: Explicit TDS from trade records (only if reasonable — at least 50% of theoretical)
+    } else if (totalTDSFromTrades > 0) {
         totalTDSCredit = totalTDSFromTrades;
         tdsSource = 'TRADE_DATA';
     } else {
-        // Priority 3 (PERMANENT FIX): Compute 1% of actual FIFO-matched sell consideration
-        // This is the legally mandated TDS amount per Section 194S.
-        // CoinDCX is legally required to deduct this, so we can safely claim it.
-        totalTDSCredit = computedTDSFromConsideration;
-        tdsSource = 'COMPUTED_FROM_CONSIDERATION';
+        totalTDSCredit = 0;
+        tdsSource = 'NO_EVIDENCE';
         if (totalSellConsideration > 0) {
             warnings.push(
-                `TDS Credit: Computed as 1% of actual sell consideration (₹${totalSellConsideration.toFixed(0)} × 1% = ₹${computedTDSFromConsideration.toFixed(2)}). ` +
-                `This is the legally mandated TDS per Section 194S. Upload your TDS Summary CSV from CoinDCX for exact certificate-level figures.`
+                'No TDS deduction evidence was imported. Credit is zero until you import and reconcile TDS records with Form 26AS.'
             );
         }
     }
@@ -922,18 +894,7 @@ function computeAssetFIFO(
         }
 
         if (isBuy) {
-            // ═══ v6 FIX: Cost of Acquisition = price paid + fee (KoinX-compatible) ═══
-            //
-            // Per Section 115BBH, 'cost of acquisition' = everything you paid.
-            // This INCLUDES the brokerage/trading fee.
-            //
-            // Fee paid in base asset: reduces acquired quantity (physical reduction)
-            // Fee paid in INR/quote currency: ADDED to cost basis (per-unit cost goes up)
-            //
-            // Example: Buy 100 ADA for ₹10,000 + ₹50 fee
-            //   costOfAcquisition = ₹10,050
-            //   costBasisPerUnit = ₹10,050 / 100 = ₹100.50
-            //
+            // Crypto-denominated fees need explicit disposal/valuation review.
             const feeAsset = (tx.feeAsset || '').toUpperCase();
             const feeInBaseAsset = feeAsset === asset.toUpperCase();
             const feeAmountCrypto = tx.feeAmount || 0;
@@ -947,8 +908,7 @@ function computeAssetFIFO(
                 : tx.quantity * (tx.priceInr || tx.pricePerUnit || 0);
 
             if (feeInBaseAsset && feeAmountCrypto > 0) {
-                // Fee in base asset: reduce acquired quantity (physical reduction)
-                netQty = Math.max(0, tx.quantity - feeAmountCrypto);
+                throw new Error('Crypto-denominated fees require acquisition and disposal review before computation.');
             }
 
             // Add INR fee to cost of acquisition (brokerage = part of cost)
@@ -1047,14 +1007,14 @@ function computeAssetFIFO(
 
                 // ═══ Cost of acquisition (per lot) ═══
                 // cost = qty_consumed × lot.costBasisPerUnit
-                // (costBasisPerUnit already includes proportional buy fee from lot creation)
+                // Exchange charges are excluded from this acquisition consideration.
                 const cost = matchedQty * lot.costBasisPerUnit;
 
                 // ═══ Sale proceeds (per lot) ═══
-                // proceeds = proportional share of gross sale - proportional sell fee
+                // Gross sale consideration, before fees and TDS.
                 const proportionalGross = matchedQty * salePricePerUnit;
                 const proportionalSellFee = tx.quantity > 0 ? sellFeeInr * (matchedQty / tx.quantity) : 0;
-                const proceeds = proportionalGross - proportionalSellFee;
+                const proceeds = proportionalGross;
 
                 // ═══ Gain/loss per lot ═══
                 const gain = proceeds - cost;

@@ -856,7 +856,7 @@ function convertTradesToNormalized(
         }
 
         if (rawPrice <= 0) {
-            console.warn(`[CoinDCX] ⚠️ No valid price for ${trade.symbol} trade ${trade.id} (price=${trade.price}, avg_price=${trade.avg_price}). Trade value will be inaccurate.`);
+            throw new Error('A CoinDCX trade has no valid execution price. Import the exchange statement and resolve it before computing tax.');
         }
 
         const price = rawPrice;  // Best available price in quote currency
@@ -867,6 +867,7 @@ function convertTradesToNormalized(
         // Buy at USDT=83.5, sell at USDT=84.7 → captures both crypto AND INR gain.
         const quoteKey = quote.toUpperCase();
         const isINRQuote = quoteKey === 'INR';
+        if (!isINRQuote) throw new Error('Non-INR CoinDCX trades require documented historical INR valuations. Import and review the exchange statement; monthly or live FX estimates cannot be used for filing.');
 
         let quoteINRRate = 1;
         if (!isINRQuote) {
@@ -880,8 +881,8 @@ function convertTradesToNormalized(
         const feeCurrency = (trade.fee_currency || quote).toUpperCase();
         let feeInr = fee;
         if (feeCurrency !== 'INR') {
-            const feeRate = getHistoricalQuoteINR(feeCurrency, tradeDate);
-            feeInr = fee * feeRate;
+            if (fee > 0) throw new Error('Crypto-denominated fees require review of the asset disposal and INR valuation before import.');
+            feeInr = 0;
         }
 
         // ── TDS (Section 194S) ──

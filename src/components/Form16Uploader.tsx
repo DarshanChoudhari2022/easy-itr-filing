@@ -8,7 +8,6 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { useToast } from '../hooks/use-toast';
-import { extractTextFromPDF, isLikelyForm16, detectDocumentType } from '../lib/pdf-extractor';
 import { parseForm16, Form16Data, convertForm16ToFilingData } from '../lib/form16-parser';
 import { saveForm16Data } from '../lib/supabase-data-service';
 import { formatINR } from '../lib/validators';
@@ -44,6 +43,7 @@ export default function Form16Uploader() {
         setProgress(10);
 
         try {
+            const { extractTextFromPDF, isLikelyForm16, detectDocumentType } = await import('../lib/pdf-extractor');
             const pdfResult = await extractTextFromPDF(file);
             setProgress(30);
 
