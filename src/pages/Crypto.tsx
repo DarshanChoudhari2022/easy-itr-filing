@@ -344,26 +344,26 @@ const OverviewTab: React.FC<{
   // ─── NO COMPUTED DATA: Show Guided Setup Flow ───
   if (!displaySummary) return (
     <div className="space-y-5">
-      <Card className="bg-gradient-to-br from-indigo-600/20 to-violet-600/10 border-indigo-500/30">
+      <Card className="bg-gradient-to-br from-slate-50 via-indigo-50 to-violet-50 border-indigo-200 shadow-lg shadow-indigo-950/10">
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center"><Coins className="h-5 w-5 text-indigo-400" /></div>
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><Coins className="h-5 w-5 text-indigo-700" /></div>
             <div>
-              <h2 className="text-white font-bold text-lg">Setup Crypto Tax — {fyLabel}</h2>
-              <p className="text-slate-400 text-sm">Complete these steps to calculate your crypto tax</p>
+              <h2 className="text-slate-900 font-bold text-lg">Setup Crypto Tax — {fyLabel}</h2>
+              <p className="text-slate-600 text-sm">Complete these steps to calculate your crypto tax</p>
             </div>
           </div>
           <div className="space-y-3">
             {/* Step 1: Order History */}
-            <div className={`rounded-lg p-4 border ${uploadStatus.order.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
+            <div className={`rounded-lg p-4 border ${uploadStatus.order.state === 'done' ? 'bg-emerald-50 border-emerald-200' : 'bg-white/70 border-indigo-100'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.order.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.order.state === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
                     {uploadStatus.order.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '1'}
                   </div>
                   <div>
-                    <h4 className="text-white text-sm font-semibold">Order History CSV (All Time)</h4>
-                    <p className="text-slate-500 text-xs">CoinDCX → Profile → Reports → Order History → All Time</p>
+                    <h4 className="text-slate-900 text-sm font-semibold">Order History CSV (All Time)</h4>
+                    <p className="text-slate-600 text-xs">CoinDCX → Profile → Reports → Order History → All Time</p>
                   </div>
                 </div>
                 <input ref={orderRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('order', uploadOrderHistory, f); e.target.value = ''; }} className="hidden" />
@@ -374,15 +374,15 @@ const OverviewTab: React.FC<{
               </div>
             </div>
             {/* Step 2: Insta History */}
-            <div className={`rounded-lg p-4 border ${uploadStatus.insta.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/5 border-white/10'}`}>
+            <div className={`rounded-lg p-4 border ${uploadStatus.insta.state === 'done' ? 'bg-emerald-50 border-emerald-200' : 'bg-white/70 border-indigo-100'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.insta.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.insta.state === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
                     {uploadStatus.insta.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '2'}
                   </div>
                   <div>
-                    <h4 className="text-white text-sm font-semibold">Insta History CSV (All Time)</h4>
-                    <p className="text-slate-500 text-xs">CoinDCX → Reports → Insta/Instant History → All Time</p>
+                    <h4 className="text-slate-900 text-sm font-semibold">Insta History CSV (All Time)</h4>
+                    <p className="text-slate-600 text-xs">CoinDCX → Reports → Insta/Instant History → All Time</p>
                   </div>
                 </div>
                 <input ref={instaRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('insta', uploadInstaHistory, f); e.target.value = ''; }} className="hidden" />
@@ -393,15 +393,15 @@ const OverviewTab: React.FC<{
               </div>
             </div>
             {/* Step 3: TDS for selected FY */}
-            <div className={`rounded-lg p-4 border ${uploadStatus.tds.state === 'done' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+            <div className={`rounded-lg p-4 border ${uploadStatus.tds.state === 'done' ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.tds.state === 'done' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${uploadStatus.tds.state === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                     {uploadStatus.tds.state === 'done' ? <CheckCircle className="h-4 w-4" /> : '3'}
                   </div>
                   <div>
-                    <h4 className="text-white text-sm font-semibold">TDS Certificate for {fyLabel}</h4>
-                    <p className="text-amber-400/80 text-xs">CoinDCX → Reports → TDS Certificate → Select {fyLabel} → Export</p>
+                    <h4 className="text-slate-900 text-sm font-semibold">TDS Certificate for {fyLabel}</h4>
+                    <p className="text-amber-800 text-xs">CoinDCX → Reports → TDS Certificate → Select {fyLabel} → Export</p>
                   </div>
                 </div>
                 <input ref={tdsRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('tds', uploadTDS, f); e.target.value = ''; }} className="hidden" />
@@ -413,11 +413,11 @@ const OverviewTab: React.FC<{
             </div>
           </div>
           {/* Calculate button at bottom */}
-          <div className="mt-5 pt-4 border-t border-white/10">
+          <div className="mt-5 pt-4 border-t border-indigo-200">
             <Button onClick={onCompute} disabled={computing} size="lg" className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white h-12 text-base font-semibold">
               {computing ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />Computing Tax...</> : <><Calculator className="h-5 w-5 mr-2" />Calculate Crypto Tax for {fyLabel}</>}
             </Button>
-            <p className="text-slate-500 text-xs text-center mt-2">FIFO method • Section 115BBH • 30% + 4% Cess</p>
+            <p className="text-slate-600 text-xs text-center mt-2">FIFO method • Section 115BBH • 30% + 4% Cess</p>
           </div>
         </CardContent>
       </Card>
