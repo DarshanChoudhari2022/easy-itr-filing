@@ -39,6 +39,7 @@ import { formatINR, formatINRFull, TAX_RULES } from "@/lib/easyitr/constants";
 import { syncCryptoToFiling } from "@/lib/crypto-itr-bridge";
 import { useNavigate } from "react-router-dom";
 import { GuidedImportWizard } from "@/components/easyitr/GuidedImportWizard";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   fullCoinDCXSync, loadCredentialsAsync, saveCredentials, clearCredentials,
   type CoinDCXCredentials, type FullSyncResult, type SyncProgress,
@@ -171,23 +172,24 @@ const CryptoTaxPage: React.FC = () => {
   })() : '';
 
   return (
-    <AppLayout>
+    <AppLayout hideHeader contentClassName="p-0">
       <div className="min-h-screen bg-[#0a0e1a] text-white">
         {/* ── Top Header ── */}
         <header className="border-b border-white/10 bg-[#0d1221]/90 backdrop-blur-lg sticky top-0 z-50">
-          <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+              <SidebarTrigger className="h-8 w-8 shrink-0 text-slate-300 hover:bg-white/10 hover:text-white" />
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+                <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
                   <Coins className="h-4 w-4 text-white" />
                 </div>
-                <div>
-                  <h1 className="text-lg font-bold text-white">Crypto Tax Calculator</h1>
+                <div className="min-w-0">
+                  <h1 className="truncate text-base sm:text-lg font-bold text-white">Crypto Tax Calculator</h1>
                   <p className="text-[10px] text-slate-500">Section 115BBH • 30% Tax Rate</p>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {/* FY Selector - always visible */}
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
@@ -234,7 +236,8 @@ const CryptoTaxPage: React.FC = () => {
         <div className="max-w-[1400px] mx-auto px-6 py-4">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex items-center justify-between mb-5">
-              <TabsList className="bg-white/5 border border-white/10 h-9">
+              <div className="max-w-full overflow-x-auto rounded-md">
+              <TabsList className="w-max min-w-full bg-white/5 border border-white/10 h-9">
                 <TabsTrigger value="overview" className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-slate-400 h-7 px-3">
                   <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Overview
                 </TabsTrigger>
@@ -257,6 +260,7 @@ const CryptoTaxPage: React.FC = () => {
                   <SettingsIcon className="h-3.5 w-3.5 mr-1.5" />Settings
                 </TabsTrigger>
               </TabsList>
+              </div>
             </div>
 
             <TabsContent value="overview">
