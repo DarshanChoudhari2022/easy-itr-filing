@@ -52,11 +52,19 @@ import type { NormalizedTransaction, TDSRecord } from "@/lib/easyitr";
 // ═══════════════════════════════════════════════════════════════
 
 const CryptoTaxPage: React.FC = () => {
+  const now = new Date();
+  const start = now.getFullYear() - (now.getMonth() >= 3 ? 1 : 2);
+  const [fy, setFy] = useState('FY' + start + '-' + String(start + 1).slice(-2));
+  // A year change discards in-flight view state, including old upload indicators.
+  return <CryptoWorkspace key={fy} fy={fy} setFy={setFy} />;
+};
+
+const CryptoWorkspace: React.FC<{ fy: string; setFy: (fy: string) => void }> = ({ fy, setFy }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
   // Default FY years - always available even if API fails
-  const defaultYears = ['FY2024-25', 'FY2025-26'];
-  const [fy, setFy] = useState("FY2024-25");
+  const defaultYears = [...new Set(['FY2024-25', 'FY2025-26', fy])];
+  const [pageError, setPageError] = useState<string | null>(null);
   const [years, setYears] = useState<string[]>(defaultYears);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<TaxSummary | null>(null);
@@ -99,11 +107,13 @@ const CryptoTaxPage: React.FC = () => {
 
   const loadAll = async () => {
     setLoading(true);
+    setPageError(null);
     try {
       const [ov, q] = await Promise.all([fetchOverview(fy), checkDataQuality(fy)]);
       setSummary(ov.not_computed ? null : ov);
       setQuality(q);
     } catch (e) {
+      setPageError((e as Error).message);
       setSummary(null);
       setQuality(null);
       toast.error('Could not load your crypto records', { description: (e as Error).message });
@@ -140,6 +150,8 @@ const CryptoTaxPage: React.FC = () => {
   const handleCompute = async () => {
     if (!fy) return;
     setComputing(true);
+    setPageError(null);
+    setSummary(null);
     try {
       const r = await computeTax(fy);
       if (r.success) {
@@ -148,7 +160,7 @@ const CryptoTaxPage: React.FC = () => {
         setAssetPnl(null); setScheduleVDA(null);
         setQuality(await checkDataQuality(fy));
       }
-    } catch (e) { toast.error("Failed", { description: (e as Error).message }); }
+    } catch (e) { setPageError((e as Error).message); toast.error("Calculation needs attention", { description: (e as Error).message }); }
     finally { setComputing(false); }
   };
 
@@ -172,7 +184,7 @@ const CryptoTaxPage: React.FC = () => {
   })() : '';
 
   return (
-    <AppLayout hideHeader contentClassName="p-0">
+    <AppLayout hideHeader contentClassName="p-0 md:p-0 lg:p-0">
       <div className="min-h-screen bg-[#0a0e1a] text-white">
         {/* ── Top Header ── */}
         <header className="border-b border-white/10 bg-[#0d1221]/90 backdrop-blur-lg sticky top-0 z-50">
@@ -193,7 +205,7 @@ const CryptoTaxPage: React.FC = () => {
               {/* FY Selector - always visible */}
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
-                <Select value={fy} onValueChange={(v) => { console.log('FY changed to:', v); setFy(v); }}>
+                <Select value={fy} onValueChange={setFy}>
                   <SelectTrigger className="w-[140px] bg-white/5 border-white/10 text-white text-sm h-9 focus:ring-1 focus:ring-indigo-500/50">
                     <SelectValue>
                       {fy ? (fy.replace('FY', 'FY ')) : 'Select FY'}
@@ -226,6 +238,7 @@ const CryptoTaxPage: React.FC = () => {
           <div className="border-b border-white/5 bg-[#0d1221]/50">
             <div className="max-w-[1400px] mx-auto px-6 py-1.5 flex items-center gap-4 text-xs text-slate-500">
               <span>{fyDateRange}</span>
+              <span>AY {Number(fy.slice(2, 6)) + 1}-{String(Number(fy.slice(2, 6)) + 2).slice(-2)}</span>
               {summary && <span>• {summary.num_sell_events || 0} sell trades</span>}
               {quality && <span>• Data quality: {quality.data_quality_score}%</span>}
             </div>
@@ -234,6 +247,7 @@ const CryptoTaxPage: React.FC = () => {
 
         {/* ── Tabs ── */}
         <div className="max-w-[1400px] mx-auto px-6 py-4">
+          {pageError && <div role="alert" className="mb-4 rounded-md border border-red-400/40 bg-red-950 p-4 text-sm text-red-100 break-words">{pageError}</div>}
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <div className="flex items-center justify-between mb-5">
               <div className="max-w-full overflow-x-auto rounded-md">
@@ -304,6 +318,7 @@ const OverviewTab: React.FC<{
   const navigate = useNavigate();
   const [syncing, setSyncing] = React.useState(false);
   const [synced, setSynced] = React.useState(false);
+  const [uploadMessage, setUploadMessage] = React.useState<string | null>(null);
   // Guided flow upload states
   const [uploadStatus, setUploadStatus] = React.useState<Record<string, { state: string; result: UploadResponse | null }>>({
     order: { state: 'idle', result: null }, insta: { state: 'idle', result: null }, tds: { state: 'idle', result: null },
@@ -315,13 +330,16 @@ const OverviewTab: React.FC<{
   const displayQuality = quality;
 
   const guidedUpload = async (key: string, fn: (f: File) => Promise<UploadResponse>, file: File) => {
+    setUploadMessage(null);
     setUploadStatus(s => ({ ...s, [key]: { state: 'uploading', result: null } }));
     try {
       const r = await fn(file);
+      setUploadMessage(r.message || r.errors?.[0]?.issue || 'Import needs review.');
       setUploadStatus(s => ({ ...s, [key]: { state: r.success ? 'done' : 'error', result: r } }));
       if (r.success) toast.success(r.message);
       else toast.error(r.message || r.errors?.[0]?.issue);
     } catch (e) {
+      setUploadMessage((e as Error).message);
       setUploadStatus(s => ({ ...s, [key]: { state: 'error', result: { success: false, errors: [{ row: 0, issue: (e as Error).message }], message: (e as Error).message } as UploadResponse } }));
     }
   };
@@ -344,6 +362,7 @@ const OverviewTab: React.FC<{
   // ─── NO COMPUTED DATA: Show Guided Setup Flow ───
   if (!displaySummary) return (
     <div className="space-y-5">
+      {uploadMessage && <p role="status" className="rounded-md border border-slate-600 bg-slate-900 p-3 text-sm text-white break-words">{uploadMessage}</p>}
       <Card className="bg-gradient-to-br from-slate-50 via-indigo-50 to-violet-50 border-indigo-200 shadow-lg shadow-indigo-950/10">
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -404,7 +423,7 @@ const OverviewTab: React.FC<{
                     <p className="text-amber-800 text-xs">CoinDCX → Reports → TDS Certificate → Select {fyLabel} → Export</p>
                   </div>
                 </div>
-                <input ref={tdsRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('tds', uploadTDS, f); e.target.value = ''; }} className="hidden" />
+                <input ref={tdsRef} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) guidedUpload('tds', file => uploadTDS(file, fy), f); e.target.value = ''; }} className="hidden" />
                 <Button onClick={() => tdsRef.current?.click()} disabled={uploadStatus.tds.state === 'uploading'} size="sm"
                   className={uploadStatus.tds.state === 'done' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-amber-600 hover:bg-amber-500'}>
                   {uploadStatus.tds.state === 'uploading' ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Uploading...</> : uploadStatus.tds.state === 'done' ? <><CheckCircle className="h-3.5 w-3.5 mr-1" />Done</> : <><Upload className="h-3.5 w-3.5 mr-1" />Upload TDS</>}
@@ -414,7 +433,7 @@ const OverviewTab: React.FC<{
           </div>
           {/* Calculate button at bottom */}
           <div className="mt-5 pt-4 border-t border-indigo-200">
-            <Button onClick={onCompute} disabled={computing} size="lg" className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white h-12 text-base font-semibold">
+            <Button onClick={onCompute} disabled={computing || Object.values(uploadStatus).some(s => s.state === 'uploading' || s.state === 'error')} size="lg" className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white h-auto min-h-12 whitespace-normal py-3 text-base font-semibold">
               {computing ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />Computing Tax...</> : <><Calculator className="h-5 w-5 mr-2" />Calculate Crypto Tax for {fyLabel}</>}
             </Button>
             <p className="text-slate-600 text-xs text-center mt-2">FIFO method • Section 115BBH • 30% + 4% Cess</p>
@@ -849,7 +868,7 @@ const ImportTab: React.FC<{ fy: string; onComplete: () => void }> = ({ fy, onCom
         result = await uploadOrderHistory(file);
         source = 'order_history_csv';
       } else if (fileType === 'tds_csv') {
-        result = await uploadTDS(file);
+        result = await uploadTDS(file, fy);
         source = 'tds_summary_csv';
       } else if (fileType === 'insta_csv') {
         result = await uploadInstaHistory(file);

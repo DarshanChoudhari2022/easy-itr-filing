@@ -8,7 +8,7 @@
  * Self-contained FIFO engine. No imports from src/.
  * 
  * §115BBH Rules enforced:
- *   Rule 1: taxable_gain per lot = MAX(gain, 0) — losses cannot offset gains
+ *   Rule 1: taxable_gain per disposal = MAX(proceeds - acquisition costs, 0)
  *   Rule 2: Losses shown separately for disclosure, NOT subtracted
  *   Rule 3: Only cost_of_acquisition is deductible
  *   Tax: 30% flat + 4% cess = 31.2% effective
@@ -151,6 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .order('trade_date', { ascending: true }).order('id', { ascending: true }).range(from, to));
 
         if (e3) return res.status(500).json({ success: false, error: 'Could not load prior-year disposals. Retry before computing tax.' });
+        const historyGaps: { asset: string; date: string; quantity: number; period: string }[] = [];
         if (priorSells && priorSells.length > 0) {
             console.log(`[Compute Tax] Consuming ${priorSells.length} prior-year sells from buy lots`);
             for (const ps of priorSells) {
@@ -164,47 +165,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     qtyLeft -= matched;
                     if (lot._qty_remaining < 1e-8) queue.shift();
                 }
-                if (qtyLeft > 1e-8) return res.status(422).json({ success: false, error: 'Prior-year disposals have missing acquisition history. Import it before computing this year.' });
+                if (qtyLeft > 1e-8) historyGaps.push({ asset: ps.asset, date: ps.trade_date, quantity: qtyLeft, period: 'earlier year' });
             }
         }
 
         if (!sells || sells.length === 0) {
-            // No sells — still save a zero summary
-            const emptySummary = buildSummary(userId, financial_year, assessmentYear, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-
-            // Check for income events
-            const { data: incomeRows } = await dbClient
-                .from('crypto_income_events')
-                .select('income_type, value_inr')
-                .eq('user_id', userId)
-                .eq('financial_year', financial_year);
-
-            const stakingIncome = sumIncome(incomeRows, 'staking');
-            const rewardsIncome = sumIncome(incomeRows, 'reward') + sumIncome(incomeRows, 'airdrop');
-            const totalOtherIncome = stakingIncome + rewardsIncome;
-
-            if (totalOtherIncome > 0) {
-                const totalTaxable = totalOtherIncome;
-                const grossTax = totalTaxable * TAX_RATE;
-                const cess = grossTax * CESS_RATE;
-                const totalTaxLiability = grossTax + cess;
-
-                const summary = buildSummary(
-                    userId, financial_year, assessmentYear,
-                    0, 0, 0, 0, 0, 0,
-                    stakingIncome, rewardsIncome, 0
-                );
-
-                await upsertSummary(dbClient, summary);
-                return res.status(200).json({ success: true, summary, unmatched_sells: [], data_quality: 'clean' });
-            }
-
-            return res.status(200).json({
-                success: true,
-                message: 'No sell trades found for this financial year.',
-                financial_year,
-                summary: emptySummary,
-            });
+            return res.status(422).json({ success: false, error: 'No disposals found for ' + financial_year + '. Check the selected year and import history before generating a report.' });
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -215,6 +181,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let totSale = 0, totCost = 0, totTaxable = 0, totLosses = 0, totTDS = 0;
 
         for (const sell of sells) {
+            const firstLot = taxLots.length;
             const queue = queues[sell.asset] || [];
             let qtyLeft = Number(sell.quantity);
             const sellQtyFull = Number(sell.quantity);
@@ -236,7 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const proceedsInr = sellFrac * sellValFull;
 
                 const gainInr = proceedsInr - costInr;
-                const taxableGainInr = Math.max(gainInr, 0); // §115BBH: losses = ₹0
+                const taxableGainInr = Math.max(gainInr, 0); // Allocated across the disposal below.
 
                 taxLots.push({
                     user_id: userId,
@@ -265,19 +232,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             // Track unmatched quantity
             if (qtyLeft > 1e-8) {
-                return res.status(422).json({ success: false, error: `Missing acquisition history for ${sell.asset}. Import earlier purchases; stablecoin costs cannot be assumed equal to sale proceeds.` });
+                historyGaps.push({ asset: sell.asset, date: sell.trade_date, quantity: qtyLeft, period: financial_year });
             }
+            // The loss floor applies to the disposal, not individual acquisition slices.
+            const saleLots = taxLots.slice(firstLot);
+            const gain = saleLots.reduce((sum, lot) => sum + lot.gain_inr, 0);
+            const positive = saleLots.reduce((sum, lot) => sum + Math.max(lot.gain_inr, 0), 0);
+            totTaxable -= positive;
+            totLosses -= saleLots.reduce((sum, lot) => sum + Math.max(-lot.gain_inr, 0), 0);
+            totTaxable += Math.max(gain, 0);
+            totLosses += Math.max(-gain, 0);
+            let allocated = 0;
+            const taxable = round2(Math.max(gain, 0));
+            const profitable = saleLots.filter(lot => lot.gain_inr > 0);
+            saleLots.forEach(lot => { lot.taxable_gain_inr = 0; });
+            profitable.forEach((lot, i) => {
+                lot.taxable_gain_inr = i === profitable.length - 1 ? round2(taxable - allocated) : round2(taxable * lot.gain_inr / positive);
+                allocated += lot.taxable_gain_inr;
+            });
         }
 
         // ═══════════════════════════════════════════════════════════════
         // STEP 4: Fetch other income for this FY
         // ═══════════════════════════════════════════════════════════════
-        const { data: incomeRows } = await dbClient
+        if (historyGaps.length) return res.status(422).json({ success: false, gaps: historyGaps,
+            error: 'Missing acquisition history: ' + historyGaps.map(g => g.quantity.toPrecision(8) + ' ' + g.asset + ' (' + g.date.slice(0, 10) + ')').join('; ') + '. Import purchase, deposit and conversion records; costs cannot be assumed.' });
+        const { data: incomeRows, error: incomeError } = await dbClient
             .from('crypto_income_events')
             .select('income_type, value_inr')
             .eq('user_id', userId)
             .eq('financial_year', financial_year);
 
+        if (incomeError) throw new Error('Could not load other crypto income: ' + incomeError.message);
+        if (incomeRows?.length) return res.status(422).json({ success: false, error: 'Reward/staking receipts require income classification and acquisition-basis review before a filing report can be generated.' });
+        const { data: tdsRows, error: tdsError } = await readAllRows((from, to) => dbClient
+            .from('tds_records').select('tds_amount_inr').eq('user_id', userId)
+            .eq('financial_year', financial_year).eq('source', 'tds_csv')
+            .order('id', { ascending: true }).range(from, to));
+        if (tdsError) throw new Error('Could not load TDS evidence: ' + tdsError.message);
+        if (tdsRows?.length) {
+            const certificateTotal = tdsRows.reduce((sum, row) => sum + Number(row.tds_amount_inr), 0);
+            if (Math.abs(certificateTotal - totTDS) > 1) return res.status(422).json({ success: false,
+                error: 'TDS reconciliation required: certificate INR ' + round2(certificateTotal) + ', trades INR ' + round2(totTDS) + '. Review missing or duplicate transactions.' });
+            totTDS = certificateTotal;
+        }
         const stakingIncome = sumIncome(incomeRows, 'staking');
         const rewardsIncome = sumIncome(incomeRows, 'reward') + sumIncome(incomeRows, 'airdrop');
         const totalOtherIncome = stakingIncome + rewardsIncome;
@@ -297,7 +295,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ═══════════════════════════════════════════════════════════════
 
         // Clear old tax lots for this user + FY
-        await dbClient.from('crypto_tax_lots').delete().match({ user_id: userId, financial_year });
+        const { error: deleteError } = await dbClient.from('crypto_tax_lots').delete().match({ user_id: userId, financial_year });
+        if (deleteError) throw new Error('Could not replace previous tax lots: ' + deleteError.message);
 
         // Insert new tax lots in batches
         if (taxLots.length > 0) {
@@ -306,7 +305,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const batch = taxLots.slice(i, i + BATCH);
                 const { error: lotErr } = await dbClient.from('crypto_tax_lots').insert(batch);
                 if (lotErr) {
-                    console.error('[Compute Tax] Tax lot insert error:', lotErr);
+                    throw new Error('Could not save tax lots: ' + lotErr.message);
                 }
             }
         }

@@ -122,6 +122,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const headerCells = parseCSVRow(lines[0]);
+        const { error: staleError } = await dbClient.from('crypto_tax_summary').delete().eq('user_id', user.id);
+        if (staleError) throw new Error('Could not invalidate the previous report: ' + staleError.message);
         const headers = headerCells.map(h => h.trim());
 
         // Detect column names dynamically
@@ -129,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             date: findCol(headers, ['created at', 'created_at', 'date', 'datetime', 'time', 'timestamp', 'trade_date', 'order_date']),
             market: findCol(headers, ['pair', 'market', 'symbol', 'trading pair', 'trading_pair', 'instrument', 'coin_pair']),
             type: findCol(headers, ['side', 'type', 'order type', 'order_type', 'direction', 'action', 'buy/sell', 'trade_type']),
-            price: findCol(headers, ['price per unit', 'price_per_unit', 'price', 'rate', 'avg price', 'avg_price', 'unit_price', 'average_price']),
+            price: findCol(headers, ['avg price', 'avg_price', 'average_price', 'price per unit', 'price_per_unit', 'price', 'rate']),
             amount: findCol(headers, ['total quantity', 'total_quantity', 'amount', 'quantity', 'qty', 'filled', 'volume']),
             remaining: findCol(headers, ['remaining quantity', 'remaining_quantity', 'remaining']),
             total: findCol(headers, ['total', 'value', 'turnover', 'consideration', 'total_amount']),
@@ -180,6 +182,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const rawFee = cols.fee ? parseNum(row[cols.fee]) : 0;
                 const rawTds = cols.tds ? parseNum(row[cols.tds]) : 0;
                 const rawId = cols.orderId ? row[cols.orderId].trim() : '';
+                const status = cols.status ? row[cols.status].toLowerCase() : '';
+                if (status === 'partially_cancelled' && rawRemaining === 0) {
+                    errors.push({ row: i + 1, issue: 'Order ' + rawId + ' (' + rawMarket + ') is partially cancelled with zero remaining quantity. Its executed quantity is ambiguous; obtain individual fills from CoinDCX.' });
+                    continue;
+                }
 
                 // Skip blank rows
                 if (!rawMarket || !rawDate || !rawType) continue;
@@ -218,11 +225,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     // TDS is 1% of INR sale value on CoinDCX
                     if (rawTds > 0) {
                         valueInr = rawTds / 0.01;
-                    } else if (rawFee > 0) {
-                        // Fee is ~0.2% on Binance exchange (B- prefix)
-                        valueInr = rawFee / 0.002;
                     } else {
-                        valueInr = 0; // Dust trade
+                        errors.push({ row: i + 1, issue: `Missing INR valuation for ${rawMarket}. Supply the executed trade report with INR values.` });
+                        continue;
                     }
                 }
 
@@ -310,6 +315,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
         }
 
+        if (errors.length) return res.status(422).json({ success: false, imported: 0, errors,
+            message: errors.map(e => 'Row ' + e.row + ': ' + e.issue).join('\n') });
         if (toInsert.length === 0) {
             return res.status(200).json({
                 success: false,
@@ -327,7 +334,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const batch = toInsert.slice(i, i + BATCH_SIZE);
             const { data: inserted, error: dbError } = await dbClient
                 .from('crypto_trades')
-                .upsert(batch, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
+                .upsert(batch, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: false })
                 .select('id');
 
             if (dbError) {
@@ -344,7 +351,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fys = [...new Set(toInsert.map(t => t.financial_year))].sort();
 
         return res.status(200).json({
-            success: true,
+            success: errors.length === 0,
             imported,
             total_parsed: toInsert.length,
             errors,
@@ -396,8 +403,9 @@ function parseMarketPair(market: string): { asset: string; quote: string } {
 }
 
 function getFinancialYear(date: Date): string {
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
+    const india = new Date(date.getTime() + 330 * 60000);
+    const month = india.getUTCMonth() + 1;
+    const year = india.getUTCFullYear();
     const start = month >= 4 ? year : year - 1;
     return `FY${start}-${String(start + 1).slice(-2)}`;
 }

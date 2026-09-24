@@ -29,10 +29,13 @@ async function apiFetch<T>(
     }
 
     const res = await fetch(url, { ...options, headers });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new Error('Crypto service returned HTTP ' + res.status + ' for ' + path.split('?')[0] + '. Please retry; no calculation has been confirmed.'); }
 
     if (!res.ok || data.success === false) {
-        throw new Error(data.message || data.error || `API error: ${res.status}`);
+        throw new Error(data.message || data.errors?.[0]?.issue || data.error || `API error: ${res.status}`);
     }
 
     return data as T;
@@ -253,11 +256,11 @@ export async function uploadInstaHistory(file: File): Promise<UploadResponse> {
 }
 
 /** Upload TDS Certificate CSV */
-export async function uploadTDS(file: File): Promise<UploadResponse> {
+export async function uploadTDS(file: File, financialYear?: string): Promise<UploadResponse> {
     const csvText = await file.text();
     return apiFetch<UploadResponse>('upload/tds-summary', {
         method: 'POST',
-        body: JSON.stringify({ csv: csvText }),
+        body: JSON.stringify({ csv: csvText, financial_year: financialYear }),
     });
 }
 

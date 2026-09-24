@@ -43,11 +43,6 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
 
-  // Derive Assessment Year dynamically from current date
-  const now = new Date();
-  const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-  const currentAY = `AY ${fyStart + 1}-${String(fyStart + 2).slice(-2)}`;
-
   const isActive = (path: string) => location.pathname === path;
 
   return (
@@ -58,7 +53,7 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col">
               <span className="font-bold text-sidebar-foreground bg-gradient-to-r from-indigo-400 to-teal-400 bg-clip-text text-transparent">EasyITR</span>
-              <span className="text-xs text-sidebar-foreground/60">{currentAY}</span>
+              <span className="text-xs text-sidebar-foreground/60">ITR preparation</span>
             </div>
           )}
         </div>

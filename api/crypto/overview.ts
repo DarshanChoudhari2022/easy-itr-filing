@@ -9,7 +9,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { setCORS, authenticate, parseFY } from './_shared';
+import { setCORS, authenticate, parseFY } from './_shared.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     setCORS(res);

@@ -9,7 +9,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { setCORS, authenticate, parseFY } from './_shared';
+import { setCORS, authenticate, parseFY } from './_shared.js';
 
 interface Warning {
     severity: 'critical' | 'high' | 'medium' | 'low';

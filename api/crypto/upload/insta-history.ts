@@ -88,6 +88,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const headerCells = parseCSVRow(lines[0]);
+        const { error: staleError } = await dbClient.from('crypto_tax_summary').delete().eq('user_id', user.id);
+        if (staleError) throw new Error('Could not invalidate the previous report: ' + staleError.message);
         const headers = headerCells.map(h => h.trim());
 
         const cols = {
@@ -195,7 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // ── 4. Upsert ──
         const results = await Promise.all([
             trades.length > 0
-                ? dbClient.from('crypto_trades').upsert(trades, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
+                ? dbClient.from('crypto_trades').upsert(trades, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: false })
                 : { error: null },
             income.length > 0
                 ? dbClient.from('crypto_income_events').upsert(income, { onConflict: 'user_id,csv_source,external_id', ignoreDuplicates: true })
@@ -206,7 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (results[1].error) errors.push({ row: 0, issue: `Income DB error: ${results[1].error.message}` });
 
         return res.status(200).json({
-            success: true,
+            success: errors.length === 0,
             trades_imported: trades.length,
             income_events_imported: income.length,
             errors,
@@ -239,8 +241,9 @@ function findCol(headers: string[], candidates: string[]): string | null {
 }
 
 function getFinancialYear(date: Date): string {
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
+    const india = new Date(date.getTime() + 330 * 60000);
+    const month = india.getUTCMonth() + 1;
+    const year = india.getUTCFullYear();
     const start = month >= 4 ? year : year - 1;
     return `FY${start}-${String(start + 1).slice(-2)}`;
 }
